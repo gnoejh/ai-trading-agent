@@ -1,0 +1,31 @@
+[project]
+name = "ai-trading-agent"
+version = "0.1.0"
+description = "AI trading agent"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "openai>=2.53.0",
+    "openpyxl>=3.1.5",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.15.0",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0.3",
+    "tzdata>=2026.3",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+extend-select = ["I", "UP", "B", "DTZ", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]

@@ -216,3 +216,22 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Generated spec index (rebuild: uv run python -m trading.rag.build_index)
+data/specs/
+# Kill switch is local operational state
+data/HALT
+
+# Runtime state — machine-generated, churns every cycle, and the broker is the
+# source of truth for anything that matters. Kept local.
+data/journal.jsonl
+data/ledger.jsonl
+data/exit_policy.json
+data/universe/
+data/HALT*
+data/RESTART
+logs/
+
+# 23 MB of prose covering the same API surface as KIWOOM_API.xlsx, which the spec
+# parser actually reads. Kept out of git history; the xlsx is the build input.
+KIWOOM_API.pdf

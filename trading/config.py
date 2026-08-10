@@ -1,0 +1,546 @@
+"""Configuration: `config.yaml` for parameters, `.env` for secrets.
+
+The split is the one declared at the top of `.env`. Nothing tunable should be a
+literal in code -- add it to `config.yaml` and read it through :func:`config`.
+Secrets are never read from the YAML.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import functools
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+import yaml
+from pydantic import AliasChoices, BaseModel, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+CONFIG_PATH = Path("config.yaml")
+
+
+# -- config.yaml ------------------------------------------------------------
+
+
+class Endpoint(BaseModel):
+    """An API id plus the spec-required discriminators for calling it."""
+
+    api_id: str
+    params: dict[str, str] = Field(default_factory=dict)
+
+    def body(self, **overrides) -> dict:
+        return {**self.params, **{k: v for k, v in overrides.items() if v is not None}}
+
+
+class StateEndpoints(BaseModel):
+    """Broker endpoints that answer account-state questions.
+
+    Broker records are the single source of truth, so these are the only
+    sanctioned way to learn positions, cash or open orders.
+    """
+
+    positions: Endpoint
+    cash: Endpoint
+    open_orders: Endpoint
+    fills: Endpoint
+    evaluation: Endpoint
+
+
+class OrderEndpoints(BaseModel):
+    buy: str
+    sell: str
+    modify: str
+    cancel: str
+
+
+class MarketConfig(BaseModel):
+    url_prefix: str
+    # 국내거래소구분 sent on every order: KRX, NXT or SOR.
+    exchange: str = "KRX"
+    state: StateEndpoints
+    orders: OrderEndpoints
+
+
+class KiwoomConfig(BaseModel):
+    use_testnet: bool = True
+    timezone: str = "Asia/Seoul"
+    timeout_s: float = 10.0
+    min_call_interval_s: float = 0.0
+    max_retries_429: int = 3
+    # Non-zero return codes that mean "query matched nothing", not "call failed".
+    # Applied to reads only; never to order endpoints.
+    empty_result_codes: list[str] = Field(default_factory=list)
+    retry_backoff_s: float = 1.0
+    token_refresh_skew_min: int = 5
+    max_pages: int = 20
+    allow_orders: bool = False
+    order_paths: list[str] = Field(default_factory=list)
+    markets: dict[str, MarketConfig] = Field(default_factory=dict)
+
+    def market(self, market: str) -> MarketConfig:
+        try:
+            return self.markets[str(market)]
+        except KeyError:
+            raise KeyError(
+                f"no config for market {market!r}; known: {sorted(self.markets)}"
+            ) from None
+
+
+class SpecsConfig(BaseModel):
+    workbook: str = "KIWOOM_API.xlsx"
+    index: str = "data/specs/kiwoom.json"
+
+
+class StateConfig(BaseModel):
+    source_of_truth: str = "broker"
+    max_staleness_s: float = 5.0
+    reconcile_before_order: bool = True
+
+
+class TierConfig(BaseModel):
+    provider: str
+    model: str
+    temperature: float = 0.0
+    max_tokens: int = 2048
+
+
+class ProviderConfig(BaseModel):
+    base_url: str
+
+
+class TokenPrice(BaseModel):
+    """USD per 1,000,000 tokens."""
+
+    input: float = 0.0
+    output: float = 0.0
+
+
+class FeeConfig(BaseModel):
+    commission_rate: float = 0.0
+    sell_tax_rate: float = 0.0
+    slippage_bps: float = 0.0
+
+    def round_trip_rate(self) -> float:
+        """Fraction of notional consumed by one buy + one sell."""
+        slip = self.slippage_bps / 10_000
+        return self.commission_rate * 2 + self.sell_tax_rate + slip * 2
+
+
+class AccountingConfig(BaseModel):
+    ledger: str = "data/ledger.jsonl"
+    max_api_krw_per_day: float = 0.0
+    fees: FeeConfig = Field(default_factory=FeeConfig)
+    # Venues differ structurally, not just numerically: KR pays a 0.15% transaction
+    # tax on sells that Binance does not, so one shared fee model would misprice
+    # every break-even on one venue or the other.
+    market_fees: dict[str, FeeConfig] = Field(default_factory=dict)
+    report_currency: str = "KRW"
+
+    def fees_for(self, market: str | None = None) -> FeeConfig:
+        if market and str(market) in self.market_fees:
+            return self.market_fees[str(market)]
+        return self.fees
+
+
+class LLMConfig(BaseModel):
+    providers: dict[str, ProviderConfig] = Field(default_factory=dict)
+    pricing: dict[str, TokenPrice] = Field(default_factory=dict)
+    usd_krw: float = 1380.0
+    default_tier: str = "fast"
+    tiers: dict[str, TierConfig] = Field(default_factory=dict)
+    timeout_s: float = 60.0
+    max_retries: int = 2
+
+    def provider(self, name: str) -> ProviderConfig:
+        try:
+            return self.providers[name]
+        except KeyError:
+            raise KeyError(
+                f"unknown llm provider {name!r}; known: {sorted(self.providers)}"
+            ) from None
+
+    def tier(self, name: str | None = None) -> TierConfig:
+        name = name or self.default_tier
+        try:
+            return self.tiers[name]
+        except KeyError:
+            raise KeyError(f"unknown llm tier {name!r}; known: {sorted(self.tiers)}") from None
+
+
+class TelegramConfig(BaseModel):
+    enabled: bool = True
+    api_base: str = "https://api.telegram.org"
+    parse_mode: str = "Markdown"
+    timeout_s: float = 15.0
+    poll_timeout_s: int = 30
+    max_message_chars: int = 4096
+    # Telegram allows ONE long-poll consumer per bot token. With a service per
+    # venue they steal each other's updates (409 Conflict) and a /halt can reach
+    # the wrong agent -- or none. Exactly one service owns the command surface;
+    # the others send only.
+    command_owner: str = "kiwoom"
+
+
+class NotifyConfig(BaseModel):
+    telegram: TelegramConfig = Field(default_factory=TelegramConfig)
+
+
+class RiskConfig(BaseModel):
+    enabled: bool = True
+    max_order_value_krw: float = 0.0
+    max_position_pct: float = 0.0
+    max_daily_loss_krw: float = 0.0
+    max_orders_per_cycle: int = 3
+    max_orders_per_day: int = 20
+    kill_switch_file: str = "data/HALT"
+    daily_pnl: Endpoint | None = None
+
+
+class SizingConfig(BaseModel):
+    """How much of the balance a single entry commits."""
+
+    mode: str = "full_balance"
+    fraction: float = 1.0
+    cash_field: str = "ord_alow_amt"
+    cash_fallback_field: str = "entr"
+    reserve_pct: float = 0.005
+    max_positions: int = 1
+    lot_size: int = 1
+
+
+class EntryRungs(BaseModel):
+    count: int = 4
+    spacing_pct: float = 0.005
+    start_offset_pct: float = 0.0
+    weights: list[float] = Field(default_factory=list)
+
+
+class ExitRungs(BaseModel):
+    count: int = 3
+    first_hurdle_multiple: float = 2.0
+    spacing_hurdle_multiple: float = 2.0
+    weights: list[float] = Field(default_factory=list)
+
+
+class RungsConfig(BaseModel):
+    """Laddered entries and exits instead of one all-in order."""
+
+    enabled: bool = True
+    entry: EntryRungs = Field(default_factory=EntryRungs)
+    exit: ExitRungs = Field(default_factory=ExitRungs)
+
+
+class ServiceConfig(BaseModel):
+    """Restart-by-exit: NSSM revives the process, so no service rights are needed."""
+
+    restart_file: str = "data/RESTART"
+    graceful_exit_log: str = "graceful restart requested"
+
+
+class ExitConfig(BaseModel):
+    """Exit levels expressed as multiples of the round-trip cost hurdle."""
+
+    enabled: bool = True
+    check_interval_s: float = 30.0
+    stop_loss_pct: float = 0.03
+    target_hurdle_multiple: float = 4.0
+    min_reward_risk: float = 2.0
+    trail_arm_hurdle_multiple: float = 2.0
+    trail_give_back: float = 0.4
+    max_hold_minutes: float = 360.0
+    state: str = "data/exit_policy.json"
+    exits_allowed_under_halt: bool = True
+
+
+class Session(BaseModel):
+    """Trading hours in the exchange's own timezone, so DST resolves correctly."""
+
+    timezone: str
+    open: str
+    close: str
+
+    def is_open(self, now: dt.datetime | None = None, *, weekends: bool = False) -> bool:
+        local = (now or dt.datetime.now(dt.UTC)).astimezone(ZoneInfo(self.timezone))
+        if not weekends and local.weekday() >= 5:
+            return False
+        return dt.time.fromisoformat(self.open) <= local.time() <= dt.time.fromisoformat(self.close)
+
+    def next_open(self, now: dt.datetime | None = None) -> dt.datetime:
+        tz = ZoneInfo(self.timezone)
+        local = (now or dt.datetime.now(dt.UTC)).astimezone(tz)
+        opens = dt.time.fromisoformat(self.open)
+        candidate = local.replace(hour=opens.hour, minute=opens.minute, second=0, microsecond=0)
+        if candidate <= local:
+            candidate += dt.timedelta(days=1)
+        while candidate.weekday() >= 5:
+            candidate += dt.timedelta(days=1)
+        return candidate
+
+
+class AgentTiers(BaseModel):
+    decide: str = "deep"
+    escalate_on_low_confidence: str = "escalation"
+    confidence_floor: float = 0.6
+
+
+class UniverseMarket(BaseModel):
+    list: Endpoint
+    segments: dict[str, list[str]] = Field(default_factory=dict)
+    # Field names differ per market: KR reports the venue as `marketName`, US as
+    # `mkgb`, so the filters are told which key to read rather than guessing.
+    market_name_field: str = "marketName"
+    exchange_field: str = ""
+    etf_field: str = ""
+    exclude_etf: bool = False
+    include_market_names: list[str] = Field(default_factory=list)
+    require_audit_normal: bool = False
+    exclude_states: list[str] = Field(default_factory=list)
+
+
+class UniverseConfig(BaseModel):
+    """The tradable list comes from the broker, never from a hand-kept file."""
+
+    refresh_hours: float = 12.0
+    cache: str = "data/universe"
+    KR: UniverseMarket | None = None
+    US: UniverseMarket | None = None
+
+    def market(self, name: str) -> UniverseMarket:
+        m = getattr(self, str(name), None)
+        if m is None:
+            raise KeyError(f"no universe config for market {name!r}")
+        return m
+
+
+class Ranker(BaseModel):
+    api_id: str
+    params: dict[str, str] = Field(default_factory=dict)
+
+
+class ScreenMarket(BaseModel):
+    rankers: list[Ranker] = Field(default_factory=list)
+    # Per market: prices are in the venue's own currency, so one shared floor
+    # would be 1,000 KRW in Seoul and $1,000 in New York.
+    min_price: float = 0.0
+
+
+class ScreenConfig(BaseModel):
+    """Narrows the full market to the handful the model is allowed to consider."""
+
+    candidates: int = 25
+    min_price: float = 0.0
+    # Liquidity floor for venues that list microcaps. Without it the universe
+    # includes symbols whose whole daily turnover is smaller than one order.
+    min_quote_volume: float = 0.0
+    # Liquidity floor expressed as a multiple of the ORDER, not as a fixed number.
+    # With full-balance sizing the order grows with the account, so a fixed floor
+    # silently becomes too permissive as the balance grows.
+    min_volume_multiple_of_order: float = 0.0
+    # Pegged assets dominate volume rankings and have no directional opportunity.
+    exclude_assets: list[str] = Field(default_factory=list)
+    # Slots per book. Without this the deepest book takes every slot: crypto's
+    # median turnover is ~6x the LARGEST bStock, so bStocks never rank.
+    book_slots: dict[str, int] = Field(default_factory=dict)
+    book_min_quote_volume: dict[str, float] = Field(default_factory=dict)
+    # Order flow, not price momentum. See BinanceScreen._flow for the measurement.
+    use_flow: bool = False
+    flow_interval: str = "1d"
+    flow_lookback: int = 5
+    flow_pool_per_book: int = 30
+    KR: ScreenMarket | None = None
+    US: ScreenMarket | None = None
+    BINANCE: ScreenMarket | None = None
+
+    def market(self, name: str) -> ScreenMarket:
+        m = getattr(self, str(name), None)
+        if m is None:
+            raise KeyError(f"no screen config for market {name!r}")
+        return m
+
+
+class AgentConfig(BaseModel):
+    enabled: bool = True
+    market: str = "KR"
+    dry_run: bool = True
+    loop_interval_s: float = 900.0
+    skip_decide_if_unchanged: bool = True
+    journal: str = "data/journal.jsonl"
+    universe: UniverseConfig = Field(default_factory=UniverseConfig)
+    screen: ScreenConfig = Field(default_factory=ScreenConfig)
+    sessions: dict[str, Session] = Field(default_factory=dict)
+    always_open: list[str] = Field(default_factory=list)
+    trade_on_weekends: bool = False
+
+    def is_open(self, market: str, now: dt.datetime | None = None) -> bool:
+        """Crypto never closes; equities follow their exchange's own clock."""
+        if str(market) in self.always_open:
+            return True
+        session = self.sessions.get(str(market))
+        return bool(session and session.is_open(now, weekends=self.trade_on_weekends))
+
+    def open_market(self, now: dt.datetime | None = None) -> str | None:
+        """Which market is currently trading, if any."""
+        for name in self.sessions:
+            if self.is_open(name, now):
+                return name
+        return self.always_open[0] if self.always_open else None
+
+    quotes: dict[str, dict[str, Endpoint]] = Field(default_factory=dict)
+
+    def quotes_for(self, market: str) -> dict[str, Endpoint]:
+        """Quote endpoints differ per market: ka10001 (KR) vs usa20100 (US)."""
+        return self.quotes.get(str(market), {})
+
+    tiers: AgentTiers = Field(default_factory=AgentTiers)
+
+
+class BinanceEndpoint(BaseModel):
+    path: str
+    method: str = "GET"
+    signed: bool = False
+    order: bool = False
+
+
+class BinanceMarket(BaseModel):
+    """A book sharing the Binance connection and balance."""
+
+    quote_asset: str = "USDT"
+    # bStocks carry this permission tag. A symbol-suffix rule would wrongly match
+    # BNB, SHIB, ARB and CKB, which are ordinary coins.
+    permission_tag: str = ""
+    exclude_permission_tag: str = ""
+
+
+class BinanceConfig(BaseModel):
+    use_testnet: bool = False
+    timeout_s: float = 15.0
+    recv_window_ms: int = 5000
+    min_call_interval_s: float = 0.1
+    retry_backoff_s: float = 2.0
+    allow_orders: bool = False
+    endpoints: dict[str, BinanceEndpoint] = Field(default_factory=dict)
+    markets: dict[str, BinanceMarket] = Field(default_factory=dict)
+
+    def endpoint(self, name: str) -> BinanceEndpoint:
+        try:
+            return self.endpoints[name]
+        except KeyError:
+            raise KeyError(
+                f"unknown binance endpoint {name!r}; known: {sorted(self.endpoints)}"
+            ) from None
+
+    def market(self, name: str) -> BinanceMarket:
+        try:
+            return self.markets[str(name)]
+        except KeyError:
+            raise KeyError(f"no binance market {name!r}; known: {sorted(self.markets)}") from None
+
+
+class BrokerConfig(BaseModel):
+    kiwoom: KiwoomConfig = Field(default_factory=KiwoomConfig)
+    binance: BinanceConfig = Field(default_factory=BinanceConfig)
+
+
+class AppConfig(BaseModel):
+    specs: SpecsConfig = Field(default_factory=SpecsConfig)
+    broker: BrokerConfig = Field(default_factory=BrokerConfig)
+    state: StateConfig = Field(default_factory=StateConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
+    notify: NotifyConfig = Field(default_factory=NotifyConfig)
+    accounting: AccountingConfig = Field(default_factory=AccountingConfig)
+    risk: RiskConfig = Field(default_factory=RiskConfig)
+    sizing: SizingConfig = Field(default_factory=SizingConfig)
+    exits: ExitConfig = Field(default_factory=ExitConfig)
+    service: ServiceConfig = Field(default_factory=ServiceConfig)
+    rungs: RungsConfig = Field(default_factory=RungsConfig)
+    agent: AgentConfig = Field(default_factory=AgentConfig)
+
+
+def load_config(path: str | Path = CONFIG_PATH) -> AppConfig:
+    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
+    return AppConfig(**raw)
+
+
+@functools.cache
+def config() -> AppConfig:
+    """Process-wide config. Call :func:`load_config` directly in tests."""
+    return load_config()
+
+
+# -- .env (secrets only) ----------------------------------------------------
+
+
+class KiwoomSecrets(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
+
+    app_key: str = Field("", alias="KIWOOM_APP_KEY")
+    secret_key: str = Field("", alias="KIWOOM_SECRET_KEY")
+    testnet_app_key: str = Field("", alias="KIWOOM_TESTNET_APP_KEY")
+    testnet_secret_key: str = Field("", alias="KIWOOM_TESTNET_SECRET_KEY")
+    account_no: str = Field("", alias="MAINNET_ACCOUNT_NO")
+
+    def credentials(self, *, testnet: bool) -> tuple[str, str]:
+        if testnet:
+            return self.testnet_app_key, self.testnet_secret_key
+        return self.app_key, self.secret_key
+
+
+class TelegramSecrets(BaseSettings):
+    """This agent's own bot. Each subsystem in `.env` has a separate token."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
+
+    bot_token: str = Field("", alias="TRADING_AGENT_BOT_TOKEN")
+    # Comma-separated chat ids permitted to command the agent.
+    allowed_ids_raw: str = Field("", alias="TELEGRAM_ALLOWED_IDS")
+
+    @property
+    def allowed_ids(self) -> set[int]:
+        return {int(p) for p in self.allowed_ids_raw.replace(" ", "").split(",") if p}
+
+
+class BinanceSecrets(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
+
+    api_key: str = Field("", alias="BINANCE_MAINNET_API_KEY")
+    secret_key: str = Field("", alias="BINANCE_MAINNET_SECRET_KEY")
+    rest_url: str = Field("https://api.binance.com", alias="BINANCE_MAINNET_REST_URL")
+    testnet_api_key: str = Field("", alias="BINANCE_TESTNET_API_KEY")
+    testnet_secret_key: str = Field("", alias="BINANCE_TESTNET_SECRET_KEY")
+    testnet_rest_url: str = Field(
+        "https://testnet.binance.vision", alias="BINANCE_TESTNET_REST_URL"
+    )
+
+    def credentials(self, *, testnet: bool) -> tuple[str, str]:
+        if testnet:
+            return self.testnet_api_key, self.testnet_secret_key
+        return self.api_key, self.secret_key
+
+    def base_url(self, *, testnet: bool) -> str:
+        return (self.testnet_rest_url if testnet else self.rest_url).rstrip("/")
+
+
+class LLMSecrets(BaseSettings):
+    """API keys only. Endpoints live in `config.yaml` under `llm.providers`."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
+
+    deepseek_api_key: str = Field(
+        "", validation_alias=AliasChoices("DEEPSEEK_API_KEY", "DEEPSEEK_KEY")
+    )
+    # Qwen is served by Alibaba DashScope; the key ships under several names
+    # depending on where it was issued, so accept all of them.
+    qwen_api_key: str = Field(
+        "",
+        validation_alias=AliasChoices(
+            "DASHSCOPE_API_KEY", "QWEN_API_KEY", "QWEN_KEY", "TONGYI_API_KEY", "ALIBABA_API_KEY"
+        ),
+    )
+
+    def key_for(self, provider: str) -> str:
+        match provider:
+            case "deepseek":
+                return self.deepseek_api_key
+            case "qwen":
+                return self.qwen_api_key
+        raise KeyError(f"unknown llm provider {provider!r}")

@@ -1,0 +1,439 @@
+# AI trading agent — non-secret configuration.
+# Secrets live in .env and are never mirrored here. Code should read values from
+# this file rather than hardcoding them; see trading/config.py.
+
+specs:
+  workbook: KIWOOM_API.xlsx
+  index: data/specs/kiwoom.json
+
+broker:
+  kiwoom:
+    # LIVE ACCOUNT. Set false deliberately on 2026-08-10 because the 모의투자 keys
+    # in .env fail authentication (8001); mainnet is the only working credential.
+    # Restore to true as soon as valid testnet keys are reissued.
+    use_testnet: false
+    timezone: Asia/Seoul       # broker-issued timestamps (e.g. token expires_dt) are KST
+    timeout_s: 10.0
+    # Kiwoom returns HTTP 429 when polled too fast; observed while quoting 25
+    # candidates back to back. Minimum spacing between REST calls, in seconds.
+    min_call_interval_s: 0.25
+    max_retries_429: 3
+    # Kiwoom answers some account queries with a non-zero return_code when the
+    # query simply matched nothing (ust21050 -> 20 "미체결내역이 없습니다").
+    # Tolerated on reads only; an order endpoint is never reinterpreted.
+    empty_result_codes: ["20"]
+    retry_backoff_s: 1.0
+    token_refresh_skew_min: 5  # reissue this long before expires_dt
+    max_pages: 20              # cont-yn/next-key follow limit per call
+    allow_orders: true         # master switch; every order still passes the risk gate
+    order_paths:               # URL trees that place or amend orders
+      - /api/dostk/ordr
+      - /api/us/ordr
+
+    # Kiwoom exposes KR and US as separate API surfaces. Each market binds its own
+    # endpoints; nothing is shared but the host and the OAuth token.
+    markets:
+      KR:
+        url_prefix: /api/dostk
+        exchange: KRX              # 국내거래소구분 on every order (KRX/NXT/SOR)
+        # Broker records are the single source of truth for account state.
+        # These are the only endpoints allowed to answer "what do we hold?".
+        # `params` are the spec-required query discriminators, kept here so the
+        # meaning of a state read is configuration rather than a literal in code.
+        state:
+          positions:                       # 계좌평가잔고내역요청
+            api_id: kt00018
+            params: {qry_tp: "1", dmst_stex_tp: "KRX"}   # 1:합산
+          cash:                            # 예수금상세현황요청
+            api_id: kt00001
+            params: {qry_tp: "2"}                        # 2:일반조회
+          open_orders:                     # 미체결요청
+            api_id: ka10075
+            params: {all_stk_tp: "0", trde_tp: "0", stex_tp: "0"}  # 전체/통합
+          fills:                           # 체결요청
+            api_id: ka10076
+            params: {qry_tp: "0", sell_tp: "0", stex_tp: "0"}
+          evaluation:                      # 계좌평가현황요청
+            api_id: kt00004
+            params: {qry_tp: "0", dmst_stex_tp: "KRX"}
+        orders:
+          buy: kt10000
+          sell: kt10001
+          modify: kt10002
+          cancel: kt10003
+      US:
+        url_prefix: /api/us
+        exchange: KRX
+        state:
+          positions:   {api_id: ust21070}  # 미국주식 원장잔고확인
+          cash:        {api_id: ust21160}  # 미국주식 예수금 상세
+          open_orders: {api_id: ust21050}  # 미국주식 원장 미체결
+          fills:       {api_id: ust21510}  # 미국주식 당일 주문체결 확인
+          evaluation:  {api_id: ust21121}  # 해외증권 원장 평가금액현황
+        orders:
+          buy: ust20000
+          sell: ust20001
+          modify: ust20002
+          cancel: ust20003
+
+  binance:
+    # Spot MAINNET. Two books share one connection and ONE USDT balance, so a
+    # crypto entry and a bStocks entry compete for the same cash -- sizing must
+    # never assume a book owns the balance.
+    use_testnet: false
+    timeout_s: 15.0
+    recv_window_ms: 5000
+    min_call_interval_s: 0.1     # well inside the 1200 weight/min budget
+    retry_backoff_s: 2.0
+    # LIVE at owner instruction 2026-08-10, after the full path was verified in
+    # dry run: universe -> screen -> model -> size -> gate APPROVED, stopping at
+    # the wire. Approved orders now transmit.
+    allow_orders: true
+
+    # Logical name -> REST call. Same config-driven pattern as Kiwoom's api_id,
+    # so Universe/Screen/AccountState work against either venue unchanged.
+    endpoints:
+      exchange_info: {path: /api/v3/exchangeInfo}
+      ticker_24hr:   {path: /api/v3/ticker/24hr}
+      price:         {path: /api/v3/ticker/price}
+      klines:        {path: /api/v3/klines}
+      account:       {path: /api/v3/account,    signed: true}
+      open_orders:   {path: /api/v3/openOrders, signed: true}
+      my_trades:     {path: /api/v3/myTrades,   signed: true}
+      order:         {path: /api/v3/order, method: POST,   signed: true, order: true}
+      cancel:        {path: /api/v3/order, method: DELETE, signed: true, order: true}
+
+    markets:
+      CRYPTO:
+        quote_asset: USDT
+        # Everything USDT-quoted that is NOT a tokenized equity.
+        exclude_permission_tag: TRD_GRP_261
+      BSTOCKS:
+        quote_asset: USDT
+        # 66 tokenized US equities. Identified by permission tag, never by a
+        # symbol suffix: NVDAB/CRCLB/TSLAB end in B, but so do BNB, SHIB and ARB.
+        permission_tag: TRD_GRP_261
+
+state:
+  # Broker records are authoritative. Anything persisted locally is a derived
+  # cache for analytics and audit, never a substitute for a broker read.
+  source_of_truth: broker
+  max_staleness_s: 5      # re-read from the broker if cached state is older
+  reconcile_before_order: true
+
+llm:
+  # DeepSeek and Qwen called directly; both speak the OpenAI-compatible protocol.
+  # Only API keys come from .env; endpoints are configuration.
+  providers:
+    deepseek:
+      base_url: https://api.deepseek.com
+    qwen:
+      # DashScope is region-partitioned and a key is valid on exactly one host.
+      # This account's key is mainland (Beijing); the intl host returns 401 for it.
+      # International keys use https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+      base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+
+  # USD per 1,000,000 tokens. VERIFY against the providers' current pricing pages;
+  # these are estimates and every break-even number depends on them.
+  pricing:
+    deepseek-chat:     {input: 0.27, output: 1.10}
+    deepseek-reasoner: {input: 0.55, output: 2.19}
+    qwen3-max:         {input: 1.20, output: 6.00}
+    qwen-plus:         {input: 0.40, output: 1.20}
+  usd_krw: 1380        # for expressing API spend against KRW trading P&L
+
+  default_tier: fast
+  tiers:
+    fast:
+      provider: deepseek
+      model: deepseek-chat
+      temperature: 0.0
+      max_tokens: 2048
+    deep:
+      provider: deepseek
+      model: deepseek-reasoner
+      temperature: 0.0
+      max_tokens: 8192
+    escalation:
+      provider: qwen
+      # qwen3-max is the strongest model this key can reach, and unlike qwen-max it
+      # also works on the account's workspace endpoint (see .env lines 60-65).
+      model: qwen3-max
+      temperature: 0.0
+      max_tokens: 8192
+  timeout_s: 60.0
+  max_retries: 2
+
+accounting:
+  # A trade is only profitable after BOTH trading costs and the API spend that
+  # produced the decision. The ledger records every LLM call and every fill so the
+  # break-even point is measured, not assumed.
+  ledger: data/ledger.jsonl
+  # Hard daily ceiling on API spend. Measured cost is ~47 KRW per decision cycle
+  # (deepseek-reasoner + a qwen3-max escalation, ~27k tokens). Against 4.8M equity
+  # a 60s loop would cost ~36,000 KRW/day = 15.7%/month before any trade — so the
+  # budget is enforced, not advisory: the agent stops deciding when it is spent.
+  max_api_krw_per_day: 2000
+  fees:
+    # KR equities. Verify current rates: the 거래세/농특세 rate changes by budget年度.
+    commission_rate: 0.00015   # 0.015% per side, typical online rate
+    sell_tax_rate: 0.0015      # 0.15% on sell proceeds only
+    slippage_bps: 5            # assumed execution slippage per side, in bps
+  # Per venue. The KR sell tax has no Binance equivalent, so the hurdle a trade
+  # must clear differs by book -- 0.28% in Seoul, 0.25% on Binance.
+  market_fees:
+    KR:      {commission_rate: 0.00015, sell_tax_rate: 0.0015, slippage_bps: 5}
+    US:      {commission_rate: 0.00015, sell_tax_rate: 0.0,    slippage_bps: 5}
+    # Binance spot: 0.1% maker AND taker per side (confirmed from the live
+    # account's commissionRates), no transaction tax. Crypto spreads are wider
+    # than KRX blue chips, so slippage is assumed higher.
+    # The agent spans both Binance books, so the hurdle it quotes to the model is
+    # the WORSE of them. Quoting the cheaper one would understate the bar a bStocks
+    # pick has to clear -- and the fallback to the KR default did exactly that
+    # (0.28% shown where 0.60% applied) until this entry existed.
+    BINANCE: {commission_rate: 0.001,   sell_tax_rate: 0.0,    slippage_bps: 20}
+    CRYPTO:  {commission_rate: 0.001,   sell_tax_rate: 0.0,    slippage_bps: 15}
+    BSTOCKS: {commission_rate: 0.001,   sell_tax_rate: 0.0,    slippage_bps: 20}
+  report_currency: KRW
+
+notify:
+  telegram:
+    enabled: true
+    # One bot per subsystem; this agent owns TRADING_AGENT_BOT_TOKEN.
+    # Allowed chat ids come from TELEGRAM_ALLOWED_IDS in .env -- inbound messages
+    # from anyone else are dropped, never answered.
+    api_base: https://api.telegram.org
+    parse_mode: Markdown
+    timeout_s: 15.0
+    poll_timeout_s: 30      # long-poll seconds for getUpdates
+    max_message_chars: 4096 # Telegram's hard limit; longer text is split
+    # Only this broker's service polls for commands. Telegram permits a single
+    # getUpdates consumer per token; two services polling produced 409 Conflict
+    # and non-deterministic command delivery (observed 2026-08-10). All services
+    # still SEND alerts -- only receiving is exclusive.
+    command_owner: kiwoom
+
+risk:
+  # ---------------------------------------------------------------------------
+  # RISK APPETITE: removed at owner instruction, 2026-08-10.
+  # 0 means "no limit" for every knob below. The consequence is explicit: a single
+  # trade may commit the entire balance, one stop-out costs `exits.stop_loss_pct`
+  # of the WHOLE account, and nothing arrests a losing streak. Restore by setting
+  # any knob back to a positive number -- no code change needed.
+  # ---------------------------------------------------------------------------
+  max_order_value_krw: 0         # no per-order cap
+  max_position_pct: 0            # no concentration cap
+  max_daily_loss_krw: 0          # no daily-loss breaker
+  max_orders_per_cycle: 0        # unlimited
+  max_orders_per_day: 0          # unlimited
+
+  # `enabled` does NOT control appetite -- it controls the CORRECTNESS floor, and
+  # turning it off refuses to trade rather than trading unchecked. What remains
+  # when every limit above is 0 constrains no bet by one won; it only rejects
+  # malformed orders: positive quantity, a priceable order, a symbol that was
+  # actually offered, freshly reconciled broker state, and never selling more than
+  # is held. These catch defects, not market moves.
+  enabled: true
+  kill_switch_file: data/HALT    # presence of this file blocks new entries
+  daily_pnl:
+    api_id: ka10074
+
+sizing:
+  # Full-balance deployment: commit everything to the position, at owner
+  # instruction 2026-08-10.
+  mode: full_balance             # full_balance | fixed_fraction
+  fraction: 1.0                  # of orderable cash (fixed_fraction mode)
+  # 주문가능금액 is what can actually be spent TODAY. KR equities settle T+2, so
+  # 추정예탁자산 includes unsettled sale proceeds that cannot fund an order yet --
+  # sizing against it would produce orders the broker rejects.
+  cash_field: ord_alow_amt
+  cash_fallback_field: entr
+  # Held back from every order. A market order that prices up between sizing and
+  # fill is rejected outright if the balance is committed to the last won.
+  reserve_pct: 0.005
+  max_positions: 1               # all-in means one name at a time
+  lot_size: 1                    # KRX trades in single shares
+
+rungs:
+  # Ladder in and out instead of committing everything at one price. Fees are
+  # proportional to notional, so N rungs cost the same in commission as one order;
+  # what binds is that each rung must clear the venue's minNotional on its own.
+  enabled: true
+  entry:
+    count: 4
+    start_offset_pct: 0.0     # first rung at the reference price
+    spacing_pct: 0.005        # each subsequent rung 0.5% lower
+    # Front-loaded: take a real position immediately, improve the average only if
+    # the market comes to us. Flat weights would leave most of the capital
+    # depending on a fall that may never happen.
+    weights: [0.4, 0.3, 0.2, 0.1]
+  exit:
+    count: 3
+    # Multiples of the ROUND-TRIP HURDLE above NET BREAK-EVEN, not above entry:
+    # scaling out from the entry price sells the first rung at a loss after costs.
+    first_hurdle_multiple: 2.0
+    spacing_hurdle_multiple: 2.0
+    weights: [0.3, 0.3, 0.4]
+
+service:
+  # Restart-by-exit. NSSM restarts the process whenever it exits (AppRestartDelay
+  # + three SCM recovery attempts), so the process can restart ITSELF simply by
+  # returning -- no service-control rights, no elevation, no UAC prompt. That
+  # matters because config is read at start-up: changing config.yaml has no effect
+  # until a restart, and needing a human at an admin console for that makes the
+  # bot unmaintainable while it is holding a position.
+  #
+  # Touch this file to request one. The service deletes it and exits cleanly.
+  restart_file: data/RESTART
+  # An intentional restart and a real crash look IDENTICAL to Windows SCM -- both
+  # log "terminated unexpectedly". This line is what tells them apart afterwards:
+  # a boot NOT preceded by it is a crash worth investigating.
+  graceful_exit_log: "graceful restart requested"
+
+exits:
+  # Exits are derived from the COST HURDLE, not from arbitrary R multiples.
+  # A round trip costs ~0.28% of notional, so a position's real break-even is its
+  # entry price marked up by that, plus its share of the API spend that opened it.
+  # Every level below is expressed as a multiple of that hurdle, which means the
+  # levels re-derive themselves whenever fees or model prices change.
+  enabled: true
+  # The supervisor runs on its own clock, independent of the decision loop and of
+  # the API budget: when the model stops, exits must not.
+  check_interval_s: 30
+  stop_loss_pct: 0.03           # hard floor below entry; never widened once set
+  target_hurdle_multiple: 4.0   # take profit at net breakeven + 4x the round trip
+  # ...but never at a worse reward:risk than this, measured from NET breakeven.
+  # Without it a 3% stop against a 1.1% target needs a ~75% hit rate to break even.
+  min_reward_risk: 2.0
+  trail_arm_hurdle_multiple: 2.0  # start trailing once this far past net breakeven
+  trail_give_back: 0.4          # surrender this fraction of the run when trailing
+  # A position that has not cleared its hurdle in this long is paying costs to do
+  # nothing. Time is a cost too.
+  max_hold_minutes: 360
+  # Policy state (stop levels) is OURS and is persisted; quantities and prices are
+  # always the broker's. Reconciled against broker holdings on every pass.
+  state: data/exit_policy.json
+  # A halt stops NEW risk. It must never prevent reducing existing risk, or the
+  # kill switch becomes a trap that locks you into a losing position.
+  exits_allowed_under_halt: true
+
+agent:
+  enabled: true
+  market: KR
+  # LIVE at owner instruction 2026-08-10. The earlier collision with ai-alpha-arena
+  # is resolved: its nssm service was removed and its KR book liquidated flat, so
+  # this system owns the account alone. Set true to stop trading while keeping the
+  # observe/decide/journal pipeline running.
+  dry_run: false
+  # 15 min. At the measured ~47 KRW/cycle this is ~2,350 KRW/day (~1%/month of
+  # equity) instead of the ~36,000 KRW/day a 60s loop would cost. Shorten only if
+  # a measured edge justifies the spend.
+  loop_interval_s: 900
+  # Skip the model entirely when the screen output has not materially changed --
+  # re-deciding on an identical candidate set buys nothing and costs tokens.
+  skip_decide_if_unchanged: true
+  journal: data/journal.jsonl     # append-only decision record; audit, not state
+
+  # The universe is the whole market (~2,650 KR / ~6,673 US), fetched from the
+  # broker -- never a hand-maintained list. That is far too many to price or to
+  # put in a prompt, so each cycle runs a deterministic funnel:
+  #   full universe -> broker ranking screens -> top N candidates -> model
+  # The model only ever sees `candidates`; the screens decide what it may consider.
+  universe:
+    refresh_hours: 12             # re-fetch the tradable list this often
+    cache: data/universe          # parquet/json cache dir
+    KR:
+      list: {api_id: ka10099}     # 종목정보 리스트, one call per market segment
+      segments: {mrkt_tp: ["0", "10"]}   # 0 코스피, 10 코스닥
+      # ka10099 returns 4,293 rows: 거래소 917 + 코스닥 1,820 common stocks, plus
+      # ETF 1,160 / ETN 361 / 리츠 23 which are different instruments, not equities.
+      include_market_names: ["거래소", "코스닥"]
+      require_audit_normal: true  # auditInfo == 정상 drops 거래정지/관리종목/단기과열
+      exclude_states: ["거래정지", "정리매매"]
+    US:
+      # stex_tp is REQUIRED: %:전체, NA:AMEX, ND:NASDAQ, NY:NYSE.
+      # Without it the call 400s and the universe silently comes back empty.
+      list: {api_id: usa10099, params: {stex_tp: "%"}}   # 미국주식 종목리스트
+      segments: {}
+      # 18,986 rows: 11,146 ETFs and 842 PINK SHEET (OTC) among them. Filtering to
+      # exchange-listed common stock leaves 6,998 -- the tradable US universe.
+      market_name_field: mkgb
+      exchange_field: stex_tp
+      etf_field: isEtf
+      exclude_etf: true
+      include_market_names: ["NYSE", "NASDAQ", "AMEX"]
+      require_audit_normal: false
+      exclude_states: []
+
+  screen:
+    candidates: 25                # how many symbols reach the model
+    min_price: 0                  # fallback only; each market sets its own below
+    # Binance lists microcaps whose entire daily turnover is smaller than one
+    # full-balance order; entering those moves the price against us.
+    min_quote_volume: 500000      # USDT rolling 24h, absolute floor
+    # ...and the real floor scales with the order: an entry must stay under
+    # 1/200th of the thinnest allowed name's daily turnover. Changing the balance
+    # therefore moves the liquidity bar automatically.
+    min_volume_multiple_of_order: 200
+    # Stablecoins rank top by volume and never move. Excluded by base asset.
+    exclude_assets: [USDC, USD1, FDUSD, TUSD, DAI, BUSD, USDP, EURI, AEUR, XUSD]
+    # Crypto is ~100x deeper than bStocks, so ranking them together gives bStocks
+    # zero slots. Each book competes only against itself.
+    book_slots:            {CRYPTO: 18, BSTOCKS: 7}
+    book_min_quote_volume: {CRYPTO: 5000000, BSTOCKS: 500000}
+    # Rank by ORDER FLOW rather than price change. Measured on 1,000 daily bars,
+    # 10 majors: top decile of 5-day taker-buy share -> +1.58% over the next 5
+    # days vs +0.53% bottom decile (spread +1.05%, ~2x the round trip). The same
+    # data gives a -0.06% spread for 3-day price change, i.e. nothing.
+    use_flow: true
+    flow_interval: 1d
+    flow_lookback: 5
+    flow_pool_per_book: 30
+    KR:
+      min_price: 1000             # KRW
+      # Each screen returns a ranked list; the union is scored by rank position.
+      rankers:
+        - {api_id: ka10032, params: {mrkt_tp: "000", mang_stk_incls: "0", stex_tp: "1"}}  # 거래대금상위
+        # 전일대비등락률상위: 상승률순, 우선주+관리주 제외, 1억원 이상 거래대금만.
+        - {api_id: ka10027, params: {mrkt_tp: "000", sort_tp: "1", trde_qty_cnd: "0100", stk_cnd: "4", crd_cnd: "0", updown_incls: "0", pric_cnd: "0", trde_prica_cnd: "10", stex_tp: "1"}}
+    BINANCE:
+      min_price: 0                # any price; quantisation handles sub-cent coins
+      rankers: []                 # ticker/24hr covers both screens in one call
+    US:
+      min_price: 1                # USD -- NOT 1000; a KRW floor excludes every US stock
+      # stk_tp "1" restricts to 주식. The default (0:전체) mixes in ETFs and
+      # sector indices (SPY, QQQ) that are not in the tradable universe and are
+      # silently dropped later, wasting screen slots.
+      rankers:
+        - {api_id: usa20540, params: {stk_tp: "1", stex_tp: "0"}}                  # 당일 거래대금 상위
+        - {api_id: usa20910, params: {stk_tp: "1", stex_tp: "0", sort_tp: "1"}}    # 전일대비 등락률상위
+  # BINANCE is 24/7: no session entry, and `always_open` markets skip the clock
+  # gate entirely rather than being given fake 00:00-23:59 hours that would still
+  # close for a minute each day and stop trading at a weekend boundary.
+  always_open: ["BINANCE"]
+  # Sessions are declared in each exchange's OWN timezone, so DST is handled by the
+  # zone database rather than by fixed KST offsets: US open is 23:30 KST in winter
+  # (EST) but 22:30 in summer (EDT). The scheduler runs whichever session is open.
+  sessions:
+    KR:
+      timezone: Asia/Seoul
+      open: "09:00"
+      close: "15:20"
+    US:
+      timezone: America/New_York
+      open: "09:30"
+      close: "15:55"
+  trade_on_weekends: false
+  # Endpoints the observe step uses to build the model's view. Per market: the
+  # KR and US surfaces have different price endpoints with different required
+  # params, so a single shared entry would 400 on one of them.
+  quotes:
+    KR:
+      basic: {api_id: ka10001}                              # 주식기본정보요청
+      orderbook: {api_id: ka10004}                          # 주식호가요청
+    US:
+      basic: {api_id: usa20100, params: {stex_tp: "%"}}     # 미국주식 현재가 종목정보
+  tiers:
+    decide: deep          # tier that proposes intents
+    escalate_on_low_confidence: escalation
+    confidence_floor: 0.6
