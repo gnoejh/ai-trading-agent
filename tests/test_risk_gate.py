@@ -64,6 +64,7 @@ def cfg(tmp_path):
     c.risk.max_order_value_krw = 10_000_000
     c.risk.max_position_pct = 0.0
     c.risk.max_daily_loss_krw = 0.0
+    c.risk.max_daily_loss_pct = 0.0
     c.risk.max_orders_per_cycle = 10
     c.risk.max_orders_per_day = 100
     c.agent.market = "KR"
@@ -177,7 +178,7 @@ def test_daily_loss_limit_halts_trading(cfg):
     cfg.risk.max_daily_loss_krw = 500_000
     g = gate(cfg, FakeState(snapshot(), pnl=-600_000))
     v = g.evaluate(buy())
-    assert not v.approved and any("max_daily_loss_krw" in r for r in v.reasons)
+    assert not v.approved and any("daily realised loss" in r for r in v.reasons)
 
 
 def test_negative_quantity_rejected(cfg):
@@ -285,3 +286,16 @@ def test_per_cycle_cap_never_rations_exits(cfg):
     g = gate(cfg, FakeState(snapshot(held_qty=100)))
     verdicts = g.evaluate_all([sell(qty=1), sell(qty=1), sell(qty=1)])
     assert all(v.approved for v in verdicts)
+
+
+def test_daily_loss_cap_as_percentage_works_in_any_currency(cfg):
+    """`*_krw` limits are meaningless on a USDT venue; a fraction of equity is not."""
+    cfg.risk.max_daily_loss_krw = 0.0
+    cfg.risk.max_daily_loss_pct = 0.10
+    snap = snapshot()
+    snap.positions["prsm_dpst_aset_amt"] = "3136"  # a USDT account
+    # 10% of 3,136 = 313.6; a 400 loss must breach it
+    v = gate(cfg, FakeState(snap, pnl=-400)).evaluate(buy())
+    assert not v.approved and any("daily realised loss" in r for r in v.reasons)
+    v2 = gate(cfg, FakeState(snap, pnl=-100)).evaluate(buy())
+    assert v2.approved, v2.reasons

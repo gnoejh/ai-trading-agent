@@ -223,7 +223,11 @@ risk:
   # ---------------------------------------------------------------------------
   max_order_value_krw: 0         # no per-order cap
   max_position_pct: 0            # no concentration cap
-  max_daily_loss_krw: 0          # no daily-loss breaker
+  max_daily_loss_krw: 0          # superseded by the unit-free percentage below
+  # RESTORED 2026-08-10. With full-balance sizing and an 8% stop, one bad trade
+  # costs 8% of the venue. Nothing arrested a losing streak; this does, and being
+  # a fraction of equity it works in KRW and USDT alike.
+  max_daily_loss_pct: 0.10
   max_orders_per_cycle: 0        # unlimited
   max_orders_per_day: 0          # unlimited
 
@@ -275,6 +279,17 @@ rungs:
     spacing_hurdle_multiple: 2.0
     weights: [0.3, 0.3, 0.4]
 
+info:
+  # DART (전자공시) — Korean regulatory filings, free, 20,000 calls/day.
+  # Broker data says institutions are buying; DART says what they saw.
+  dart:
+    enabled: true
+    timeout_s: 20.0
+    page_count: 50
+    corp_cache: data/dart_corp.json
+    corp_refresh_hours: 168      # weekly
+    lookback_days: 30
+
 service:
   # Restart-by-exit. NSSM restarts the process whenever it exits (AppRestartDelay
   # + three SCM recovery attempts), so the process can restart ITSELF simply by
@@ -300,7 +315,11 @@ exits:
   # The supervisor runs on its own clock, independent of the decision loop and of
   # the API budget: when the model stops, exits must not.
   check_interval_s: 30
-  stop_loss_pct: 0.03           # hard floor below entry; never widened once set
+  # Widened 2026-08-10 to match measured volatility. A 3% stop on names whose
+  # hourly swings exceed 3% is stopped out by noise before the thesis resolves --
+  # which is why every cycle declined: the trader was asked for +7.8% in 6h and
+  # correctly judged it unreachable.
+  stop_loss_pct: 0.08
   target_hurdle_multiple: 4.0   # take profit at net breakeven + 4x the round trip
   # ...but never at a worse reward:risk than this, measured from NET breakeven.
   # Without it a 3% stop against a 1.1% target needs a ~75% hit rate to break even.
@@ -309,7 +328,10 @@ exits:
   trail_give_back: 0.4          # surrender this fraction of the run when trailing
   # A position that has not cleared its hurdle in this long is paying costs to do
   # nothing. Time is a cost too.
-  max_hold_minutes: 360
+  # 72h, not 6h. BMTUSDT ran 104% low-to-high over a DAY; in any 6-hour slice most
+  # of that is chop. The backtest's only configurations that beat buy-and-hold used
+  # multi-day holds. The window must fit the move, not the other way round.
+  max_hold_minutes: 4320
   # Policy state (stop levels) is OURS and is persisted; quantities and prices are
   # always the broker's. Reconciled against broker holdings on every pass.
   state: data/exit_policy.json
@@ -371,6 +393,8 @@ agent:
     # Binance lists microcaps whose entire daily turnover is smaller than one
     # full-balance order; entering those moves the price against us.
     min_quote_volume: 500000      # USDT rolling 24h, absolute floor
+    # Only names already moving hard qualify. 20% beat 10% in every backtest window.
+    min_change_pct: 0.15
     # ...and the real floor scales with the order: an entry must stay under
     # 1/200th of the thinnest allowed name's daily turnover. Changing the balance
     # therefore moves the liquidity bar automatically.

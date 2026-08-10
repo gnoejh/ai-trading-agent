@@ -219,8 +219,15 @@ class RiskGate:
                 return
         reasons.append(f"no holding of {intent.symbol} to sell")
 
-    def _check_daily_loss(self, reasons: list[str]) -> None:
-        if not self.risk.max_daily_loss_krw or self.risk.daily_pnl is None:
+    def _daily_loss_cap(self, snap: Snapshot) -> float:
+        """Absolute loss cap for this venue, in the venue's own currency."""
+        if self.risk.max_daily_loss_pct:
+            return self._equity(snap) * self.risk.max_daily_loss_pct
+        return self.risk.max_daily_loss_krw
+
+    def _check_daily_loss(self, reasons: list[str], snap: Snapshot | None = None) -> None:
+        cap = self._daily_loss_cap(snap) if snap is not None else self.risk.max_daily_loss_krw
+        if not cap or self.risk.daily_pnl is None:
             return
         today = dt.datetime.now(dt.UTC).astimezone().strftime("%Y%m%d")
         try:
@@ -232,11 +239,8 @@ class RiskGate:
             reasons.append(f"daily P/L unreadable ({type(exc).__name__}), refusing to trade blind")
             return
         realised = _f(body.get("rlzt_pl"))
-        if realised < 0 and abs(realised) >= self.risk.max_daily_loss_krw:
-            reasons.append(
-                f"daily realised loss {abs(realised):,.0f} has reached max_daily_loss_krw "
-                f"{self.risk.max_daily_loss_krw:,.0f}"
-            )
+        if realised < 0 and abs(realised) >= cap:
+            reasons.append(f"daily realised loss {abs(realised):,.2f} has reached the cap {cap:,.2f}")
 
     def _check_rate(self, intent: TradeIntent, reasons: list[str]) -> None:
         # Churn limits bound how much NEW risk is taken. Refusing an exit because
@@ -280,7 +284,7 @@ class RiskGate:
         self._check_cash(intent, snap, reasons)
         self._check_position_cap(intent, snap, reasons)
         self._check_holding_for_sell(intent, snap, reasons)
-        self._check_daily_loss(reasons)
+        self._check_daily_loss(reasons, snap)
 
         verdict = Verdict(not reasons, intent, reasons)
         log.info("risk gate: %s", verdict)

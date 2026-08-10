@@ -249,3 +249,39 @@ a ₩1M deposit as a spectacular gain and a withdrawal as a catastrophic loss. P
 realised P&L (broker-reported) minus fees minus API spend — which is flow-invariant.
 Flows are journalled separately via `CostLedger.record_cash_flow` and are excluded from
 every P&L figure; use them only to build a time-weighted return if one is ever needed.
+
+## The reasoner returns empty content — check this before diagnosing "no trade"
+
+`deepseek-reasoner` (the `deep` tier) can spend its entire budget on reasoning and
+return **zero tokens of content**. Reproduced 2026-08-10 on a ~4,000-char prompt:
+
+    content len   :      0
+    reasoning len : 29,751     (3.6x the configured max_tokens)
+    max_tokens    :  8,192
+
+`LLMClient.ask` returns `content or ""`, `_parse` finds no JSON, one warning is
+logged, and the cycle reports **0 intents**. That is indistinguishable in the
+journal from a considered decision not to trade — so some declines attributed to
+judgment were actually truncation.
+
+An agent that silently reports "no trade" when it never received an answer is
+worse than one that errors. Empty content WITH non-empty `reasoning_content` is a
+distinct, detectable state: log it as truncation and retry on another tier, never
+fold it into a decision. `fast` (deepseek-chat) answered the same prompts cleanly
+and far cheaper; it is a serious candidate for the decide tier.
+
+## DART filing polarity — read the verb, not the noun
+
+Korean filings invert meaning on a suffix: 체결(conclude) vs 해지(terminate),
+취득(acquire) vs 처분(dispose), 결정(decide) vs 철회(withdraw). An earlier keyword
+map scored `자기주식취득신탁계약해지` — a buyback ENDING — as bullish, because it
+matched on `자기주식취득`. Inverted forms must be matched BEFORE their base forms;
+`CATALYSTS` in `trading/info/dart.py` is an ordered list for exactly that reason.
+
+Ownership filings (주식등의대량보유상황보고서, 임원ㆍ주요주주…, 최대주주변경) are
+tagged NEU and never signed: the direction is in the document body, not the title.
+A 대량보유 filing covers accumulation and disposal alike.
+
+The classification was produced by asking the trader model rather than by hand —
+it caught the 해지/체결 inversion and refused to sign the ownership classes, both
+of which a string-matching approach got wrong.

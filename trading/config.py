@@ -190,6 +190,11 @@ class RiskConfig(BaseModel):
     max_order_value_krw: float = 0.0
     max_position_pct: float = 0.0
     max_daily_loss_krw: float = 0.0
+    # Unit-free alternative. The *_krw limits are compared against whatever
+    # currency the venue reports in -- Binance answers in USDT, so a 150,000 "KRW"
+    # cap reads as $150,000 there and can never fire. A fraction of equity is
+    # correct on every venue.
+    max_daily_loss_pct: float = 0.0
     max_orders_per_cycle: int = 3
     max_orders_per_day: int = 20
     kill_switch_file: str = "data/HALT"
@@ -228,6 +233,21 @@ class RungsConfig(BaseModel):
     enabled: bool = True
     entry: EntryRungs = Field(default_factory=EntryRungs)
     exit: ExitRungs = Field(default_factory=ExitRungs)
+
+
+class DartConfig(BaseModel):
+    """Korean regulatory filings — the cause behind institutional flow."""
+
+    enabled: bool = True
+    timeout_s: float = 20.0
+    page_count: int = 50
+    corp_cache: str = "data/dart_corp.json"
+    corp_refresh_hours: float = 168.0  # weekly; the listed-company map barely moves
+    lookback_days: int = 30
+
+
+class InfoConfig(BaseModel):
+    dart: DartConfig = Field(default_factory=DartConfig)
 
 
 class ServiceConfig(BaseModel):
@@ -332,6 +352,9 @@ class ScreenConfig(BaseModel):
     # Liquidity floor for venues that list microcaps. Without it the universe
     # includes symbols whose whole daily turnover is smaller than one order.
     min_quote_volume: float = 0.0
+    # Minimum 24h move to qualify at all. The backtest was unambiguous that a
+    # strict threshold beat a loose one everywhere (20% > 10% in every window).
+    min_change_pct: float = 0.0
     # Liquidity floor expressed as a multiple of the ORDER, not as a fixed number.
     # With full-balance sizing the order grows with the account, so a fixed floor
     # silently becomes too permissive as the balance grows.
@@ -453,6 +476,7 @@ class AppConfig(BaseModel):
     exits: ExitConfig = Field(default_factory=ExitConfig)
     service: ServiceConfig = Field(default_factory=ServiceConfig)
     rungs: RungsConfig = Field(default_factory=RungsConfig)
+    info: InfoConfig = Field(default_factory=InfoConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
 
 
@@ -518,6 +542,14 @@ class BinanceSecrets(BaseSettings):
 
     def base_url(self, *, testnet: bool) -> str:
         return (self.testnet_rest_url if testnet else self.rest_url).rstrip("/")
+
+
+class DartSecrets(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
+
+    api_key: str = Field(
+        "", validation_alias=AliasChoices("OPENDART_KEY", "DART_API_KEY", "OPENDART_API_KEY")
+    )
 
 
 class LLMSecrets(BaseSettings):

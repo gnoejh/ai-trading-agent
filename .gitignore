@@ -235,3 +235,7 @@ logs/
 # 23 MB of prose covering the same API surface as KIWOOM_API.xlsx, which the spec
 # parser actually reads. Kept out of git history; the xlsx is the build input.
 KIWOOM_API.pdf
+
+# Regenerable in one API call; the flow capture is NOT ignored -- it accumulates
+# forward and cannot be recovered, which is the whole point of capturing it.
+data/dart_corp.json
