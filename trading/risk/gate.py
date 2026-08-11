@@ -86,7 +86,11 @@ def _rows(payload: dict) -> list[dict]:
 
 class RiskGate:
     def __init__(
-        self, state: AccountState, cfg: AppConfig | None = None, market: str | None = None
+        self,
+        state: AccountState,
+        cfg: AppConfig | None = None,
+        market: str | None = None,
+        pnl_provider=None,
     ):
         self.cfg = cfg or config()
         self.risk = self.cfg.risk
@@ -103,6 +107,11 @@ class RiskGate:
         base = Path(self.risk.kill_switch_file)
         self.global_halt_file = base
         self.halt_file = base.with_name(f"{base.name}.{market}") if market else base
+        # Realised P&L must come from the venue's own reporting. The previous
+        # version called risk.daily_pnl.api_id directly -- a KIWOOM id -- which
+        # raised KeyError on Binance, and the fail-closed gate then rejected
+        # EVERY Binance intent with "refusing to trade blind". Seven in a row.
+        self._pnl_provider = pnl_provider
         self._orders_today = 0
         self._orders_day: dt.date | None = None
 
@@ -225,9 +234,27 @@ class RiskGate:
             return self._equity(snap) * self.risk.max_daily_loss_pct
         return self.risk.max_daily_loss_krw
 
-    def _check_daily_loss(self, reasons: list[str], snap: Snapshot | None = None) -> None:
+    def _check_daily_loss(
+        self, intent: TradeIntent, reasons: list[str], snap: Snapshot | None = None
+    ) -> None:
+        # A breached loss cap must stop NEW risk, never trap an open position.
+        # Applying it to sells contradicts every other exemption here and would
+        # strand exactly the position that caused the breach.
+        if intent.side is Side.SELL:
+            return
         cap = self._daily_loss_cap(snap) if snap is not None else self.risk.max_daily_loss_krw
-        if not cap or self.risk.daily_pnl is None:
+        if not cap:
+            return
+        if self._pnl_provider is not None:
+            try:
+                realised = self._pnl_provider()
+            except Exception as exc:  # noqa: BLE001 - fail closed on an unreadable limit
+                reasons.append(f"daily P/L unreadable ({type(exc).__name__}), refusing to trade blind")
+                return
+            if realised is not None and realised < 0 and abs(realised) >= cap:
+                reasons.append(f"daily realised loss {abs(realised):,.2f} has reached the cap {cap:,.2f}")
+            return
+        if self.risk.daily_pnl is None:
             return
         today = dt.datetime.now(dt.UTC).astimezone().strftime("%Y%m%d")
         try:
@@ -284,7 +311,7 @@ class RiskGate:
         self._check_cash(intent, snap, reasons)
         self._check_position_cap(intent, snap, reasons)
         self._check_holding_for_sell(intent, snap, reasons)
-        self._check_daily_loss(reasons, snap)
+        self._check_daily_loss(intent, reasons, snap)
 
         verdict = Verdict(not reasons, intent, reasons)
         log.info("risk gate: %s", verdict)

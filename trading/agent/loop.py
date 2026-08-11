@@ -139,10 +139,15 @@ class TradingAgent:
         self.adapter = adapter or build_adapter(self.broker, self.acfg.market, self.cfg)
         self.market = self.adapter.market
         self.state = self.adapter.state()
-        self.gate = RiskGate(self.state, self.cfg, market=self.market)
+        self.gate = RiskGate(
+            self.state,
+            self.cfg,
+            market=self.market,
+            pnl_provider=lambda: self.adapter.realised_pnl(sorted(self._traded_symbols)),
+        )
         self.executor = self.adapter.executor(self.gate)
         self.sizer = PositionSizer(self.cfg)
-        self.supervisor = PositionSupervisor(self.state, self.cfg)
+        self.supervisor = PositionSupervisor(self.state, self.cfg, market=self.market)
         self.ledger = CostLedger(self.cfg)
         self.llm = LLMClient(self.cfg, ledger=self.ledger)
         self.journal = Journal(self.acfg.journal)
@@ -174,6 +179,8 @@ class TradingAgent:
         one call per candidate is affordable, one per listing is not.
         """
         snapshot = self.state.reconcile()
+        if hasattr(self.adapter, "normalise"):
+            self.adapter.normalise(snapshot)
         # The screen's liquidity floor scales with the order, so it needs to know
         # how large an entry would be before it decides what is liquid enough.
         order_size = self.sizer.budget(snapshot.cash)
@@ -232,7 +239,7 @@ class TradingAgent:
 
     def _trade_rules(self) -> dict:
         """The exit contract every pick is judged by, in the model's terms."""
-        ecfg = self.cfg.exits
+        ecfg = self.cfg.exits.for_market(self.market)
         hurdle = self.ledger.breakeven_move_pct(self.market)
         stop_pct = ecfg.stop_loss_pct
         # Mirrors ExitPolicy: target is the wider of the hurdle multiple and the
@@ -243,8 +250,13 @@ class TradingAgent:
             (1 + breakeven_pct) * (1 + ecfg.target_hurdle_multiple * hurdle) - 1,
             breakeven_pct + ecfg.min_reward_risk * risk_pct,
         )
+        # Break-even win rate implied by the payoff. A 0.60 floor against a 1.8:1
+        # trade demands near-certainty for a bet that pays above 36% -- which is
+        # why the trader kept declining candidates it plainly liked.
+        breakeven_wr = risk_pct / (target_pct + risk_pct) if (target_pct + risk_pct) else 0.5
         return {
             "round_trip_cost_pct": round(hurdle * 100, 3),
+            "breakeven_win_rate_pct": round(breakeven_wr * 100, 1),
             "breakeven_move_pct": round(breakeven_pct * 100, 3),
             "target_gain_pct": round(target_pct * 100, 2),
             "stop_loss_pct": round(stop_pct * 100, 2),
@@ -254,7 +266,9 @@ class TradingAgent:
             "note": (
                 f"A pick must gain {target_pct * 100:.1f}% before losing "
                 f"{stop_pct * 100:.1f}%, within {ecfg.max_hold_minutes:.0f} minutes. "
-                f"Below {breakeven_pct * 100:.2f}% it loses money even if it rises."
+                f"Below {breakeven_pct * 100:.2f}% it loses money even if it rises. "
+                f"This payoff is PROFITABLE above a {breakeven_wr * 100:.0f}% hit rate -- "
+                f"you do not need to be confident of winning, only better than that."
             ),
         }
 
@@ -406,6 +420,17 @@ class TradingAgent:
         if not result.tradable:
             self.journal.write("cycle_skipped", reason="market closed")
             return result
+
+        # Exits FIRST, and unconditionally: before the halt check, before the API
+        # budget, before the unchanged-candidates skip. An open position must be
+        # supervised on every pass.
+        #
+        # This call was silently dropped by a later edit while the comment below
+        # kept asserting it ran. Stop, target, trail and time-stop were therefore
+        # inert in production for the whole of 2026-08-11, which is the deeper
+        # cause of the TUTUSDT loss -- the entry price bug sat downstream of a stop
+        # that was never evaluated at all.
+        result.exits = self.run_exits(observation)
 
         # The kill switch stops NEW risk only; exits above have already run.
         if self.gate.halted:

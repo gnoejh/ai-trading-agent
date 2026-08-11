@@ -38,6 +38,14 @@ def policy(cfg):
     return ExitPolicy(cfg, CostLedger(cfg))
 
 
+def test_exit_policy_uses_market_hurdle(policy, cfg):
+    """Binance must not silently use the KR default fee hurdle."""
+    assert policy.hurdle == pytest.approx(CostLedger(cfg).breakeven_move_pct("KR"))
+    assert ExitPolicy(cfg, CostLedger(cfg), market="BINANCE").hurdle == pytest.approx(
+        CostLedger(cfg).breakeven_move_pct("BINANCE")
+    )
+
+
 def test_breakeven_is_above_entry_by_the_round_trip(policy):
     """Selling at entry is a loss; the policy must know that."""
     be = policy.net_breakeven(ENTRY, 10)
@@ -120,35 +128,35 @@ def sup(cfg):
 
 def test_adopts_an_unmanaged_holding(cfg):
     s = sup(cfg)
-    s.check({"005930": {"quantity": 10, "avg_price": ENTRY}}, {"005930": ENTRY})
+    s.check({"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY})
     assert "005930" in s.plans, "a position with no plan must still get a stop"
 
 
 def test_drops_plans_the_broker_no_longer_reports(cfg):
     s = sup(cfg)
-    s.check({"005930": {"quantity": 10, "avg_price": ENTRY}}, {"005930": ENTRY})
+    s.check({"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY})
     s.check({}, {})
     assert s.plans == {}, "broker is the source of truth on what exists"
 
 
 def test_follows_broker_quantity_but_keeps_the_stop(cfg):
     s = sup(cfg)
-    s.check({"005930": {"quantity": 10, "avg_price": ENTRY}}, {"005930": ENTRY})
+    s.check({"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY})
     stop = s.plans["005930"].stop
-    s.check({"005930": {"quantity": 4, "avg_price": ENTRY}}, {"005930": ENTRY})
+    s.check({"005930": {"quantity": 4, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY})
     assert s.plans["005930"].quantity == 4
     assert s.plans["005930"].stop == stop
 
 
 def test_missing_price_does_not_fabricate_a_stop_breach(cfg):
     s = sup(cfg)
-    s.check({"005930": {"quantity": 10, "avg_price": ENTRY}}, {"005930": ENTRY})
-    assert s.check({"005930": {"quantity": 10, "avg_price": ENTRY}}, {}) == []
+    s.check({"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY})
+    assert s.check({"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {}) == []
 
 
 def test_state_survives_a_restart(cfg):
     s = sup(cfg)
-    s.check({"005930": {"quantity": 10, "avg_price": ENTRY}}, {"005930": ENTRY})
+    s.check({"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY})
     stop = s.plans["005930"].stop
     revived = sup(cfg)
     assert revived.plans["005930"].stop == stop, "stops must outlive the process"
@@ -156,8 +164,8 @@ def test_state_survives_a_restart(cfg):
 
 def test_supervisor_emits_a_stop_exit(cfg):
     s = sup(cfg)
-    s.check({"005930": {"quantity": 10, "avg_price": ENTRY}}, {"005930": ENTRY})
-    signals = s.check({"005930": {"quantity": 10, "avg_price": ENTRY}}, {"005930": ENTRY * 0.9})
+    s.check({"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY})
+    signals = s.check({"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY * 0.9})
     assert len(signals) == 1 and signals[0].reason is ExitReason.STOP
 
 
@@ -176,3 +184,51 @@ def test_a_wider_stop_pushes_the_target_out_with_it(policy, cfg):
     assert wide.stop < tight.stop
     assert wide.target > tight.target
     assert policy.reward_risk(wide) >= cfg.exits.min_reward_risk - 1e-9
+
+
+def test_position_without_cost_basis_is_refused(cfg):
+    """A stop derived from the CURRENT price trails the market down and never
+    fires. TUTUSDT lost 13.7% against an 8% stop exactly this way, so a holding
+    with no real entry price is now left unmanaged and loudly logged."""
+    s = sup(cfg)
+    s.check({"005930": {"quantity": 10, "avg_price": ENTRY}}, {"005930": ENTRY})
+    assert "005930" not in s.plans
+
+
+def test_exit_state_is_per_market(cfg):
+    """Two services sharing one state file corrupted it, so no plan survived."""
+    a = PositionSupervisor(FakeState(), cfg, market="BINANCE")
+    b = PositionSupervisor(FakeState(), cfg, market="US")
+    assert a.path != b.path
+
+
+# -- wiring, not components --------------------------------------------------
+#
+# Every bug that reached production was a correct component that nothing called,
+# or called with the wrong argument. Unit tests all passed. These assert the seams.
+
+
+def test_run_exits_is_called_every_cycle(cfg, monkeypatch):
+    """`run_exits` was defined and never invoked -- stops were inert in production
+    for a full day while a comment in run_cycle asserted they had already run."""
+    import inspect
+
+    from trading.agent.loop import TradingAgent
+
+    src = inspect.getsource(TradingAgent.run_cycle)
+    assert "self.run_exits(" in src, "run_cycle must invoke run_exits"
+    # ...and before the halt check, so a halt cannot strip stop protection.
+    assert src.index("self.run_exits(") < src.index("self.gate.halted"), (
+        "exits must run BEFORE the halt check"
+    )
+
+
+def test_binance_exits_use_the_binance_hurdle(cfg):
+    """`hurdle` omitted the market and silently used the KR default, pricing every
+    Binance exit at 0.280% instead of 0.600%."""
+    from trading.risk.exits import ExitPolicy
+
+    binance = ExitPolicy(cfg, market="BINANCE").hurdle
+    kr = ExitPolicy(cfg, market="KR").hurdle
+    assert binance != kr
+    assert binance == pytest.approx(cfg.accounting.fees_for("BINANCE").round_trip_rate())

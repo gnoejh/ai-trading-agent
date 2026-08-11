@@ -18,6 +18,10 @@ from trading.config import AppConfig, LLMSecrets, TierConfig, config
 log = logging.getLogger(__name__)
 
 
+class LLMNoAnswer(RuntimeError):
+    """The model returned no content. NOT a decision -- an absent answer."""
+
+
 class LLMClient:
     def __init__(
         self,
@@ -68,6 +72,25 @@ class LLMClient:
         self._record(resp, t, tier or self.cfg.default_tier)
         return resp.choices[0].message
 
+    @staticmethod
+    def _truncated(message, choice) -> str | None:
+        """Detect an answer that never arrived, as distinct from a refusal.
+
+        A reasoning model can spend its whole budget thinking and return EMPTY
+        content: observed 29,751 reasoning tokens against an 8,192 cap. The caller
+        then sees "" and reads it as "the model declined", which in a trading loop
+        is journalled as a considered no-trade. It is not -- it is silence.
+
+        Returns a reason string when the reply is empty for a diagnosable cause.
+        """
+        if (message.content or "").strip():
+            return None
+        reasoning = getattr(message, "reasoning_content", None) or ""
+        finish = getattr(choice, "finish_reason", None)
+        if reasoning:
+            return f"empty content after {len(reasoning)} chars of reasoning (finish={finish})"
+        return f"empty content (finish={finish})"
+
     def _record(self, resp, t: TierConfig, tier: str) -> None:
         """Bill every call to the ledger. Token spend is a trading cost."""
         usage = getattr(resp, "usage", None)
@@ -90,7 +113,42 @@ class LLMClient:
             log.exception("failed to record llm usage")
 
     def ask(self, prompt: str, *, system: str | None = None, tier: str | None = None) -> str:
+        """Ask, and fall back to another tier if the reply never arrives.
+
+        Silence must never be returned as an empty answer: a caller cannot tell it
+        apart from a decision, and downstream it becomes a phantom "no trade".
+        """
         messages = ([{"role": "system", "content": system}] if system else []) + [
             {"role": "user", "content": prompt}
         ]
-        return self.complete(messages, tier=tier).content or ""
+        resp = self._client_for(self.cfg.tier(tier).provider)  # noqa: F841 - warms the client
+        primary = self.cfg.tier(tier)
+        raw = self._client_for(primary.provider).chat.completions.create(
+            model=primary.model,
+            messages=messages,
+            temperature=primary.temperature,
+            max_tokens=primary.max_tokens,
+        )
+        self._record(raw, primary, tier or self.cfg.default_tier)
+        choice = raw.choices[0]
+        problem = self._truncated(choice.message, choice)
+        if problem is None:
+            return choice.message.content or ""
+
+        fallback = self.cfg.fallback_tier
+        log.error("tier %s returned no answer: %s", tier or self.cfg.default_tier, problem)
+        if not fallback or fallback == (tier or self.cfg.default_tier):
+            raise LLMNoAnswer(f"{tier}: {problem}")
+        log.warning("retrying on %s", fallback)
+        fb = self.cfg.tier(fallback)
+        raw2 = self._client_for(fb.provider).chat.completions.create(
+            model=fb.model,
+            messages=messages,
+            temperature=fb.temperature,
+            max_tokens=fb.max_tokens,
+        )
+        self._record(raw2, fb, fallback)
+        c2 = raw2.choices[0]
+        if (p2 := self._truncated(c2.message, c2)) is not None:
+            raise LLMNoAnswer(f"{tier} and fallback {fallback} both silent: {problem} / {p2}")
+        return c2.message.content or ""

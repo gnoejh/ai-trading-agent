@@ -239,3 +239,9 @@ KIWOOM_API.pdf
 # Regenerable in one API call; the flow capture is NOT ignored -- it accumulates
 # forward and cannot be recovered, which is the whole point of capturing it.
 data/dart_corp.json
+
+# LIVE CREDENTIALS -- a Kiwoom access token valid until its expires_dt. Never commit.
+data/kiwoom_token*.json
+# Per-market exit state; runtime, and now one file per venue (a shared file was
+# corrupted by two services writing it, which is how stops stopped persisting).
+data/exit_policy*.json

@@ -19,9 +19,11 @@ Tunables come from `config.yaml`; nothing here is a magic number.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Self
 from zoneinfo import ZoneInfo
 
@@ -87,6 +89,47 @@ class KiwoomClient:
 
     # -- auth -----------------------------------------------------------------
 
+    def _token_cache_path(self) -> Path:
+        mode = "testnet" if self.kcfg.use_testnet else "mainnet"
+        return Path(self.kcfg.token_cache).with_name(f"kiwoom_token_{mode}.json")
+
+    def _load_cached_token(self) -> bool:
+        """Adopt a token another client already issued for this account.
+
+        Kiwoom issues ONE live token per app key: minting a new one silently
+        invalidates the previous holder. With a KR agent, a US agent and any ad-hoc
+        script each constructing their own client, they revoke each other and the
+        loser sees `8005 Token이 유효하지 않습니다` on its next call. Observed live
+        2026-08-11: 31 failed cycles, caused by test scripts run alongside the
+        service. Sharing the token through one file makes them cooperate.
+        """
+        path = self._token_cache_path()
+        if not path.exists():
+            return False
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            expires = dt.datetime.fromisoformat(data["expires"])
+        except (OSError, ValueError, KeyError):
+            return False
+        skew = dt.timedelta(minutes=self.kcfg.token_refresh_skew_min)
+        if dt.datetime.now(self._tz) >= expires - skew:
+            return False
+        self._token, self._token_expires = data["token"], expires
+        return True
+
+    def _save_cached_token(self) -> None:
+        path = self._token_cache_path()
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(
+                    {"token": self._token, "expires": self._token_expires.isoformat()}
+                ),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            log.warning("could not cache kiwoom token: %s", exc)
+
     def _issue_token(self) -> None:
         spec = self.store.get(TOKEN_ISSUE)
         app_key, secret_key = self.secrets.credentials(testnet=self.kcfg.use_testnet)
@@ -116,6 +159,7 @@ class KiwoomClient:
         self._token_expires = dt.datetime.strptime(data["expires_dt"], "%Y%m%d%H%M%S").replace(
             tzinfo=self._tz
         )
+        self._save_cached_token()
         log.info("kiwoom token issued, expires %s", self._token_expires)
 
     def token(self) -> str:
@@ -124,7 +168,7 @@ class KiwoomClient:
             self._token is None
             or self._token_expires is None
             or dt.datetime.now(self._tz) >= self._token_expires - skew
-        ):
+        ) and not self._load_cached_token():
             self._issue_token()
         assert self._token is not None
         return self._token
@@ -160,7 +204,14 @@ class KiwoomClient:
         r.raise_for_status()
         return r
 
-    def call(self, api_id: str, body: dict | None = None, *, next_key: str | None = None) -> Page:
+    def call(
+        self,
+        api_id: str,
+        body: dict | None = None,
+        *,
+        next_key: str | None = None,
+        _retrying: bool = False,
+    ) -> Page:
         """Validate `body` against the spec, then issue one request."""
         spec = self.store.get(api_id)
         body = body or {}
@@ -192,6 +243,12 @@ class KiwoomClient:
         data = r.json()
 
         code = str(data.get("return_code", "0"))
+        if code == "3" and "8005" in str(data.get("return_msg", "")) and not _retrying:
+            # Another client minted a token and revoked ours. Reissue and retry
+            # once; failing the whole cycle over a recoverable race is worse.
+            log.warning("%s: token revoked by another client; reissuing", api_id)
+            self._issue_token()
+            return self.call(api_id, body, next_key=next_key, _retrying=True)
         if code not in ("0", "None"):
             # Some account queries signal "no rows" with a non-zero return_code
             # rather than an empty list -- e.g. ust21050 returns 20 with

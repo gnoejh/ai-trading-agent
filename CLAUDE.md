@@ -108,6 +108,28 @@ Two structural rules, both consequences of this system's own design rather than 
    it to an exit would make a position larger than the cap impossible to close — the control would trap
    you in the very position it existed to bound.
 
+## The wiring is what breaks — not the components
+
+All four defects that reached production were **correct components that nothing called,
+or called with the wrong argument**. Every one had passing unit tests before the seam was checked.
+The fixes below were verified in code and by regression tests on 2026-08-12.
+
+- **`run_exits` is now called before the halt gate in `run_cycle()`.** Exits are evaluated on every pass
+  before new entries are considered, so stop, target, trail and time-stop can act when the market moves.
+- **`ExitPolicy.hurdle` passes the market into the ledger.** Binance exits use the Binance hurdle instead
+  of the KR default; the live reproduction was `0.2800%` vs `0.6000%`.
+- **The daily-loss cap no longer applies to sells.** A breached loss cap stops new risk, but does not trap
+  an open position that must be closed.
+- **`BinanceAdapter.holdings()` now populates `avg_price` from `cost_basis`**, not the live mark. A stop that
+  trails downward cannot fire if it is computed from the falling price on each cycle.
+
+The tests cover the seam, not only the helper in isolation. `tests/test_exits.py` checks that `run_cycle`
+invokes `run_exits` before the halt check and that Binance exits use the Binance hurdle; `tests/test_risk_gate.py`
+asserts that a breached loss cap still permits an exit; `tests/test_binance.py` asserts the cost-basis-based
+`avg_price` path.
+
+Cost of learning this: **$436 on TUTUSDT**, closed 2026-08-12 at −13.7% against an 8% stop.
+
 ## Sessions: KR then US, same process
 
 Sessions are declared per market in **the exchange's own timezone** (`agent.sessions`), so DST is

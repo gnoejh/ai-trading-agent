@@ -181,6 +181,13 @@ def test_daily_loss_limit_halts_trading(cfg):
     assert not v.approved and any("daily realised loss" in r for r in v.reasons)
 
 
+def test_daily_loss_limit_does_not_block_sells(cfg):
+    cfg.risk.max_daily_loss_krw = 500_000
+    g = gate(cfg, FakeState(snapshot(), pnl=-600_000))
+    v = g.evaluate(sell())
+    assert v.approved, v.reasons
+
+
 def test_negative_quantity_rejected(cfg):
     g = gate(cfg, FakeState(snapshot()))
     assert not g.evaluate(buy(qty=-5)).approved
@@ -299,3 +306,11 @@ def test_daily_loss_cap_as_percentage_works_in_any_currency(cfg):
     assert not v.approved and any("daily realised loss" in r for r in v.reasons)
     v2 = gate(cfg, FakeState(snap, pnl=-100)).evaluate(buy())
     assert v2.approved, v2.reasons
+
+
+def test_breached_daily_loss_still_allows_an_exit(cfg):
+    """A loss cap must stop NEW risk, never strand the position that breached it."""
+    cfg.risk.max_daily_loss_krw = 100_000
+    g = gate(cfg, FakeState(snapshot(), pnl=-500_000))
+    assert not g.evaluate(buy()).approved, "entries must be blocked"
+    assert g.evaluate(sell()).approved, "the exit must remain available"

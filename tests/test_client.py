@@ -17,12 +17,15 @@ from trading.rag.spec_store import SpecStore
 
 
 @pytest.fixture
-def cfg():
+def cfg(tmp_path):
     # Pin the trading-critical switches rather than inheriting config.yaml: these
     # tests must behave identically whether or not the live config is set to trade.
     c = load_config()
     c.broker.kiwoom.use_testnet = True
     c.broker.kiwoom.allow_orders = False
+    # Never share the production token cache: a test would adopt the live token
+    # and assert zero issuances, or worse, overwrite it.
+    c.broker.kiwoom.token_cache = str(tmp_path / "kiwoom_token.json")
     return c
 
 

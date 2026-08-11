@@ -145,7 +145,10 @@ class BinanceScreen:
             price, volume = _f(r.get("lastPrice")), _f(r.get("quoteVolume"))
             if min_price and price < min_price:
                 continue
-            if self.scfg.min_change_pct and abs(_f(r.get("priceChangePercent"))) / 100 < self.scfg.min_change_pct:
+            chg = abs(_f(r.get("priceChangePercent"))) / 100
+            if self.scfg.min_change_pct and chg < self.scfg.min_change_pct:
+                continue
+            if self.scfg.max_change_pct and chg > self.scfg.max_change_pct:
                 continue
             book = self.universe.book_of(symbol)
             floor = max(

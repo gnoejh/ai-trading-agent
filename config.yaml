@@ -24,6 +24,9 @@ broker:
     empty_result_codes: ["20"]
     retry_backoff_s: 1.0
     token_refresh_skew_min: 5  # reissue this long before expires_dt
+    # ONE token per app key -- a second client silently revokes the first, which
+    # cost 31 failed cycles on 2026-08-11 when test scripts ran beside the service.
+    token_cache: data/kiwoom_token.json
     max_pages: 20              # cont-yn/next-key follow limit per call
     allow_orders: true         # master switch; every order still passes the risk gate
     order_paths:               # URL trees that place or amend orders
@@ -143,6 +146,11 @@ llm:
   usd_krw: 1380        # for expressing API spend against KRW trading P&L
 
   default_tier: fast
+  # deepseek-reasoner can burn its entire budget on reasoning and return EMPTY
+  # content (29,751 reasoning chars against an 8,192 cap, observed 2026-08-10).
+  # 36% of decisions came back blank and were journalled as considered no-trades.
+  # Fall back to a non-reasoning model rather than let silence look like a choice.
+  fallback_tier: fast
   tiers:
     fast:
       provider: deepseek
@@ -153,7 +161,9 @@ llm:
       provider: deepseek
       model: deepseek-reasoner
       temperature: 0.0
-      max_tokens: 8192
+      # Reasoning tokens count against this. 8192 was far too low -- reasoning
+      # alone ran ~30k and left nothing for the answer.
+      max_tokens: 32768
     escalation:
       provider: qwen
       # qwen3-max is the strongest model this key can reach, and unlike qwen-max it
@@ -161,7 +171,10 @@ llm:
       model: qwen3-max
       temperature: 0.0
       max_tokens: 8192
-  timeout_s: 60.0
+  # A reasoning model with a 32k budget generates for a long time before emitting
+  # anything. 60s cut it off mid-answer and surfaced as APITimeoutError -- the
+  # truncation fix traded one silent failure for a noisy one.
+  timeout_s: 240.0
   max_retries: 2
 
 accounting:
@@ -339,6 +352,23 @@ exits:
   # kill switch becomes a trap that locks you into a losing position.
   exits_allowed_under_halt: true
 
+  # Per venue. Volatility does not transfer: a 72h/+17.8% brief is ordinary on
+  # crypto and unreachable on META or ORCL, which is why the US trader kept
+  # answering "would need another 16.4% in 72 hours" and declining.
+  markets:
+    US:
+      stop_loss_pct: 0.025        # US large caps; 8% is several days of range
+      min_reward_risk: 1.8
+      max_hold_minutes: 2880      # 2 trading days
+    KR:
+      stop_loss_pct: 0.04
+      min_reward_risk: 2.0
+      max_hold_minutes: 2880
+    BINANCE:
+      stop_loss_pct: 0.08         # crypto: 104% intraday ranges are real
+      min_reward_risk: 2.0
+      max_hold_minutes: 4320
+
 agent:
   enabled: true
   market: KR
@@ -395,6 +425,7 @@ agent:
     min_quote_volume: 500000      # USDT rolling 24h, absolute floor
     # Only names already moving hard qualify. 20% beat 10% in every backtest window.
     min_change_pct: 0.15
+    max_change_pct: 0.60          # above this the move is spent, not startingm
     # ...and the real floor scales with the order: an entry must stay under
     # 1/200th of the thinnest allowed name's daily turnover. Changing the balance
     # therefore moves the liquidity bar automatically.
@@ -425,6 +456,11 @@ agent:
       rankers: []                 # ticker/24hr covers both screens in one call
     US:
       min_price: 1                # USD -- NOT 1000; a KRW floor excludes every US stock
+      # US has no flow data in the Kiwoom catalog, so the screen is momentum-only
+      # here. Bounding it on BOTH sides is the only defence against handing the
+      # trader names that have already run 100%+ and have nothing left.
+      min_change_pct: 0.02
+      max_change_pct: 0.25
       # stk_tp "1" restricts to 주식. The default (0:전체) mixes in ETFs and
       # sector indices (SPY, QQQ) that are not in the tradable universe and are
       # silently dropped later, wasting screen slots.
@@ -460,4 +496,7 @@ agent:
   tiers:
     decide: deep          # tier that proposes intents
     escalate_on_low_confidence: escalation
-    confidence_floor: 0.6
+    # Was 0.6 -- an arbitrary round number that demanded near-certainty for trades
+    # profitable above a ~35% hit rate. Set just above the payoff's break-even so
+    # the floor screens out genuine coin flips, not positive-expectancy bets.
+    confidence_floor: 0.45

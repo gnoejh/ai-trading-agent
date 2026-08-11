@@ -213,6 +213,11 @@ class Screen:
                 price = _f(row.get("cur_prc"))
                 if min_price and price and abs(price) < min_price:
                     continue
+                chg = abs(_f(row.get("flu_rt"))) / 100
+                if market_screen.min_change_pct and chg and chg < market_screen.min_change_pct:
+                    continue
+                if market_screen.max_change_pct and chg > market_screen.max_change_pct:
+                    continue
                 entry = scored.setdefault(
                     code,
                     {

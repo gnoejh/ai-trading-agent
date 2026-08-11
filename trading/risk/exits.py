@@ -87,7 +87,7 @@ class ExitSignal:
     detail: str = ""
 
     def __str__(self) -> str:
-        return f"EXIT {self.symbol} x{self.quantity:g} [{self.reason}] @ {self.price:,.0f} — {self.detail}"
+        return f"EXIT {self.symbol} x{self.quantity:g} [{self.reason}] @ {self.price:,.6g} — {self.detail}"
 
 
 @dataclass(slots=True)
@@ -98,15 +98,22 @@ class ExitState:
 class ExitPolicy:
     """Turns the cost model into concrete price levels."""
 
-    def __init__(self, cfg: AppConfig | None = None, ledger: CostLedger | None = None):
+    def __init__(self, cfg: AppConfig | None = None, ledger: CostLedger | None = None,
+                 market: str | None = None):
         self.cfg = cfg or config()
-        self.ecfg = self.cfg.exits
+        self.market = market
+        self.ecfg = self.cfg.exits.for_market(market)
         self.ledger = ledger or CostLedger(self.cfg)
 
     @property
     def hurdle(self) -> float:
-        """Round-trip cost as a fraction of notional — the minimum honest gain."""
-        return self.ledger.breakeven_move_pct()
+        """Round-trip cost as a fraction of notional — the minimum honest gain.
+
+        MUST pass the market. Omitting it fell back to the KR default and priced
+        every Binance exit at 0.280% instead of 0.600%, setting targets less than
+        half as far away as the venue actually costs.
+        """
+        return self.ledger.breakeven_move_pct(self.market)
 
     def net_breakeven(self, entry_price: float, quantity: float, api_share: float = 0.0) -> float:
         """The price at which this position is genuinely flat, not nominally flat."""
@@ -181,7 +188,7 @@ class ExitPolicy:
                 plan.quantity,
                 ExitReason.STOP,
                 price,
-                f"price {price:,.0f} at or below stop {plan.stop:,.0f}",
+                f"price {price:,.6g} at or below stop {plan.stop:,.6g}",
             )
 
         if price >= plan.target:
@@ -190,7 +197,7 @@ class ExitPolicy:
                 plan.quantity,
                 ExitReason.TARGET,
                 price,
-                f"target {plan.target:,.0f} reached (net breakeven {plan.net_breakeven:,.0f})",
+                f"target {plan.target:,.6g} reached (net breakeven {plan.net_breakeven:,.6g})",
             )
 
         try:
@@ -204,7 +211,7 @@ class ExitPolicy:
                 plan.quantity,
                 ExitReason.TIME,
                 price,
-                f"held {held_min:.0f}m without clearing {plan.net_breakeven:,.0f}",
+                f"held {held_min:.0f}m without clearing {plan.net_breakeven:,.6g}",
             )
         return None
 
@@ -217,12 +224,19 @@ class PositionSupervisor:
         state_reader,
         cfg: AppConfig | None = None,
         policy: ExitPolicy | None = None,
+        market: str | None = None,
     ):
         self.cfg = cfg or config()
-        self.ecfg = self.cfg.exits
+        self.market = market
+        self.ecfg = self.cfg.exits.for_market(market)
         self.state = state_reader
-        self.policy = policy or ExitPolicy(self.cfg)
-        self.path = Path(self.ecfg.state)
+        self.policy = policy or ExitPolicy(self.cfg, market=market)
+        # PER MARKET. Both services wrote one shared file, which corrupted it --
+        # so no plan ever persisted, every position was re-adopted from scratch,
+        # and the stop was recomputed from the FALLING price each cycle. An 8%
+        # stop that trails downward can never fire. TUTUSDT lost 13.7% this way.
+        base = Path(self.ecfg.state)
+        self.path = base.with_name(f"{base.stem}_{market or 'default'}{base.suffix}")
         self.plans: dict[str, ExitPlan] = {}
         self.load()
 
@@ -269,9 +283,17 @@ class PositionSupervisor:
                 continue
             plan = self.plans.get(symbol)
             if plan is None:
-                entry = float(row.get("avg_price") or row.get("price") or 0)
+                # `cost_basis` is the REAL average paid, from the broker's fills.
+                # `avg_price` may be the current price on venues that report only
+                # balances -- adopting at that would recreate the trailing-stop bug.
+                entry = float(row.get("cost_basis") or 0)
                 if entry <= 0:
-                    log.warning("cannot plan exits for %s: no entry price from broker", symbol)
+                    log.error(
+                        "%s: no cost basis; refusing to manage. Close it manually or "
+                        "supply the entry price -- a stop derived from the current "
+                        "price cannot protect anything.",
+                        symbol,
+                    )
                     continue
                 self.plans[symbol] = self.policy.plan_for(symbol, entry, qty)
                 log.warning(

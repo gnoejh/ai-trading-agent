@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 import httpx
 import pytest
 
@@ -134,6 +136,25 @@ def test_unknown_market_falls_back_to_default_fees(cfg, tmp_path):
     assert ledger.breakeven_move_pct("NOSUCH") == pytest.approx(
         cfg.accounting.fees.round_trip_rate()
     )
+
+
+def test_binance_holdings_use_cost_basis_for_avg_price(cfg):
+    from trading.brokers.adapters import BinanceAdapter
+    from trading.brokers.kiwoom.account import Snapshot
+
+    adapter = BinanceAdapter("CRYPTO", cfg)
+    snapshot = Snapshot(
+        market="CRYPTO",
+        taken_at=dt.datetime.now(dt.UTC),
+        positions={"rows": [{"stk_cd": "BTCUSDT", "rmnd_qty": 1.0, "cur_prc": 100.0}]},
+        cash={"entr": 5000},
+        open_orders={},
+        evaluation={},
+    )
+    adapter._state.cost_basis = lambda symbol: 95.0
+    holdings = adapter.holdings(snapshot)
+    assert holdings["BTCUSDT"]["avg_price"] == pytest.approx(95.0)
+    assert holdings["BTCUSDT"]["cost_basis"] == pytest.approx(95.0)
 
 
 # -- execution ---------------------------------------------------------------

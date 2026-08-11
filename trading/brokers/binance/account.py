@@ -109,6 +109,31 @@ class BinanceAccountState:
         wanted = set(symbols)
         return {r["symbol"]: _f(r.get("price")) for r in rows if r.get("symbol") in wanted}
 
+    def cost_basis(self, symbol: str) -> float:
+        """Average price actually paid, reconstructed from the broker's fills.
+
+        A Binance balance read reports quantity, never what it cost. Using the
+        current price as a stand-in makes any stop derived from it trail the
+        market down and never fire.
+        """
+        try:
+            rows = self.client.call("my_trades", {"symbol": symbol, "limit": 200}).body.get(
+                "rows", []
+            )
+        except Exception as exc:  # noqa: BLE001 - absence is reported, never guessed
+            log.warning("cost basis unavailable for %s: %s", symbol, exc)
+            return 0.0
+        qty = quote = 0.0
+        # Walk newest-first and accumulate only the buys that make up the CURRENT
+        # position; earlier round trips are already closed and would skew the mean.
+        for t in reversed(rows):
+            if not t.get("isBuyer"):
+                qty = quote = 0.0
+                continue
+            qty += _f(t.get("qty"))
+            quote += _f(t.get("quoteQty"))
+        return quote / qty if qty > 0 else 0.0
+
     def open_orders(self) -> dict:
         return {"rows": self.client.call("open_orders").body.get("rows", [])}
 

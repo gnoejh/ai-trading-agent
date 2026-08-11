@@ -28,6 +28,8 @@ class OrderRejected(RuntimeError):
 
 
 class OrderExecutor:
+    """Sends Kiwoom orders. Required fields come from the parsed spec per market."""
+
     def __init__(
         self,
         client: KiwoomClient,
@@ -43,17 +45,39 @@ class OrderExecutor:
         self.orders = market_cfg.orders
         self.exchange = market_cfg.exchange
         self.dry_run = self.cfg.agent.dry_run if dry_run is None else dry_run
+        self._universe = None
 
     def _body(self, intent: TradeIntent) -> dict:
+        spec = self.client.store.get(
+            self.orders.buy if intent.side is Side.BUY else self.orders.sell
+        )
+        required = set(spec.required_body())
         body = {
-            "dmst_stex_tp": self.exchange,
             "stk_cd": intent.symbol,
             "ord_qty": str(intent.quantity),
             "trde_tp": TRADE_TYPE_LIMIT if intent.limit_price is not None else TRADE_TYPE_MARKET,
         }
+        # KR orders take 국내거래소구분; US orders take 거래소구분 with the listing's
+        # own venue. Sending the KR field to ust20000 failed two valid US trades
+        # (SNDK, HTZ) with "missing required field(s) stex_tp".
+        if "dmst_stex_tp" in required:
+            body["dmst_stex_tp"] = self.exchange
+        if "stex_tp" in required:
+            body["stex_tp"] = self.us_exchange_of(intent.symbol)
+        for field in ("ord_dvsn", "ord_cnd"):
+            if field in required and field not in body:
+                body[field] = "0"
         if intent.limit_price is not None:
             body["ord_uv"] = str(int(intent.limit_price))
         return body
+
+    def us_exchange_of(self, symbol: str) -> str:
+        """The listing's own exchange (NY/ND/NA), which US orders require."""
+        if self._universe is None:
+            from trading.agent.universe import Universe
+
+            self._universe = Universe(self.client, self.cfg)
+        return self._universe.exchange_of(symbol) or "%"
 
     def execute(self, verdict: Verdict) -> dict:
         """Transmit an approved order. Rejects anything the gate did not approve."""

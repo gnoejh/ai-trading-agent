@@ -72,6 +72,35 @@ class KiwoomAdapter:
     def state(self):
         return self._state
 
+    def normalise(self, snap):
+        """Give the US snapshot the canonical field names the gate and sizer read.
+
+        The KR and US endpoints answer with entirely different vocabularies --
+        KR: prsm_dpst_aset_amt / entr / rmnd_qty / pur_pric
+        US: tot_evlt_amt      / d0_usd_fx_entr / qty / frgn_stk_book_uv
+        Reading KR names off a US response yielded equity 0 and cash 0, so the
+        gate rejected every buy as "equity unavailable" and the sizer produced
+        quantity 0. Silent, and it would have looked like "no opportunities".
+        """
+        if self.market != "US":
+            return snap
+        pos, cash = snap.positions, snap.cash
+        holdings = _rows(pos)
+        equity = _num(pos.get("tot_evlt_amt"))
+        # d0_usd_fx_entr is the settled USD deposit; the won fields are irrelevant
+        # to a USD-denominated order.
+        usd_cash = _num(cash.get("d0_usd_fx_entr"))
+        pos.setdefault("prsm_dpst_aset_amt", equity + usd_cash)
+        cash.setdefault("ord_alow_amt", usd_cash)
+        cash.setdefault("entr", usd_cash)
+        for row in holdings:
+            # sell_alowq is what may actually be sold today; qty can include
+            # unsettled buys that the venue will reject on a sell.
+            row.setdefault("rmnd_qty", row.get("sell_alowq") or row.get("poss_qty") or row.get("qty"))
+            row.setdefault("pur_pric", row.get("frgn_stk_book_uv"))
+            row.setdefault("stk_nm", row.get("frgn_stk_nm"))
+        return snap
+
     def executor(self, gate):
         return OrderExecutor(self.client, gate, self.cfg)
 
@@ -107,15 +136,14 @@ class KiwoomAdapter:
         return None  # KRX trades whole shares; no per-symbol quantisation
 
     def holdings(self, snapshot) -> dict[str, dict]:
+        self.normalise(snapshot)
         out = {}
         for row in _rows(snapshot.positions):
             code = str(row.get("stk_cd", "")).lstrip("A")
             qty = _num(row.get("rmnd_qty") or row.get("hldg_qty"))
             if code and qty > 0:
-                out[code] = {
-                    "quantity": qty,
-                    "avg_price": abs(_num(row.get("pur_pric") or row.get("avg_prc"))),
-                }
+                basis = abs(_num(row.get("pur_pric") or row.get("avg_prc")))
+                out[code] = {"quantity": qty, "avg_price": basis, "cost_basis": basis}
         return out
 
     def fee_market(self, symbol: str) -> str:
@@ -176,10 +204,16 @@ class BinanceAdapter:
             symbol = row.get("stk_cd")
             qty = _num(row.get("rmnd_qty"))
             if symbol and qty > 0:
-                # avg_price is unknown from a balance read; the supervisor adopts
-                # at the current price, which is honest for an inherited position
-                # and irrelevant for one this system opened (it sets its own plan).
-                out[symbol] = {"quantity": qty, "avg_price": _num(row.get("cur_prc"))}
+                cost_basis = self._state.cost_basis(symbol)
+                out[symbol] = {
+                    "quantity": qty,
+                    # The stop is built from actual fill basis, never the current
+                    # mark, otherwise a trailing stop will chase the falling price
+                    # and never fire.
+                    "avg_price": cost_basis,
+                    # The only value an exit plan may use as entry.
+                    "cost_basis": cost_basis,
+                }
         return out
 
     def fee_market(self, symbol: str) -> str:

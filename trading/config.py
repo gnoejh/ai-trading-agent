@@ -72,6 +72,9 @@ class KiwoomConfig(BaseModel):
     empty_result_codes: list[str] = Field(default_factory=list)
     retry_backoff_s: float = 1.0
     token_refresh_skew_min: int = 5
+    # Kiwoom issues ONE live token per app key; a second client revokes the first.
+    # Shared through this file so every client and script cooperates.
+    token_cache: str = "data/kiwoom_token.json"
     max_pages: int = 20
     allow_orders: bool = False
     order_paths: list[str] = Field(default_factory=list)
@@ -147,6 +150,9 @@ class LLMConfig(BaseModel):
     pricing: dict[str, TokenPrice] = Field(default_factory=dict)
     usd_krw: float = 1380.0
     default_tier: str = "fast"
+    # Used when a tier returns no content at all. Must be a NON-reasoning model:
+    # the failure mode being recovered from is a reasoning budget overrun.
+    fallback_tier: str = "fast"
     tiers: dict[str, TierConfig] = Field(default_factory=dict)
     timeout_s: float = 60.0
     max_retries: int = 2
@@ -257,6 +263,15 @@ class ServiceConfig(BaseModel):
     graceful_exit_log: str = "graceful restart requested"
 
 
+class MarketExits(BaseModel):
+    """Per-venue exit levels. Volatility is not portable between venues."""
+
+    stop_loss_pct: float | None = None
+    target_hurdle_multiple: float | None = None
+    min_reward_risk: float | None = None
+    max_hold_minutes: float | None = None
+
+
 class ExitConfig(BaseModel):
     """Exit levels expressed as multiples of the round-trip cost hurdle."""
 
@@ -270,6 +285,20 @@ class ExitConfig(BaseModel):
     max_hold_minutes: float = 360.0
     state: str = "data/exit_policy.json"
     exits_allowed_under_halt: bool = True
+    # A 17.8% target in 72h is routine on crypto and impossible on a US large cap.
+    # Applying one set of levels everywhere made the mandate unreachable on the
+    # calmer venues, and the trader correctly declined every cycle because of it.
+    markets: dict[str, MarketExits] = Field(default_factory=dict)
+
+    def for_market(self, market: str | None) -> ExitConfig:
+        """This config with any per-venue overrides applied."""
+        over = self.markets.get(str(market)) if market else None
+        if over is None:
+            return self
+        merged = self.model_copy(deep=True)
+        for field, value in over.model_dump(exclude_none=True).items():
+            setattr(merged, field, value)
+        return merged
 
 
 class Session(BaseModel):
@@ -339,6 +368,8 @@ class Ranker(BaseModel):
 
 class ScreenMarket(BaseModel):
     rankers: list[Ranker] = Field(default_factory=list)
+    min_change_pct: float = 0.0
+    max_change_pct: float = 0.0
     # Per market: prices are in the venue's own currency, so one shared floor
     # would be 1,000 KRW in Seoul and $1,000 in New York.
     min_price: float = 0.0
@@ -355,6 +386,10 @@ class ScreenConfig(BaseModel):
     # Minimum 24h move to qualify at all. The backtest was unambiguous that a
     # strict threshold beat a loose one everywhere (20% > 10% in every window).
     min_change_pct: float = 0.0
+    # Upper bound too. Ranking on |change| alone selects for EXHAUSTION -- it
+    # surfaces the top of a +172% day, which the trader then correctly refuses as
+    # "already extremely extended". A move must be live, not finished.
+    max_change_pct: float = 0.0
     # Liquidity floor expressed as a multiple of the ORDER, not as a fixed number.
     # With full-balance sizing the order grows with the account, so a fixed floor
     # silently becomes too permissive as the balance grows.
