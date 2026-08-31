@@ -21,7 +21,7 @@ import logging
 
 from trading.brokers.binance.client import BinanceClient
 from trading.brokers.binance.symbols import SymbolRules
-from trading.brokers.kiwoom.account import Snapshot, StaleStateError
+from trading.brokers.state import Snapshot, StaleStateError
 from trading.config import AppConfig, config
 from trading.risk.gate import Side, Verdict
 
@@ -36,7 +36,7 @@ def _f(value) -> float:
 
 
 class BinanceAccountState:
-    """Broker-backed account state. No setters, same contract as the Kiwoom one."""
+    """Broker-backed account state. No setters, by design."""
 
     def __init__(self, client: BinanceClient, universe, cfg: AppConfig | None = None):
         self.cfg = cfg or config()
@@ -124,14 +124,25 @@ class BinanceAccountState:
             log.warning("cost basis unavailable for %s: %s", symbol, exc)
             return 0.0
         qty = quote = 0.0
-        # Walk newest-first and accumulate only the buys that make up the CURRENT
-        # position; earlier round trips are already closed and would skew the mean.
-        for t in reversed(rows):
-            if not t.get("isBuyer"):
-                qty = quote = 0.0
+        # Oldest-first moving-average book. Sells reduce the position at its
+        # average cost; a sell larger than the tracked position (seed units no
+        # fill ever paid for) just flattens it. This survives both event orders
+        # that broke simpler walks: sell-then-rebuy — the previous newest-first
+        # walk RESET on the older sell and wiped the rebuy's basis to 0, so the
+        # position was refused management and held with no stop (observed live
+        # 2026-08-31 on TUTUSDT) — and partial scale-outs, where any walk that
+        # stops at the first sell would zero a merely-trimmed position.
+        for t in rows:
+            q = _f(t.get("qty"))
+            if t.get("isBuyer"):
+                qty += q
+                quote += _f(t.get("quoteQty"))
                 continue
-            qty += _f(t.get("qty"))
-            quote += _f(t.get("quoteQty"))
+            if qty <= 0:
+                continue
+            take = min(q, qty)
+            quote -= take * (quote / qty)
+            qty -= take
         return quote / qty if qty > 0 else 0.0
 
     def open_orders(self) -> dict:
@@ -210,7 +221,7 @@ class BinanceExecutor:
 
     def execute(self, verdict: Verdict) -> dict:
         if not verdict.approved:
-            from trading.brokers.kiwoom.orders import OrderRejected
+            from trading.brokers.state import OrderRejected
 
             raise OrderRejected(str(verdict))
 

@@ -98,8 +98,12 @@ class ExitState:
 class ExitPolicy:
     """Turns the cost model into concrete price levels."""
 
-    def __init__(self, cfg: AppConfig | None = None, ledger: CostLedger | None = None,
-                 market: str | None = None):
+    def __init__(
+        self,
+        cfg: AppConfig | None = None,
+        ledger: CostLedger | None = None,
+        market: str | None = None,
+    ):
         self.cfg = cfg or config()
         self.market = market
         self.ecfg = self.cfg.exits.for_market(market)
@@ -216,6 +220,16 @@ class ExitPolicy:
         return None
 
 
+def exit_state_path(cfg: AppConfig, market: str | None) -> Path:
+    """Where one market's exit plans persist.
+
+    Shared by the supervisor that writes the file and the status reporters that
+    read it, so the two can never derive different paths.
+    """
+    base = Path(cfg.exits.for_market(market).state)
+    return base.with_name(f"{base.stem}_{market or 'default'}{base.suffix}")
+
+
 class PositionSupervisor:
     """Watches broker holdings and emits exit signals. Never calls a model."""
 
@@ -225,6 +239,7 @@ class PositionSupervisor:
         cfg: AppConfig | None = None,
         policy: ExitPolicy | None = None,
         market: str | None = None,
+        is_dust=None,
     ):
         self.cfg = cfg or config()
         self.market = market
@@ -235,9 +250,20 @@ class PositionSupervisor:
         # so no plan ever persisted, every position was re-adopted from scratch,
         # and the stop was recomputed from the FALLING price each cycle. An 8%
         # stop that trails downward can never fire. TUTUSDT lost 13.7% this way.
-        base = Path(self.ecfg.state)
-        self.path = base.with_name(f"{base.stem}_{market or 'default'}{base.suffix}")
+        self.path = exit_state_path(self.cfg, market)
         self.plans: dict[str, ExitPlan] = {}
+        # Holdings refused for want of a cost basis, so the refusal is logged
+        # when the set CHANGES rather than on every pass -- the testnet seeds
+        # ~480 such balances, which was 482 error lines per cycle.
+        self._refused: set[str] = set()
+        # Venue-aware dust test injected by the loop: (symbol, qty, price) ->
+        # True when that holding cannot form a valid order. The supervisor
+        # knows nothing about lot rules, but it must not keep a plan alive for
+        # a position that can never be sold: a quantized exit left 0.34 PROM
+        # (~$2, under the $5 minNotional) and its stop refired every cycle
+        # forever, each order refused (observed live 2026-08-31).
+        self.is_dust = is_dust
+        self._dust: set[str] = set()
         self.load()
 
     # -- persistence ----------------------------------------------------------
@@ -264,40 +290,45 @@ class PositionSupervisor:
 
     # -- reconciliation -------------------------------------------------------
 
-    def reconcile(self, holdings: dict[str, dict]) -> None:
+    def reconcile(self, holdings: dict[str, dict], prices: dict[str, float] | None = None) -> None:
         """Align plans with what the broker actually reports.
 
         Broker records are the source of truth for existence and quantity. A plan
         for a position the broker no longer reports is dropped; a holding with no
         plan is adopted with a fresh one, so a position opened by hand — or
-        inherited on restart — is still protected.
+        inherited on restart — is still protected. A holding that cannot form a
+        valid order (dust) is never adopted: a plan that can only ever emit
+        refused orders protects nothing and alarms forever.
         """
+        prices = prices or {}
         for symbol in list(self.plans):
             if symbol not in holdings:
                 log.info("exit plan for %s dropped: broker reports no position", symbol)
                 del self.plans[symbol]
 
+        refused: set[str] = set()
+        dust: set[str] = set()
         for symbol, row in holdings.items():
             qty = float(row.get("quantity", 0) or 0)
             if qty <= 0:
                 continue
             plan = self.plans.get(symbol)
             if plan is None:
+                price = float(prices.get(symbol) or 0)
+                if self.is_dust and price > 0 and self.is_dust(symbol, qty, price):
+                    dust.add(symbol)
+                    continue
                 # `cost_basis` is the REAL average paid, from the broker's fills.
                 # `avg_price` may be the current price on venues that report only
                 # balances -- adopting at that would recreate the trailing-stop bug.
                 entry = float(row.get("cost_basis") or 0)
                 if entry <= 0:
-                    log.error(
-                        "%s: no cost basis; refusing to manage. Close it manually or "
-                        "supply the entry price -- a stop derived from the current "
-                        "price cannot protect anything.",
-                        symbol,
-                    )
+                    refused.add(symbol)
                     continue
                 self.plans[symbol] = self.policy.plan_for(symbol, entry, qty)
+                # %g, not %.0f: sub-cent crypto stops render as "0" otherwise.
                 log.warning(
-                    "adopted unmanaged position %s x%g; stop %.0f",
+                    "adopted unmanaged position %s x%g; stop %g",
                     symbol,
                     qty,
                     self.plans[symbol].stop,
@@ -307,26 +338,57 @@ class PositionSupervisor:
                 log.info("%s quantity %g -> %g (broker)", symbol, plan.quantity, qty)
                 plan.quantity = qty
 
+        if refused and refused != self._refused:
+            shown = ", ".join(sorted(refused)[:8]) + ("…" if len(refused) > 8 else "")
+            log.warning(
+                "%d holding(s) with no cost basis left unmanaged (%s). Close them "
+                "manually or supply the entry price -- a stop derived from the "
+                "current price cannot protect anything.",
+                len(refused),
+                shown,
+            )
+        self._refused = refused
+        if dust and dust != self._dust:
+            log.info(
+                "%d dust holding(s) below the venue minimum left unmanaged (%s)",
+                len(dust),
+                ", ".join(sorted(dust)[:8]),
+            )
+        self._dust = dust
+
     # -- the pass -------------------------------------------------------------
 
     def check(self, holdings: dict[str, dict], prices: dict[str, float]) -> list[ExitSignal]:
         """One supervision pass. Returns exits that should be sent now."""
         if not self.ecfg.enabled:
             return []
-        self.reconcile(holdings)
+        self.reconcile(holdings, prices)
 
         signals: list[ExitSignal] = []
-        for symbol, plan in self.plans.items():
+        for symbol, plan in list(self.plans.items()):
             price = prices.get(symbol)
             if price is None or price <= 0:
                 # No price means no judgement. Do not guess a stop breach.
                 log.warning("no price for %s; exit checks skipped this pass", symbol)
                 continue
 
+            if self.is_dust and self.is_dust(symbol, plan.quantity, price):
+                # A quantized exit sold the bulk and left a remainder no valid
+                # order can carry. The plan is done: keep it and its stop fires
+                # every cycle into a refused order, forever.
+                log.warning(
+                    "%s x%g is dust (cannot form a valid order); plan closed, "
+                    "remainder stays as an unmanaged balance",
+                    symbol,
+                    plan.quantity,
+                )
+                del self.plans[symbol]
+                continue
+
             plan.high_water = max(plan.high_water, price)
             trail = self.policy.trail_stop_for(plan, price)
             if trail is not None and plan.tighten_stop(trail):
-                log.info("%s trailing stop raised to %.0f", symbol, plan.stop)
+                log.info("%s trailing stop raised to %g", symbol, plan.stop)
 
             signal = self.policy.evaluate(plan, price)
             if signal:

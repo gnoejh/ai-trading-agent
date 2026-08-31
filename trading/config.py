@@ -10,7 +10,6 @@ from __future__ import annotations
 import datetime as dt
 import functools
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import yaml
 from pydantic import AliasChoices, BaseModel, Field
@@ -20,78 +19,6 @@ CONFIG_PATH = Path("config.yaml")
 
 
 # -- config.yaml ------------------------------------------------------------
-
-
-class Endpoint(BaseModel):
-    """An API id plus the spec-required discriminators for calling it."""
-
-    api_id: str
-    params: dict[str, str] = Field(default_factory=dict)
-
-    def body(self, **overrides) -> dict:
-        return {**self.params, **{k: v for k, v in overrides.items() if v is not None}}
-
-
-class StateEndpoints(BaseModel):
-    """Broker endpoints that answer account-state questions.
-
-    Broker records are the single source of truth, so these are the only
-    sanctioned way to learn positions, cash or open orders.
-    """
-
-    positions: Endpoint
-    cash: Endpoint
-    open_orders: Endpoint
-    fills: Endpoint
-    evaluation: Endpoint
-
-
-class OrderEndpoints(BaseModel):
-    buy: str
-    sell: str
-    modify: str
-    cancel: str
-
-
-class MarketConfig(BaseModel):
-    url_prefix: str
-    # 국내거래소구분 sent on every order: KRX, NXT or SOR.
-    exchange: str = "KRX"
-    state: StateEndpoints
-    orders: OrderEndpoints
-
-
-class KiwoomConfig(BaseModel):
-    use_testnet: bool = True
-    timezone: str = "Asia/Seoul"
-    timeout_s: float = 10.0
-    min_call_interval_s: float = 0.0
-    max_retries_429: int = 3
-    # Non-zero return codes that mean "query matched nothing", not "call failed".
-    # Applied to reads only; never to order endpoints.
-    empty_result_codes: list[str] = Field(default_factory=list)
-    retry_backoff_s: float = 1.0
-    token_refresh_skew_min: int = 5
-    # Kiwoom issues ONE live token per app key; a second client revokes the first.
-    # Shared through this file so every client and script cooperates.
-    token_cache: str = "data/kiwoom_token.json"
-    max_pages: int = 20
-    allow_orders: bool = False
-    order_paths: list[str] = Field(default_factory=list)
-    markets: dict[str, MarketConfig] = Field(default_factory=dict)
-
-    def market(self, market: str) -> MarketConfig:
-        try:
-            return self.markets[str(market)]
-        except KeyError:
-            raise KeyError(
-                f"no config for market {market!r}; known: {sorted(self.markets)}"
-            ) from None
-
-
-class SpecsConfig(BaseModel):
-    workbook: str = "KIWOOM_API.xlsx"
-    index: str = "data/specs/kiwoom.json"
 
 
 class StateConfig(BaseModel):
@@ -112,14 +39,21 @@ class ProviderConfig(BaseModel):
 
 
 class TokenPrice(BaseModel):
-    """USD per 1,000,000 tokens."""
+    """Price per 1,000,000 tokens, in `currency`.
+
+    DeepSeek publishes separate USD and CNY lists at a fixed internal ratio
+    (~6.82) that is NOT the market rate, and this account is billed in CNY —
+    so CNY-billed models must be priced from the CNY list, not converted USD.
+    """
 
     input: float = 0.0
     output: float = 0.0
+    currency: str = "USD"  # USD | CNY
 
 
 class FeeConfig(BaseModel):
     commission_rate: float = 0.0
+    # Kept for venues that tax sells (KR did); Binance books leave it at zero.
     sell_tax_rate: float = 0.0
     slippage_bps: float = 0.0
 
@@ -149,6 +83,9 @@ class LLMConfig(BaseModel):
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
     pricing: dict[str, TokenPrice] = Field(default_factory=dict)
     usd_krw: float = 1380.0
+    # Market rate for converting CNY-priced calls; the KRW the ledger reports is
+    # native CNY / usd_cny * usd_krw, i.e. what the bill actually costs in won.
+    usd_cny: float = 7.15
     default_tier: str = "fast"
     # Used when a tier returns no content at all. Must be a NON-reasoning model:
     # the failure mode being recovered from is a reasoning budget overrun.
@@ -184,7 +121,7 @@ class TelegramConfig(BaseModel):
     # venue they steal each other's updates (409 Conflict) and a /halt can reach
     # the wrong agent -- or none. Exactly one service owns the command surface;
     # the others send only.
-    command_owner: str = "kiwoom"
+    command_owner: str = "binance"
 
 
 class NotifyConfig(BaseModel):
@@ -204,7 +141,6 @@ class RiskConfig(BaseModel):
     max_orders_per_cycle: int = 3
     max_orders_per_day: int = 20
     kill_switch_file: str = "data/HALT"
-    daily_pnl: Endpoint | None = None
 
 
 class SizingConfig(BaseModel):
@@ -239,21 +175,6 @@ class RungsConfig(BaseModel):
     enabled: bool = True
     entry: EntryRungs = Field(default_factory=EntryRungs)
     exit: ExitRungs = Field(default_factory=ExitRungs)
-
-
-class DartConfig(BaseModel):
-    """Korean regulatory filings — the cause behind institutional flow."""
-
-    enabled: bool = True
-    timeout_s: float = 20.0
-    page_count: int = 50
-    corp_cache: str = "data/dart_corp.json"
-    corp_refresh_hours: float = 168.0  # weekly; the listed-company map barely moves
-    lookback_days: int = 30
-
-
-class InfoConfig(BaseModel):
-    dart: DartConfig = Field(default_factory=DartConfig)
 
 
 class ServiceConfig(BaseModel):
@@ -301,77 +222,16 @@ class ExitConfig(BaseModel):
         return merged
 
 
-class Session(BaseModel):
-    """Trading hours in the exchange's own timezone, so DST resolves correctly."""
-
-    timezone: str
-    open: str
-    close: str
-
-    def is_open(self, now: dt.datetime | None = None, *, weekends: bool = False) -> bool:
-        local = (now or dt.datetime.now(dt.UTC)).astimezone(ZoneInfo(self.timezone))
-        if not weekends and local.weekday() >= 5:
-            return False
-        return dt.time.fromisoformat(self.open) <= local.time() <= dt.time.fromisoformat(self.close)
-
-    def next_open(self, now: dt.datetime | None = None) -> dt.datetime:
-        tz = ZoneInfo(self.timezone)
-        local = (now or dt.datetime.now(dt.UTC)).astimezone(tz)
-        opens = dt.time.fromisoformat(self.open)
-        candidate = local.replace(hour=opens.hour, minute=opens.minute, second=0, microsecond=0)
-        if candidate <= local:
-            candidate += dt.timedelta(days=1)
-        while candidate.weekday() >= 5:
-            candidate += dt.timedelta(days=1)
-        return candidate
-
-
 class AgentTiers(BaseModel):
     decide: str = "deep"
     escalate_on_low_confidence: str = "escalation"
     confidence_floor: float = 0.6
 
 
-class UniverseMarket(BaseModel):
-    list: Endpoint
-    segments: dict[str, list[str]] = Field(default_factory=dict)
-    # Field names differ per market: KR reports the venue as `marketName`, US as
-    # `mkgb`, so the filters are told which key to read rather than guessing.
-    market_name_field: str = "marketName"
-    exchange_field: str = ""
-    etf_field: str = ""
-    exclude_etf: bool = False
-    include_market_names: list[str] = Field(default_factory=list)
-    require_audit_normal: bool = False
-    exclude_states: list[str] = Field(default_factory=list)
-
-
-class UniverseConfig(BaseModel):
-    """The tradable list comes from the broker, never from a hand-kept file."""
-
-    refresh_hours: float = 12.0
-    cache: str = "data/universe"
-    KR: UniverseMarket | None = None
-    US: UniverseMarket | None = None
-
-    def market(self, name: str) -> UniverseMarket:
-        m = getattr(self, str(name), None)
-        if m is None:
-            raise KeyError(f"no universe config for market {name!r}")
-        return m
-
-
-class Ranker(BaseModel):
-    api_id: str
-    params: dict[str, str] = Field(default_factory=dict)
-
-
 class ScreenMarket(BaseModel):
-    rankers: list[Ranker] = Field(default_factory=list)
     min_change_pct: float = 0.0
     max_change_pct: float = 0.0
-    # Per market: prices are in the venue's own currency, so one shared floor
-    # would be 1,000 KRW in Seoul and $1,000 in New York.
+    # Per market so a venue can set a floor in its own currency.
     min_price: float = 0.0
 
 
@@ -405,49 +265,22 @@ class ScreenConfig(BaseModel):
     flow_interval: str = "1d"
     flow_lookback: int = 5
     flow_pool_per_book: int = 30
-    KR: ScreenMarket | None = None
-    US: ScreenMarket | None = None
     BINANCE: ScreenMarket | None = None
-
-    def market(self, name: str) -> ScreenMarket:
-        m = getattr(self, str(name), None)
-        if m is None:
-            raise KeyError(f"no screen config for market {name!r}")
-        return m
 
 
 class AgentConfig(BaseModel):
     enabled: bool = True
-    market: str = "KR"
+    market: str = "BINANCE"
     dry_run: bool = True
     loop_interval_s: float = 900.0
     skip_decide_if_unchanged: bool = True
     journal: str = "data/journal.jsonl"
-    universe: UniverseConfig = Field(default_factory=UniverseConfig)
     screen: ScreenConfig = Field(default_factory=ScreenConfig)
-    sessions: dict[str, Session] = Field(default_factory=dict)
-    always_open: list[str] = Field(default_factory=list)
-    trade_on_weekends: bool = False
+    always_open: list[str] = Field(default_factory=lambda: ["BINANCE"])
 
     def is_open(self, market: str, now: dt.datetime | None = None) -> bool:
-        """Crypto never closes; equities follow their exchange's own clock."""
-        if str(market) in self.always_open:
-            return True
-        session = self.sessions.get(str(market))
-        return bool(session and session.is_open(now, weekends=self.trade_on_weekends))
-
-    def open_market(self, now: dt.datetime | None = None) -> str | None:
-        """Which market is currently trading, if any."""
-        for name in self.sessions:
-            if self.is_open(name, now):
-                return name
-        return self.always_open[0] if self.always_open else None
-
-    quotes: dict[str, dict[str, Endpoint]] = Field(default_factory=dict)
-
-    def quotes_for(self, market: str) -> dict[str, Endpoint]:
-        """Quote endpoints differ per market: ka10001 (KR) vs usa20100 (US)."""
-        return self.quotes.get(str(market), {})
+        """Crypto never closes; a market not in always_open never trades."""
+        return str(market) in self.always_open
 
     tiers: AgentTiers = Field(default_factory=AgentTiers)
 
@@ -471,6 +304,8 @@ class BinanceMarket(BaseModel):
 
 class BinanceConfig(BaseModel):
     use_testnet: bool = False
+    # Operator's local timezone: cycle stamps and daily rollovers render in it.
+    timezone: str = "Asia/Seoul"
     timeout_s: float = 15.0
     recv_window_ms: int = 5000
     min_call_interval_s: float = 0.1
@@ -495,12 +330,46 @@ class BinanceConfig(BaseModel):
 
 
 class BrokerConfig(BaseModel):
-    kiwoom: KiwoomConfig = Field(default_factory=KiwoomConfig)
     binance: BinanceConfig = Field(default_factory=BinanceConfig)
 
 
+class ExploreConfig(BaseModel):
+    """The random exploration arm — ε in an explore/exploit split.
+
+    Random entries fill the experience corpus with ground truth the model arm
+    cannot provide: they sample the TRADABLE universe (liquidity and lot rules
+    apply; the screen's strategy bounds deliberately do not), so the screen's
+    own thresholds stay falsifiable. `entry_pct` is meant to be decayed by the
+    operator toward `floor_pct`, never to zero: without a live random arm,
+    model-vs-chance stops being measurable.
+    """
+
+    enabled: bool = False
+    entry_pct: float = 0.5  # probability per cycle of attempting random entries
+    floor_pct: float = 0.15  # documented floor for manual decay; not enforced in code
+    max_positions: int = 4  # cap on concurrently open random-arm entries
+    entries_per_cycle: int = 1  # entries attempted per cycle once the pct roll passes
+    seed: int = 0  # 0 = OS entropy; set for a reproducible sequence
+
+
+class ScoreConfig(BaseModel):
+    """Offline outcome scoring that fills `experience` — the RAG build step."""
+
+    enabled: bool = True
+    horizon_minutes: int = 4320  # forward-return horizon; matches max_hold
+    interval_minutes: int = 60  # how often the in-service scorer pass runs
+    min_bucket_n: int = 10  # buckets below this never render into a prompt
+    max_opens_per_run: int = 150  # spreads the initial universe sweep's kline calls
+    observations: str = "data/observations.jsonl"
+    experience: str = "data/experience.json"
+    # Ledger trades at or after this date (ISO) count as closed-trade outcomes;
+    # empty = all. Exists because the ledger spans epochs (live mainnet KR, then
+    # testnet) and closed-trade stats must not mix them.
+    trade_since: str = ""
+    trade_markets: list[str] = Field(default_factory=lambda: ["CRYPTO", "BSTOCKS", "BINANCE"])
+
+
 class AppConfig(BaseModel):
-    specs: SpecsConfig = Field(default_factory=SpecsConfig)
     broker: BrokerConfig = Field(default_factory=BrokerConfig)
     state: StateConfig = Field(default_factory=StateConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
@@ -511,8 +380,9 @@ class AppConfig(BaseModel):
     exits: ExitConfig = Field(default_factory=ExitConfig)
     service: ServiceConfig = Field(default_factory=ServiceConfig)
     rungs: RungsConfig = Field(default_factory=RungsConfig)
-    info: InfoConfig = Field(default_factory=InfoConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
+    explore: ExploreConfig = Field(default_factory=ExploreConfig)
+    score: ScoreConfig = Field(default_factory=ScoreConfig)
 
 
 def load_config(path: str | Path = CONFIG_PATH) -> AppConfig:
@@ -527,21 +397,6 @@ def config() -> AppConfig:
 
 
 # -- .env (secrets only) ----------------------------------------------------
-
-
-class KiwoomSecrets(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
-
-    app_key: str = Field("", alias="KIWOOM_APP_KEY")
-    secret_key: str = Field("", alias="KIWOOM_SECRET_KEY")
-    testnet_app_key: str = Field("", alias="KIWOOM_TESTNET_APP_KEY")
-    testnet_secret_key: str = Field("", alias="KIWOOM_TESTNET_SECRET_KEY")
-    account_no: str = Field("", alias="MAINNET_ACCOUNT_NO")
-
-    def credentials(self, *, testnet: bool) -> tuple[str, str]:
-        if testnet:
-            return self.testnet_app_key, self.testnet_secret_key
-        return self.app_key, self.secret_key
 
 
 class TelegramSecrets(BaseSettings):
@@ -577,14 +432,6 @@ class BinanceSecrets(BaseSettings):
 
     def base_url(self, *, testnet: bool) -> str:
         return (self.testnet_rest_url if testnet else self.rest_url).rstrip("/")
-
-
-class DartSecrets(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", case_sensitive=False)
-
-    api_key: str = Field(
-        "", validation_alias=AliasChoices("OPENDART_KEY", "DART_API_KEY", "OPENDART_API_KEY")
-    )
 
 
 class LLMSecrets(BaseSettings):

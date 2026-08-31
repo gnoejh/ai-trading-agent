@@ -2,99 +2,27 @@
 # Secrets live in .env and are never mirrored here. Code should read values from
 # this file rather than hardcoding them; see trading/config.py.
 
-specs:
-  workbook: KIWOOM_API.xlsx
-  index: data/specs/kiwoom.json
-
 broker:
-  kiwoom:
-    # LIVE ACCOUNT. Set false deliberately on 2026-08-10 because the 모의투자 keys
-    # in .env fail authentication (8001); mainnet is the only working credential.
-    # Restore to true as soon as valid testnet keys are reissued.
-    use_testnet: false
-    timezone: Asia/Seoul       # broker-issued timestamps (e.g. token expires_dt) are KST
-    timeout_s: 10.0
-    # Kiwoom returns HTTP 429 when polled too fast; observed while quoting 25
-    # candidates back to back. Minimum spacing between REST calls, in seconds.
-    min_call_interval_s: 0.25
-    max_retries_429: 3
-    # Kiwoom answers some account queries with a non-zero return_code when the
-    # query simply matched nothing (ust21050 -> 20 "미체결내역이 없습니다").
-    # Tolerated on reads only; an order endpoint is never reinterpreted.
-    empty_result_codes: ["20"]
-    retry_backoff_s: 1.0
-    token_refresh_skew_min: 5  # reissue this long before expires_dt
-    # ONE token per app key -- a second client silently revokes the first, which
-    # cost 31 failed cycles on 2026-08-11 when test scripts ran beside the service.
-    token_cache: data/kiwoom_token.json
-    max_pages: 20              # cont-yn/next-key follow limit per call
-    allow_orders: true         # master switch; every order still passes the risk gate
-    order_paths:               # URL trees that place or amend orders
-      - /api/dostk/ordr
-      - /api/us/ordr
-
-    # Kiwoom exposes KR and US as separate API surfaces. Each market binds its own
-    # endpoints; nothing is shared but the host and the OAuth token.
-    markets:
-      KR:
-        url_prefix: /api/dostk
-        exchange: KRX              # 국내거래소구분 on every order (KRX/NXT/SOR)
-        # Broker records are the single source of truth for account state.
-        # These are the only endpoints allowed to answer "what do we hold?".
-        # `params` are the spec-required query discriminators, kept here so the
-        # meaning of a state read is configuration rather than a literal in code.
-        state:
-          positions:                       # 계좌평가잔고내역요청
-            api_id: kt00018
-            params: {qry_tp: "1", dmst_stex_tp: "KRX"}   # 1:합산
-          cash:                            # 예수금상세현황요청
-            api_id: kt00001
-            params: {qry_tp: "2"}                        # 2:일반조회
-          open_orders:                     # 미체결요청
-            api_id: ka10075
-            params: {all_stk_tp: "0", trde_tp: "0", stex_tp: "0"}  # 전체/통합
-          fills:                           # 체결요청
-            api_id: ka10076
-            params: {qry_tp: "0", sell_tp: "0", stex_tp: "0"}
-          evaluation:                      # 계좌평가현황요청
-            api_id: kt00004
-            params: {qry_tp: "0", dmst_stex_tp: "KRX"}
-        orders:
-          buy: kt10000
-          sell: kt10001
-          modify: kt10002
-          cancel: kt10003
-      US:
-        url_prefix: /api/us
-        exchange: KRX
-        state:
-          positions:   {api_id: ust21070}  # 미국주식 원장잔고확인
-          cash:        {api_id: ust21160}  # 미국주식 예수금 상세
-          open_orders: {api_id: ust21050}  # 미국주식 원장 미체결
-          fills:       {api_id: ust21510}  # 미국주식 당일 주문체결 확인
-          evaluation:  {api_id: ust21121}  # 해외증권 원장 평가금액현황
-        orders:
-          buy: ust20000
-          sell: ust20001
-          modify: ust20002
-          cancel: ust20003
-
   binance:
-    # Spot MAINNET. Two books share one connection and ONE USDT balance, so a
+    # Spot TESTNET since 2026-08-30 (revival: learn on fake money, real data).
+    # use_testnet routes only SIGNED traffic (account, orders) to the testnet
+    # host; unsigned market data always reads from mainnet, because the
+    # testnet's bot-seeded books would feed the flow screen noise. Testnet
+    # balances reset periodically -- a discontinuous equity jump is a reset,
+    # not P&L. Two books share one connection and ONE USDT balance, so a
     # crypto entry and a bStocks entry compete for the same cash -- sizing must
     # never assume a book owns the balance.
-    use_testnet: false
+    use_testnet: true
+    timezone: Asia/Seoul         # operator-local time for cycle stamps and reports
     timeout_s: 15.0
     recv_window_ms: 5000
     min_call_interval_s: 0.1     # well inside the 1200 weight/min budget
     retry_backoff_s: 2.0
-    # LIVE at owner instruction 2026-08-10, after the full path was verified in
-    # dry run: universe -> screen -> model -> size -> gate APPROVED, stopping at
-    # the wire. Approved orders now transmit.
+    # Orders authorized on TESTNET at owner instruction 2026-08-30 ("by testnet,
+    # you can trade in my account"). They transmit to testnet.binance.vision.
     allow_orders: true
 
-    # Logical name -> REST call. Same config-driven pattern as Kiwoom's api_id,
-    # so Universe/Screen/AccountState work against either venue unchanged.
+    # Logical name -> REST call, so an endpoint change is a config edit.
     endpoints:
       exchange_info: {path: /api/v3/exchangeInfo}
       ticker_24hr:   {path: /api/v3/ticker/24hr}
@@ -136,14 +64,28 @@ llm:
       # International keys use https://dashscope-intl.aliyuncs.com/compatible-mode/v1
       base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
 
-  # USD per 1,000,000 tokens. VERIFY against the providers' current pricing pages;
-  # these are estimates and every break-even number depends on them.
+  # Price per 1,000,000 tokens in the entry's `currency`, PEAK cache-miss
+  # rates, verified 2026-08-30. THIS ACCOUNT IS BILLED IN CNY, and DeepSeek's
+  # CNY list (api-docs.deepseek.com/zh-cn/quick_start/pricing) uses a fixed
+  # ~6.82 internal ratio to the USD list -- NOT the market rate -- so the
+  # DeepSeek models are priced from the CNY list and converted at usd_cny.
+  # Deliberately worst-case: off-peak (all hours outside Mon-Fri 09:00-12:00 and
+  # 14:00-18:00 Beijing time) is 50% off and cache hits bill ~3% of the miss
+  # rate, so real spend runs BELOW what the ledger reports.
   pricing:
-    deepseek-chat:     {input: 0.27, output: 1.10}
-    deepseek-reasoner: {input: 0.55, output: 2.19}
+    deepseek-v4-flash: {input: 3.00, output: 9.00,  currency: CNY}
+    deepseek-v4-pro:   {input: 9.00, output: 27.00, currency: CNY}
+    # Legacy aliases -- gone from the docs since the V4 lineup but still
+    # answering (verified 2026-08-30). Kept so a tier rollback bills nonzero
+    # rather than silently free.
+    deepseek-chat:     {input: 2.00, output: 8.00,  currency: CNY}
+    deepseek-reasoner: {input: 4.00, output: 16.00, currency: CNY}
     qwen3-max:         {input: 1.20, output: 6.00}
     qwen-plus:         {input: 0.40, output: 1.20}
   usd_krw: 1380        # for expressing API spend against KRW trading P&L
+  # Market USD/CNY. KRW for a CNY-priced call = CNY / usd_cny * usd_krw
+  # (~193 KRW per CNY at these rates). Verify alongside usd_krw when either moves.
+  usd_cny: 7.15
 
   default_tier: fast
   # deepseek-reasoner can burn its entire budget on reasoning and return EMPTY
@@ -151,26 +93,31 @@ llm:
   # 36% of decisions came back blank and were journalled as considered no-trades.
   # Fall back to a non-reasoning model rather than let silence look like a choice.
   fallback_tier: fast
+  # V4 model ids since 2026-08-30: the docs stopped listing deepseek-chat /
+  # deepseek-reasoner, and an undocumented alias bills at an undocumented rate.
+  # Both V4 models support reasoning, so max_tokens stays generous everywhere --
+  # reasoning tokens count against it, and 8192 once ate an entire answer.
   tiers:
     fast:
       provider: deepseek
-      model: deepseek-chat
+      model: deepseek-v4-flash
       temperature: 0.0
-      max_tokens: 2048
+      # 32k, not 8k: v4-flash REASONS by default and burned 26,899 chars of
+      # reasoning into an 8,192 cap -- empty content, finish=length, no decision
+      # (observed 2026-08-31, the same trap the old reasoner tier fell into).
+      max_tokens: 32768
     deep:
       provider: deepseek
-      model: deepseek-reasoner
+      model: deepseek-v4-pro
       temperature: 0.0
-      # Reasoning tokens count against this. 8192 was far too low -- reasoning
-      # alone ran ~30k and left nothing for the answer.
       max_tokens: 32768
     escalation:
-      provider: qwen
-      # qwen3-max is the strongest model this key can reach, and unlike qwen-max it
-      # also works on the account's workspace endpoint (see .env lines 60-65).
-      model: qwen3-max
+      # DeepSeek-only since 2026-08-30 (owner constraint). Escalation means
+      # "think harder on the same provider", currently identical to deep.
+      provider: deepseek
+      model: deepseek-v4-pro
       temperature: 0.0
-      max_tokens: 8192
+      max_tokens: 32768
   # A reasoning model with a 32k budget generates for a long time before emitting
   # anything. 60s cut it off mid-answer and surfaced as APITimeoutError -- the
   # truncation fix traded one silent failure for a noisy one.
@@ -187,23 +134,18 @@ accounting:
   # a 60s loop would cost ~36,000 KRW/day = 15.7%/month before any trade — so the
   # budget is enforced, not advisory: the agent stops deciding when it is spent.
   max_api_krw_per_day: 2000
+  # Default when a ledger row's market has no entry below. Matches the worse
+  # Binance book so an unknown market can never understate its hurdle.
   fees:
-    # KR equities. Verify current rates: the 거래세/농특세 rate changes by budget年度.
-    commission_rate: 0.00015   # 0.015% per side, typical online rate
-    sell_tax_rate: 0.0015      # 0.15% on sell proceeds only
-    slippage_bps: 5            # assumed execution slippage per side, in bps
-  # Per venue. The KR sell tax has no Binance equivalent, so the hurdle a trade
-  # must clear differs by book -- 0.28% in Seoul, 0.25% on Binance.
+    commission_rate: 0.001     # 0.1% per side (spot maker AND taker)
+    sell_tax_rate: 0.0
+    slippage_bps: 20
+  # Per book. Binance spot: 0.1% maker AND taker per side (confirmed from the
+  # live account's commissionRates), no transaction tax. Crypto spreads are
+  # wider than large caps, so slippage is assumed higher. The agent spans both
+  # books, so the hurdle it quotes to the model is the WORSE of them (BINANCE):
+  # quoting the cheaper one would understate the bar a bStocks pick must clear.
   market_fees:
-    KR:      {commission_rate: 0.00015, sell_tax_rate: 0.0015, slippage_bps: 5}
-    US:      {commission_rate: 0.00015, sell_tax_rate: 0.0,    slippage_bps: 5}
-    # Binance spot: 0.1% maker AND taker per side (confirmed from the live
-    # account's commissionRates), no transaction tax. Crypto spreads are wider
-    # than KRX blue chips, so slippage is assumed higher.
-    # The agent spans both Binance books, so the hurdle it quotes to the model is
-    # the WORSE of them. Quoting the cheaper one would understate the bar a bStocks
-    # pick has to clear -- and the fallback to the KR default did exactly that
-    # (0.28% shown where 0.60% applied) until this entry existed.
     BINANCE: {commission_rate: 0.001,   sell_tax_rate: 0.0,    slippage_bps: 20}
     CRYPTO:  {commission_rate: 0.001,   sell_tax_rate: 0.0,    slippage_bps: 15}
     BSTOCKS: {commission_rate: 0.001,   sell_tax_rate: 0.0,    slippage_bps: 20}
@@ -224,7 +166,8 @@ notify:
     # getUpdates consumer per token; two services polling produced 409 Conflict
     # and non-deterministic command delivery (observed 2026-08-10). All services
     # still SEND alerts -- only receiving is exclusive.
-    command_owner: kiwoom
+    # binance since 2026-08-30; the only broker since 2026-09-01.
+    command_owner: binance
 
 risk:
   # ---------------------------------------------------------------------------
@@ -252,24 +195,68 @@ risk:
   # is held. These catch defects, not market moves.
   enabled: true
   kill_switch_file: data/HALT    # presence of this file blocks new entries
-  daily_pnl:
-    api_id: ka10074
 
 sizing:
-  # Full-balance deployment: commit everything to the position, at owner
-  # instruction 2026-08-10.
-  mode: full_balance             # full_balance | fixed_fraction
-  fraction: 1.0                  # of orderable cash (fixed_fraction mode)
-  # 주문가능금액 is what can actually be spent TODAY. KR equities settle T+2, so
-  # 추정예탁자산 includes unsettled sale proceeds that cannot fund an order yet --
-  # sizing against it would produce orders the broker rejects.
+  # EXPLORATION PHASE (owner instruction 2026-08-30): small fixed fractions,
+  # several concurrent positions. Five 4% positions produce five resolved
+  # trades in the time one all-in produces one -- on testnet, sample count is
+  # the scarce resource, not capital. Small orders also lower the liquidity
+  # bar (min_volume_multiple_of_order scales with the order), which widens the
+  # tradable universe the random arm samples from. Was full_balance/1.0.
+  mode: fixed_fraction           # full_balance | fixed_fraction
+  # FILL SPRINT 2026-08-31 (owner instruction): the testnet resets tomorrow and
+  # open positions die unresolved, so today optimises for CLOSED round trips --
+  # smaller entries, more slots, short holds. Was 0.04 / 6.
+  # 5% of REMAINING cash: ~$500 first entries, still ~$150+ at fifteen open
+  # positions (owner: enough positions, but not small ones).
+  fraction: 0.05                 # of orderable cash (fixed_fraction mode)
+  # Orderable cash is what can actually be spent TODAY, never the marked equity.
   cash_field: ord_alow_amt
   cash_fallback_field: entr
   # Held back from every order. A market order that prices up between sizing and
   # fill is rejected outright if the balance is committed to the last won.
   reserve_pct: 0.005
-  max_positions: 1               # all-in means one name at a time
-  lot_size: 1                    # KRX trades in single shares
+  # 0 = unlimited (owner: the testnet balance is free). What actually bounds
+  # concurrency is cash and the $5 minNotional: fraction sizes each entry off
+  # REMAINING free cash, so entries shrink as positions stack and the sizer
+  # refuses when a rung would fall under the venue minimum. Restore 6 after
+  # the reset.
+  max_positions: 0
+  lot_size: 1                    # Binance quantises per symbol; this is a floor only
+
+explore:
+  # The random exploration arm. Fills the experience corpus with ground truth
+  # the model arm cannot: random entries sample the TRADABLE universe
+  # (liquidity, lot rules and the stablecoin exclusion still apply; the
+  # screen's momentum/flow bounds deliberately do NOT, or the screen's own
+  # thresholds could never be falsified). Costs no model tokens. Decay
+  # entry_pct toward floor_pct by hand as the corpus fills -- never to zero,
+  # or model-vs-chance stops being measurable.
+  enabled: true
+  entry_pct: 1.0                 # fill sprint: attempt entries EVERY cycle (was 0.5)
+  floor_pct: 0.15                # documented decay floor (manual)
+  max_positions: 30              # concurrently open random-arm entries (was 4)
+  entries_per_cycle: 5           # fill sprint: batch entries (restore 1 after reset)
+  seed: 20260830                 # reproducible sequence; 0 = OS entropy
+
+score:
+  # The offline scorer -- the RAG build step. Joins journaled decisions and
+  # universe snapshots to forward mainnet returns, aggregates into
+  # sample-gated buckets, and writes the experience store the decide prompt
+  # reads. Runs inside the service between cycles; also runnable standalone:
+  #   uv run python -m trading.agent.scorer
+  enabled: true
+  horizon_minutes: 4320          # forward-return horizon = max_hold
+  interval_minutes: 60
+  min_bucket_n: 10               # below this a bucket never reaches the prompt
+  max_opens_per_run: 150         # spreads the first universe sweep's kline calls
+  observations: data/observations.jsonl
+  experience: data/experience.json
+  # Closed-trade outcomes only count from the testnet epoch onward -- the
+  # ledger also holds the live mainnet era, and mixing epochs is exactly the
+  # kind of false signal the scorer exists to prevent.
+  trade_since: "2026-08-30"
+  trade_markets: [CRYPTO, BSTOCKS, BINANCE]
 
 rungs:
   # Ladder in and out instead of committing everything at one price. Fees are
@@ -291,17 +278,6 @@ rungs:
     first_hurdle_multiple: 2.0
     spacing_hurdle_multiple: 2.0
     weights: [0.3, 0.3, 0.4]
-
-info:
-  # DART (전자공시) — Korean regulatory filings, free, 20,000 calls/day.
-  # Broker data says institutions are buying; DART says what they saw.
-  dart:
-    enabled: true
-    timeout_s: 20.0
-    page_count: 50
-    corp_cache: data/dart_corp.json
-    corp_refresh_hours: 168      # weekly
-    lookback_days: 30
 
 service:
   # Restart-by-exit. NSSM restarts the process whenever it exits (AppRestartDelay
@@ -352,71 +328,38 @@ exits:
   # kill switch becomes a trap that locks you into a losing position.
   exits_allowed_under_halt: true
 
-  # Per venue. Volatility does not transfer: a 72h/+17.8% brief is ordinary on
-  # crypto and unreachable on META or ORCL, which is why the US trader kept
-  # answering "would need another 16.4% in 72 hours" and declining.
+  # Per venue: volatility does not transfer, so levels are set where they apply.
   markets:
-    US:
-      stop_loss_pct: 0.025        # US large caps; 8% is several days of range
-      min_reward_risk: 1.8
-      max_hold_minutes: 2880      # 2 trading days
-    KR:
-      stop_loss_pct: 0.04
-      min_reward_risk: 2.0
-      max_hold_minutes: 2880
     BINANCE:
-      stop_loss_pct: 0.08         # crypto: 104% intraday ranges are real
+      # FILL SPRINT 2026-08-31: a round trip only fills the corpus when it
+      # CLOSES, and the testnet reset tomorrow kills anything still open --
+      # so holds are short and the time-stop is the main closer. Restore
+      # 0.08 / 4320 after the reset for the real measurement regime.
+      stop_loss_pct: 0.05
       min_reward_risk: 2.0
-      max_hold_minutes: 4320
+      max_hold_minutes: 180
 
 agent:
   enabled: true
-  market: KR
-  # LIVE at owner instruction 2026-08-10. The earlier collision with ai-alpha-arena
-  # is resolved: its nssm service was removed and its KR book liquidated flat, so
-  # this system owns the account alone. Set true to stop trading while keeping the
-  # observe/decide/journal pipeline running.
+  market: BINANCE
+  # Set true to stop trading while keeping the observe/decide/journal pipeline
+  # running.
   dry_run: false
-  # 15 min. At the measured ~47 KRW/cycle this is ~2,350 KRW/day (~1%/month of
-  # equity) instead of the ~36,000 KRW/day a 60s loop would cost. Shorten only if
-  # a measured edge justifies the spend.
-  loop_interval_s: 900
+  # FILL SPRINT 2026-08-31: 5 min, so the explore arm (which costs no tokens)
+  # can cycle entries fast before the testnet reset. Model spend stays capped
+  # by max_api_krw_per_day regardless of cadence -- deciding stops when the
+  # budget is spent, exploring does not. Restore 900 after the reset.
+  loop_interval_s: 300
   # Skip the model entirely when the screen output has not materially changed --
   # re-deciding on an identical candidate set buys nothing and costs tokens.
   skip_decide_if_unchanged: true
   journal: data/journal.jsonl     # append-only decision record; audit, not state
 
-  # The universe is the whole market (~2,650 KR / ~6,673 US), fetched from the
-  # broker -- never a hand-maintained list. That is far too many to price or to
-  # put in a prompt, so each cycle runs a deterministic funnel:
-  #   full universe -> broker ranking screens -> top N candidates -> model
+  # The universe is the whole market, fetched from the broker -- never a
+  # hand-maintained list. That is far too many to price or to put in a prompt,
+  # so each cycle runs a deterministic funnel:
+  #   full universe -> ranking screens -> top N candidates -> model
   # The model only ever sees `candidates`; the screens decide what it may consider.
-  universe:
-    refresh_hours: 12             # re-fetch the tradable list this often
-    cache: data/universe          # parquet/json cache dir
-    KR:
-      list: {api_id: ka10099}     # 종목정보 리스트, one call per market segment
-      segments: {mrkt_tp: ["0", "10"]}   # 0 코스피, 10 코스닥
-      # ka10099 returns 4,293 rows: 거래소 917 + 코스닥 1,820 common stocks, plus
-      # ETF 1,160 / ETN 361 / 리츠 23 which are different instruments, not equities.
-      include_market_names: ["거래소", "코스닥"]
-      require_audit_normal: true  # auditInfo == 정상 drops 거래정지/관리종목/단기과열
-      exclude_states: ["거래정지", "정리매매"]
-    US:
-      # stex_tp is REQUIRED: %:전체, NA:AMEX, ND:NASDAQ, NY:NYSE.
-      # Without it the call 400s and the universe silently comes back empty.
-      list: {api_id: usa10099, params: {stex_tp: "%"}}   # 미국주식 종목리스트
-      segments: {}
-      # 18,986 rows: 11,146 ETFs and 842 PINK SHEET (OTC) among them. Filtering to
-      # exchange-listed common stock leaves 6,998 -- the tradable US universe.
-      market_name_field: mkgb
-      exchange_field: stex_tp
-      etf_field: isEtf
-      exclude_etf: true
-      include_market_names: ["NYSE", "NASDAQ", "AMEX"]
-      require_audit_normal: false
-      exclude_states: []
-
   screen:
     candidates: 25                # how many symbols reach the model
     min_price: 0                  # fallback only; each market sets its own below
@@ -431,11 +374,25 @@ agent:
     # therefore moves the liquidity bar automatically.
     min_volume_multiple_of_order: 200
     # Stablecoins rank top by volume and never move. Excluded by base asset.
-    exclude_assets: [USDC, USD1, FDUSD, TUSD, DAI, BUSD, USDP, EURI, AEUR, XUSD]
+    # BFUSD/USDE/USDS/RLUSD/FRAX added 2026-08-31 after the random arm bought
+    # BFUSD -- a yield-bearing stable is still a stable, and a 3h hold in one
+    # is a slot spent measuring nothing.
+    exclude_assets: [USDC, USD1, FDUSD, TUSD, DAI, BUSD, USDP, EURI, AEUR, XUSD,
+                     BFUSD, USDE, USDS, RLUSD, FRAX]
     # Crypto is ~100x deeper than bStocks, so ranking them together gives bStocks
     # zero slots. Each book competes only against itself.
+    # Verified 2026-08-30: the testnet DOES list bStocks pairs (NVDABUSDT quoted
+    # live), so both books trade there. Caveat: quantisation filters come from
+    # mainnet exchangeInfo (data plane); a testnet filter mismatch surfaces as a
+    # BinanceError at order time, not silently.
     book_slots:            {CRYPTO: 18, BSTOCKS: 7}
-    book_min_quote_volume: {CRYPTO: 5000000, BSTOCKS: 500000}
+    # Recalibrated 2026-08-30 for fixed-fraction sizing: the old floors
+    # (CRYPTO 5M / BSTOCKS 500k) were sized against full-balance orders. A 4%
+    # position needs ~200x its own notional, which min_volume_multiple_of_order
+    # already enforces dynamically; these absolute floors only exclude names
+    # whose books are too thin to trust at ANY size. The change also widens the
+    # universe sweep the scorer observes -- the corpus fills ~5x faster.
+    book_min_quote_volume: {CRYPTO: 1000000, BSTOCKS: 100000}
     # Rank by ORDER FLOW rather than price change. Measured on 1,000 daily bars,
     # 10 majors: top decile of 5-day taker-buy share -> +1.58% over the next 5
     # days vs +0.53% bottom decile (spread +1.05%, ~2x the round trip). The same
@@ -444,57 +401,18 @@ agent:
     flow_interval: 1d
     flow_lookback: 5
     flow_pool_per_book: 30
-    KR:
-      min_price: 1000             # KRW
-      # Each screen returns a ranked list; the union is scored by rank position.
-      rankers:
-        - {api_id: ka10032, params: {mrkt_tp: "000", mang_stk_incls: "0", stex_tp: "1"}}  # 거래대금상위
-        # 전일대비등락률상위: 상승률순, 우선주+관리주 제외, 1억원 이상 거래대금만.
-        - {api_id: ka10027, params: {mrkt_tp: "000", sort_tp: "1", trde_qty_cnd: "0100", stk_cnd: "4", crd_cnd: "0", updown_incls: "0", pric_cnd: "0", trde_prica_cnd: "10", stex_tp: "1"}}
     BINANCE:
       min_price: 0                # any price; quantisation handles sub-cent coins
-      rankers: []                 # ticker/24hr covers both screens in one call
-    US:
-      min_price: 1                # USD -- NOT 1000; a KRW floor excludes every US stock
-      # US has no flow data in the Kiwoom catalog, so the screen is momentum-only
-      # here. Bounding it on BOTH sides is the only defence against handing the
-      # trader names that have already run 100%+ and have nothing left.
-      min_change_pct: 0.02
-      max_change_pct: 0.25
-      # stk_tp "1" restricts to 주식. The default (0:전체) mixes in ETFs and
-      # sector indices (SPY, QQQ) that are not in the tradable universe and are
-      # silently dropped later, wasting screen slots.
-      rankers:
-        - {api_id: usa20540, params: {stk_tp: "1", stex_tp: "0"}}                  # 당일 거래대금 상위
-        - {api_id: usa20910, params: {stk_tp: "1", stex_tp: "0", sort_tp: "1"}}    # 전일대비 등락률상위
-  # BINANCE is 24/7: no session entry, and `always_open` markets skip the clock
-  # gate entirely rather than being given fake 00:00-23:59 hours that would still
-  # close for a minute each day and stop trading at a weekend boundary.
+  # BINANCE is 24/7: `always_open` markets skip the clock gate entirely rather
+  # than being given fake 00:00-23:59 hours that would still close for a minute
+  # each day and stop trading at a weekend boundary.
   always_open: ["BINANCE"]
-  # Sessions are declared in each exchange's OWN timezone, so DST is handled by the
-  # zone database rather than by fixed KST offsets: US open is 23:30 KST in winter
-  # (EST) but 22:30 in summer (EDT). The scheduler runs whichever session is open.
-  sessions:
-    KR:
-      timezone: Asia/Seoul
-      open: "09:00"
-      close: "15:20"
-    US:
-      timezone: America/New_York
-      open: "09:30"
-      close: "15:55"
-  trade_on_weekends: false
-  # Endpoints the observe step uses to build the model's view. Per market: the
-  # KR and US surfaces have different price endpoints with different required
-  # params, so a single shared entry would 400 on one of them.
-  quotes:
-    KR:
-      basic: {api_id: ka10001}                              # 주식기본정보요청
-      orderbook: {api_id: ka10004}                          # 주식호가요청
-    US:
-      basic: {api_id: usa20100, params: {stex_tp: "%"}}     # 미국주식 현재가 종목정보
   tiers:
-    decide: deep          # tier that proposes intents
+    # deepseek-chat, not deepseek-reasoner: the reasoner returned EMPTY content
+    # on 36% of decisions (budget burned on reasoning) and costs ~2x more, and
+    # `fast` answered the same prompts cleanly (measured 2026-08-10). Low
+    # confidence still escalates to the reasoner below.
+    decide: fast          # tier that proposes intents
     escalate_on_low_confidence: escalation
     # Was 0.6 -- an arbitrary round number that demanded near-certainty for trades
     # profitable above a ~35% hit rate. Set just above the payoff's break-even so

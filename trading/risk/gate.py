@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
-from trading.brokers.kiwoom.account import AccountState, Snapshot
+from trading.brokers.state import Snapshot
 from trading.config import AppConfig, config
 
 log = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ class Verdict:
 
 
 def _f(value) -> float:
-    """Kiwoom numerics arrive as sign-prefixed strings; unparseable -> 0.0."""
+    """Broker numerics may arrive as strings; unparseable -> 0.0."""
     if value is None or value == "":
         return 0.0
     try:
@@ -87,7 +87,7 @@ def _rows(payload: dict) -> list[dict]:
 class RiskGate:
     def __init__(
         self,
-        state: AccountState,
+        state,
         cfg: AppConfig | None = None,
         market: str | None = None,
         pnl_provider=None,
@@ -95,22 +95,17 @@ class RiskGate:
         self.cfg = cfg or config()
         self.risk = self.cfg.risk
         self.state = state
-        # The kill switch is PER VENUE. Kiwoom and Binance are separate accounts,
-        # so halting a bad day in Seoul must not silently stop a working crypto
-        # book -- and vice versa. `data/HALT` still halts everything, which is the
-        # emergency stop; `data/HALT.BINANCE` halts only that venue.
+        # The kill switch is PER VENUE: `data/HALT` halts everything (the
+        # emergency stop); `data/HALT.BINANCE` halts only that venue.
         # The gate validates against the market it was BUILT for, not the global
-        # config default. A Binance agent's intents are market=BINANCE while
-        # `agent.market` still reads KR, so comparing to config rejected every
-        # Binance order as wrong-market.
+        # config default -- comparing an intent to `agent.market` once rejected
+        # every order from a gate built for a different venue.
         self.market = str(market) if market else str(self.cfg.agent.market)
         base = Path(self.risk.kill_switch_file)
         self.global_halt_file = base
         self.halt_file = base.with_name(f"{base.name}.{market}") if market else base
-        # Realised P&L must come from the venue's own reporting. The previous
-        # version called risk.daily_pnl.api_id directly -- a KIWOOM id -- which
-        # raised KeyError on Binance, and the fail-closed gate then rejected
-        # EVERY Binance intent with "refusing to trade blind". Seven in a row.
+        # Realised P&L must come from the venue's own reporting, injected by the
+        # adapter -- the gate itself knows no broker API.
         self._pnl_provider = pnl_provider
         self._orders_today = 0
         self._orders_day: dt.date | None = None
@@ -245,29 +240,17 @@ class RiskGate:
         cap = self._daily_loss_cap(snap) if snap is not None else self.risk.max_daily_loss_krw
         if not cap:
             return
-        if self._pnl_provider is not None:
-            try:
-                realised = self._pnl_provider()
-            except Exception as exc:  # noqa: BLE001 - fail closed on an unreadable limit
-                reasons.append(f"daily P/L unreadable ({type(exc).__name__}), refusing to trade blind")
-                return
-            if realised is not None and realised < 0 and abs(realised) >= cap:
-                reasons.append(f"daily realised loss {abs(realised):,.2f} has reached the cap {cap:,.2f}")
+        if self._pnl_provider is None:
             return
-        if self.risk.daily_pnl is None:
-            return
-        today = dt.datetime.now(dt.UTC).astimezone().strftime("%Y%m%d")
         try:
-            body = self.state.client.call(
-                self.risk.daily_pnl.api_id,
-                {**self.risk.daily_pnl.params, "strt_dt": today, "end_dt": today},
-            ).body
+            realised = self._pnl_provider()
         except Exception as exc:  # noqa: BLE001 - fail closed on an unreadable limit
             reasons.append(f"daily P/L unreadable ({type(exc).__name__}), refusing to trade blind")
             return
-        realised = _f(body.get("rlzt_pl"))
-        if realised < 0 and abs(realised) >= cap:
-            reasons.append(f"daily realised loss {abs(realised):,.2f} has reached the cap {cap:,.2f}")
+        if realised is not None and realised < 0 and abs(realised) >= cap:
+            reasons.append(
+                f"daily realised loss {abs(realised):,.2f} has reached the cap {cap:,.2f}"
+            )
 
     def _check_rate(self, intent: TradeIntent, reasons: list[str]) -> None:
         # Churn limits bound how much NEW risk is taken. Refusing an exit because

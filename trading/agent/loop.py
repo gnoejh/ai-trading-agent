@@ -17,6 +17,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
+import random
 import re
 import time
 from dataclasses import asdict, dataclass
@@ -24,10 +25,10 @@ from zoneinfo import ZoneInfo
 
 from trading.accounting.costs import CostLedger
 from trading.agent.journal import Journal
+from trading.agent.scorer import ExperienceScorer, experience_block
 from trading.brokers.adapters import build_adapter
 from trading.config import AppConfig, config
 from trading.llm.client import LLMClient
-from trading.notify.status import StatusReporter
 from trading.notify.telegram import TelegramNotifier
 from trading.risk.exits import PositionSupervisor
 from trading.risk.gate import RiskGate, Side, TradeIntent
@@ -39,7 +40,7 @@ _JSON = re.compile(r"\{.*\}", re.DOTALL)
 
 
 def _num(value) -> float:
-    """Kiwoom numerics are sign-prefixed strings; the sign is direction, not value."""
+    """Broker numerics may arrive as strings; unparseable -> 0.0."""
     if value in (None, ""):
         return 0.0
     try:
@@ -53,7 +54,7 @@ _SYSTEM = """You are the entry selector for an automated trading system.
 You are NOT choosing "a good stock". Once you pick, the position is managed
 mechanically and you have no further say. Concretely, your pick will be:
 
-  - bought with the entire available balance, laddered over several price levels
+  - bought with the configured budget for one position, laddered over several price levels
   - CLOSED AT A LOSS if it falls to the stop
   - CLOSED IN PROFIT if it reaches the target
   - CLOSED REGARDLESS once the maximum hold time elapses
@@ -128,13 +129,13 @@ class TradingAgent:
         cfg: AppConfig | None = None,
         *,
         notifier: TelegramNotifier | None = None,
-        broker: str = "kiwoom",
+        broker: str = "binance",
         adapter=None,
     ):
         self.cfg = cfg or config()
         self.acfg = self.cfg.agent
         self.broker = broker
-        self.tz = ZoneInfo(self.cfg.broker.kiwoom.timezone)
+        self.tz = ZoneInfo(self.cfg.broker.binance.timezone)
 
         self.adapter = adapter or build_adapter(self.broker, self.acfg.market, self.cfg)
         self.market = self.adapter.market
@@ -147,27 +148,34 @@ class TradingAgent:
         )
         self.executor = self.adapter.executor(self.gate)
         self.sizer = PositionSizer(self.cfg)
-        self.supervisor = PositionSupervisor(self.state, self.cfg, market=self.market)
+        self.supervisor = PositionSupervisor(
+            self.state, self.cfg, market=self.market, is_dust=self._order_dust
+        )
         self.ledger = CostLedger(self.cfg)
         self.llm = LLMClient(self.cfg, ledger=self.ledger)
         self.journal = Journal(self.acfg.journal)
         self.telegram = notifier or TelegramNotifier()
-        self.reporter = StatusReporter(self.state)
         self._last_fingerprint: tuple[str, ...] | None = None
         # Symbols this process has traded today -- Binance's myTrades needs a
         # symbol, so P&L is only queried where something actually happened.
         self._traded_symbols: set[str] = set()
+        # Exploration arm: one seeded stream drives both the shadow pick and the
+        # random entries, so a fixed seed reproduces the whole sequence.
+        self._rng = random.Random(self.cfg.explore.seed or None)
+        # Random-arm entries opened by THIS process. Lost on restart, which only
+        # loosens the explore cap for one session -- the journal keeps the truth.
+        self._random_positions: set[str] = set()
+        self.scorer: ExperienceScorer | None = None
+        if self.broker == "binance" and self.cfg.score.enabled:
+            self.scorer = ExperienceScorer(
+                self.adapter.client, self.adapter.screen, self.ledger, self.cfg
+            )
 
     # -- clock ----------------------------------------------------------------
 
     def is_market_open(self, now: dt.datetime | None = None) -> bool:
-        """Is *this agent's* market trading now?
-
-        Sessions are declared in each exchange's own timezone, so KR closes at
-        15:20 KST and US opens at 09:30 New York — 23:30 KST in winter, 22:30 in
-        summer. Letting the zone database resolve that avoids a DST bug that would
-        silently trade an hour late for half the year.
-        """
+        """Is *this agent's* market trading now? Crypto never closes, so this is
+        true whenever the market is listed in `agent.always_open`."""
         return self.acfg.is_open(str(self.market), now)
 
     # -- observe --------------------------------------------------------------
@@ -215,23 +223,41 @@ class TradingAgent:
             symbol: {k: v for k, v in body.items() if not isinstance(v, list | dict)}
             for symbol, body in observation["quotes"].items()
         }
+        # Managed holdings only. The raw snapshot carries EVERY balance -- 482
+        # seed rows on testnet -- which blew the payload past the 20k truncation
+        # guard and silently cut trade_rules off the END of the prompt: the
+        # model spent cycles declining with "trade_rules not supplied" while
+        # the journal recorded it as considered judgement.
+        held = {
+            s: {"quantity": h.get("quantity"), "cost_basis": h.get("cost_basis")}
+            for s, h in observation["holdings"].items()
+            if float(h.get("cost_basis") or 0) > 0
+        }
         return json.dumps(
             {
-                "candidates": observation["candidates"],
-                "cash": {k: v for k, v in snap.cash.items() if not isinstance(v, list | dict)},
-                "positions": snap.positions,
-                "open_orders": snap.open_orders,
-                **({"quotes": compact_quotes} if compact_quotes else {}),
-                # 0 means UNLIMITED to the gate, but a model shown a bare 0 reads
-                # it as "nothing is allowed" and declines to trade. Observed live
-                # 2026-08-10: "risk limits are all zero, making any order likely to
-                # be rejected". Render the meaning, never the raw sentinel.
-                "limits": _describe_limits(self.cfg.risk),
+                # Critical fields FIRST: if the payload ever overflows the guard
+                # again, truncation must eat detail, never the contract.
+                #
                 # The payoff structure the pick will actually be held to. Without
                 # this the model is asked "which is good?" when the real question
                 # is "which reaches +X% before -Y% within Z minutes, net of costs?"
                 # -- a different and far more answerable question.
                 "trade_rules": self._trade_rules(),
+                # 0 means UNLIMITED to the gate, but a model shown a bare 0 reads
+                # it as "nothing is allowed" and declines to trade. Observed live
+                # 2026-08-10: "risk limits are all zero, making any order likely to
+                # be rejected". Render the meaning, never the raw sentinel.
+                "limits": _describe_limits(self.cfg.risk),
+                # The system's own measured record (the experience RAG). Renders
+                # only buckets that cleared the sample-size gate; absent entirely
+                # while the store is unfilled -- silence, never fabricated priors.
+                **({"measured_record": record} if (record := experience_block(self.cfg)) else {}),
+                "candidates": observation["candidates"],
+                "cash": {k: v for k, v in snap.cash.items() if not isinstance(v, list | dict)},
+                "holdings": held,
+                "unmanaged_balances": len(observation["holdings"]) - len(held),
+                "open_orders": snap.open_orders,
+                **({"quotes": compact_quotes} if compact_quotes else {}),
             },
             ensure_ascii=False,
             default=str,
@@ -352,6 +378,19 @@ class TradingAgent:
         except Exception:
             log.exception("realised P&L update failed")
 
+    def _order_dust(self, symbol: str, qty: float, price: float) -> bool:
+        """True when a holding of `qty` cannot form a valid order on its venue.
+
+        The supervisor uses this to refuse adopting — and to close — plans that
+        could only ever emit refused orders (0.34 PROM under the $5 minNotional,
+        live 2026-08-31).
+        """
+        rules = self.adapter.rules_for(symbol)
+        if rules is None:
+            return qty < 1  # whole-share venues
+        quantized = rules.quantize_qty(qty)
+        return quantized <= 0 or rules.rejects(quantized, price) is not None
+
     def run_exits(self, observation: dict) -> int:
         """Supervise open positions and send any exit the policy calls for."""
         sent = 0
@@ -367,7 +406,10 @@ class TradingAgent:
                 market=str(self.market),
                 side=Side.SELL,
                 symbol=sig.symbol,
-                quantity=int(sig.quantity),
+                # Never int(): Binance quantities are fractional, and int()
+                # truncated a 0.34-PROM exit to quantity 0 -- refused by the
+                # gate every cycle. The executor quantizes per venue.
+                quantity=sig.quantity,
                 reference_price=sig.price,
                 reason=f"{sig.reason}: {sig.detail}",
                 confidence=1.0,
@@ -402,6 +444,123 @@ class TradingAgent:
                 self.journal.write("exit_order_failed", signal=str(sig), error=str(exc))
         return sent
 
+    @staticmethod
+    def _managed_symbols(holdings: dict) -> set[str]:
+        """Symbols this system (or its owner) actually paid for.
+
+        A balance with no cost basis is not a position in any sense that should
+        gate a pick: the supervisor refuses to manage it and no exit will ever
+        free its "slot". Filtering picks on RAW balances excluded every seeded
+        symbol — the shadow pick was always None and the random arm sampled
+        only coins too new to be seeded (observed 2026-08-31: 48 decisions,
+        zero paired comparisons, and explore stuck on the same four listings).
+        """
+        return {s for s, h in holdings.items() if float(h.get("cost_basis") or 0) > 0}
+
+    @staticmethod
+    def _managed_count(holdings: dict) -> int:
+        return len(TradingAgent._managed_symbols(holdings))
+
+    def _shadow_pick(self, observation: dict) -> str | None:
+        """A random symbol from the same shortlist the model saw. Journal-only.
+
+        Never traded — it exists so every model decision has a paired chance
+        baseline resolved over the identical menu and horizon.
+        """
+        held = self._managed_symbols(observation["holdings"])
+        symbols = [c["symbol"] for c in observation["candidates"] if c["symbol"] not in held]
+        return self._rng.choice(symbols) if symbols else None
+
+    def run_explore(self, observation: dict, free_slots: int) -> int:
+        """One random small entry from the TRADABLE pool — the exploration arm.
+
+        No model call. Random entries fill the experience corpus with ground
+        truth the screened arm cannot provide, so they sample the pool with the
+        strategy bounds removed; liquidity, lot rules and the stablecoin
+        exclusion still apply, and everything downstream is the normal
+        machinery — sizer, gate, executor, exit supervisor. Exploration changes
+        who proposes, never what disposes.
+        """
+        ecfg = self.cfg.explore
+        if not ecfg.enabled or free_slots <= 0:
+            return 0
+        screen = getattr(self.adapter, "screen", None)
+        if screen is None or not hasattr(screen, "tradable_pool"):
+            return 0  # exploration needs a venue that exposes its tradable pool
+        # MANAGED positions only: filtering on raw balances excluded every
+        # seeded symbol and left the random arm sampling only recent listings.
+        held = self._managed_symbols(observation["holdings"])
+        batch = min(
+            free_slots,
+            max(ecfg.entries_per_cycle, 1),
+            max(ecfg.max_positions - len(self._random_positions & held), 0),
+        )
+        if batch <= 0:
+            return 0
+        if self._rng.random() >= ecfg.entry_pct:
+            return 0
+
+        try:
+            order_size = self.sizer.budget(observation["snapshot"].cash)
+            pool = [e for e in screen.tradable_pool(order_size) if e["symbol"] not in held]
+        except Exception as exc:
+            log.exception("explore pool failed")
+            self.journal.write("explore_failed", error=str(exc))
+            return 0
+
+        sent_total = 0
+        for _ in range(batch):
+            if not pool:
+                break
+            entry = self._rng.choice(pool)
+            pool = [e for e in pool if e["symbol"] != entry["symbol"]]
+            sent_total += self._explore_entry(observation, entry)
+        return sent_total
+
+    def _explore_entry(self, observation: dict, entry: dict) -> int:
+        """Size, gate, execute and journal ONE random entry."""
+        intent = TradeIntent(
+            market=str(self.market),
+            side=Side.BUY,
+            symbol=entry["symbol"],
+            quantity=0,
+            reference_price=entry["price"],
+            reason="exploration: random arm",
+            confidence=1.0,
+        )
+        rules = self.adapter.rules_for(entry["symbol"])
+        if self.sizer.size(intent, observation["snapshot"].cash, rules) <= 0:
+            self.journal.write("explore", entry=entry, sent=False, reasons=["sized to 0"])
+            return 0
+        verdict = self.gate.evaluate(intent)
+        if not verdict.approved:
+            self.journal.write("explore", entry=entry, sent=False, reasons=verdict.reasons)
+            return 0
+        try:
+            response = self.executor.execute(verdict)
+        except Exception as exc:
+            log.exception("explore order failed")
+            self.journal.write("explore_failed", entry=entry, error=str(exc))
+            return 0
+        sent = not response.get("dry_run")
+        if sent:
+            self._traded_symbols.add(intent.symbol)
+            self._random_positions.add(intent.symbol)
+            self.ledger.record_trade(
+                symbol=intent.symbol,
+                side="BUY",
+                quantity=intent.quantity,
+                price=intent.reference_price or 0.0,
+                market=self.adapter.fee_market(intent.symbol),
+            )
+            self.telegram.send(
+                f"🎲 explore BUY {intent.symbol} x{intent.quantity:g} @ {entry['price']:,.6g}"
+            )
+        self.journal.write(
+            "explore", entry=entry, quantity=intent.quantity, sent=sent, response=response
+        )
+        return int(sent)
+
     def run_cycle(self) -> CycleResult:
         now = dt.datetime.now(self.tz)
         result = CycleResult(observed_at=now, errors=[])
@@ -432,15 +591,41 @@ class TradingAgent:
         # that was never evaluated at all.
         result.exits = self.run_exits(observation)
 
+        # Scoring pass (interval-gated): resolves due observations and rebuilds
+        # the experience store. After exits, never before them; independent of
+        # every entry guard below, because measuring is not risk.
+        if self.scorer:
+            self.scorer.maybe_run()
+
         # The kill switch stops NEW risk only; exits above have already run.
         if self.gate.halted:
             self.journal.write("cycle_skipped", reason="halted (entries)")
             return result
 
-        # Slot limit: full-balance sizing means one name at a time.
-        if not self.sizer.slots_free(len(observation["holdings"])):
+        # Slot limit, shared by the model and the exploration arm. Slots count
+        # MANAGED positions -- holdings with a known cost basis -- exactly the
+        # set the exit supervisor manages. Counting raw balances filled every
+        # slot with the testnet's ~480 seed holdings and silently disabled both
+        # entry arms: the cycle reported "no free slots" forever.
+        managed = self._managed_count(observation["holdings"])
+        free_slots = self.sizer.slots_free(managed)
+        if not free_slots:
             self.journal.write("cycle_skipped", reason="no free slots")
             return result
+
+        # Exploration arm BEFORE the model guards: a random entry costs no
+        # tokens, so it must still run on the cycles the model skips (budget
+        # spent, unchanged candidates) -- those are exactly its cheapest cycles.
+        explored = self.run_explore(observation, free_slots)
+        result.sent += explored
+        if explored:
+            # The random entry consumed cash and a slot; the model must not size
+            # against the stale snapshot.
+            observation["snapshot"] = self.state.reconcile()
+            free_slots -= explored
+            if not free_slots:
+                self.journal.write("cycle_skipped", reason="no free slots after explore")
+                return result
 
         # Two spend guards before the expensive step. A decision cycle costs real
         # money (~47 KRW measured), so it must be worth making.
@@ -481,9 +666,14 @@ class TradingAgent:
 
         result.intents, result.commentary = len(intents), commentary
         verdicts = self.gate.evaluate_all(intents)
+        # The decision record carries the MENU, not just the picks: the scorer
+        # needs the candidates' features to grade every choice, and the shadow
+        # random pick from the same shortlist is the model's paired control.
         self.journal.write(
             "decision",
             commentary=commentary,
+            candidates=observation["candidates"],
+            shadow_random=self._shadow_pick(observation),
             verdicts=[
                 {"intent": asdict(v.intent), "approved": v.approved, "reasons": v.reasons}
                 for v in verdicts
@@ -549,8 +739,7 @@ def main() -> int:
     import argparse
 
     ap = argparse.ArgumentParser(description="Run the trading agent.")
-    ap.add_argument("--broker", default="kiwoom", choices=["kiwoom", "binance"])
-    ap.add_argument("--market", default=None, choices=["KR", "US"], help="kiwoom only")
+    ap.add_argument("--broker", default="binance", choices=["binance"])
     ap.add_argument("--cycles", type=int, default=None, help="stop after N cycles")
     ap.add_argument(
         "--dry-run", action="store_true", help="force dry run regardless of config.yaml"
@@ -559,8 +748,6 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     cfg = config()
-    if args.market:
-        cfg.agent.market = args.market
     if args.dry_run:
         cfg.agent.dry_run = True
 

@@ -90,12 +90,20 @@ class CostLedger:
     # -- pricing --------------------------------------------------------------
 
     def price_call(self, model: str, input_tokens: int, output_tokens: int) -> float:
-        """USD for one call. Unknown models cost 0 and warn rather than guess."""
+        """USD-equivalent for one call. Unknown models cost 0 and warn.
+
+        A model priced in CNY (DeepSeek bills this account in CNY, from a CNY
+        list that is not market-FX of the USD list) is converted at `usd_cny`,
+        so the ledger's usd and krw figures both track the actual bill.
+        """
         price = self.cfg.llm.pricing.get(model)
         if price is None:
             log.warning("no pricing configured for model %r; cost recorded as 0", model)
             return 0.0
-        return (input_tokens * price.input + output_tokens * price.output) / 1_000_000
+        native = (input_tokens * price.input + output_tokens * price.output) / 1_000_000
+        if price.currency == "CNY":
+            return native / self.cfg.llm.usd_cny
+        return native
 
     def trade_fee(self, notional: float, *, side: str, market: str | None = None) -> float:
         """Cost of one execution. Sells additionally pay any transaction tax."""
@@ -219,6 +227,92 @@ class CostLedger:
                     costs.realised_pl_krw = float(rec.get("krw", 0))
         return costs
 
+    def _walk_trades(
+        self, since: str, markets: set[str] | None
+    ) -> tuple[list[dict], dict[str, list[list[float]]]]:
+        """FIFO walk over this ledger's own trade records.
+
+        Returns (closed round trips, still-open lots). Prices in the ledger are
+        DATA-PLANE reference prices — mainnet by construction since the plane
+        split — so both results are marked to the real market rather than to
+        testnet fills. Orphan sells (units no recorded buy paid for, e.g. seed
+        liquidations) pair with nothing and appear in neither.
+        """
+        closed: list[dict] = []
+        lots: dict[str, list[list[float]]] = {}  # symbol -> [[qty, price], ...]
+        if not self.path.exists():
+            return closed, lots
+        with self.path.open(encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if rec.get("kind") != "trade":
+                    continue
+                if since and str(rec.get("ts", "")) < since:
+                    continue
+                market = str(rec.get("market", ""))
+                if markets and market not in markets:
+                    continue
+                symbol = rec.get("symbol", "")
+                qty = float(rec.get("quantity") or 0)
+                price = float(rec.get("price") or 0)
+                if not symbol or qty <= 0 or price <= 0:
+                    continue
+                if str(rec.get("side", "")).upper().endswith("BUY"):
+                    lots.setdefault(symbol, []).append([qty, price])
+                    continue
+                remaining = qty
+                while remaining > 0 and lots.get(symbol):
+                    lot = lots[symbol][0]
+                    take = min(lot[0], remaining)
+                    closed.append(
+                        {
+                            "symbol": symbol,
+                            "market": market,
+                            "quantity": take,
+                            "entry_price": lot[1],
+                            "exit_price": price,
+                            "pnl_quote": take * (price - lot[1]),
+                            "return_pct": (price / lot[1] - 1) * 100,
+                        }
+                    )
+                    lot[0] -= take
+                    remaining -= take
+                    if lot[0] <= 0:
+                        lots[symbol].pop(0)
+        return closed, {s: ls for s, ls in lots.items() if ls}
+
+    def closed_trades(self, *, since: str = "", markets: set[str] | None = None) -> list[dict]:
+        """Closed FIFO round trips, mark-to-mainnet. See `_walk_trades`."""
+        return self._walk_trades(since, markets)[0]
+
+    def open_lots(self, *, since: str = "", markets: set[str] | None = None) -> dict:
+        """Bought-but-unsold lots — the units the ledger says are still ours.
+
+        This is what honest unrealised P&L is computed over: broker balances
+        include units this system never paid for (testnet seeds), and marking
+        those from a plan's entry would invent profit out of free inventory.
+        """
+        return self._walk_trades(since, markets)[1]
+
+    def llm_by_model(self, day: dt.date | None = None) -> dict[str, dict]:
+        """Per-model API spend for the day — the operator's view of token cost."""
+        day = day or dt.datetime.now(dt.UTC).date()
+        out: dict[str, dict] = {}
+        for rec in self._records(day):
+            if rec.get("kind") != "llm":
+                continue
+            m = out.setdefault(
+                str(rec.get("model", "?")), {"calls": 0, "tokens": 0, "usd": 0.0, "krw": 0.0}
+            )
+            m["calls"] += 1
+            m["tokens"] += int(rec.get("input_tokens", 0)) + int(rec.get("output_tokens", 0))
+            m["usd"] += float(rec.get("usd", 0))
+            m["krw"] += float(rec.get("krw", 0))
+        return out
+
     def breakeven(self, day: dt.date | None = None, market: str | None = None) -> str:
         """Human-readable break-even status for the day."""
         c = self.day(day)
@@ -228,6 +322,20 @@ class CostLedger:
         lines = [
             f"*Break-even — {c.date}*",
             f"  API spend    : {c.api_krw:>12,.0f} KRW  {api_detail}",
+        ]
+        # Per model, because the whole point of the tier config is that the mix
+        # is a cost decision: one reasoner call costs ~5x a chat call.
+        for model, m in sorted(self.llm_by_model(day).items()):
+            lines.append(
+                f"    {model}: {m['calls']} calls, {m['tokens']:,} tokens, {m['krw']:,.1f} KRW"
+            )
+        budget = self.acc.max_api_krw_per_day
+        if budget:
+            lines.append(
+                f"  API budget   : {c.api_krw:,.1f} / {budget:,.0f} KRW"
+                f" ({c.api_krw / budget:.0%} used — deciding stops when spent)"
+            )
+        lines += [
             f"  Trading fees : {c.trade_fees_krw:>12,.0f} KRW  {fee_detail}",
             f"  Total cost   : {c.total_cost_krw:>12,.0f} KRW",
             f"  Realised P/L : {c.realised_pl_krw:>12,.0f} KRW",

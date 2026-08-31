@@ -118,8 +118,23 @@ class BinanceScreen:
                 out[symbol] = sum(shares) / len(shares)
         return out
 
-    def candidates(self, order_size: float = 0.0) -> list[dict]:
+    def tradable_pool(self, order_size: float = 0.0) -> list[dict]:
+        """Every symbol an order of this size could actually execute in.
+
+        Tradability and liquidity filters only — exchange listing, the
+        stablecoin exclusion, the price floor, and the volume bar that scales
+        with the order. The screen's STRATEGY bounds (min/max change, flow
+        ranking) deliberately do not apply: the exploration arm samples from
+        this pool, and observations gated by the strategy's own filters could
+        never falsify the strategy.
+        """
         tradable = self.universe.symbols
+        # The data plane (mainnet) defines the universe, but the TRADE plane
+        # decides what an order may name: on testnet it lists far fewer symbols,
+        # and the difference fails with -1121 Invalid symbol at order time.
+        listed = self.client.trade_plane_symbols()
+        if listed:
+            tradable = tradable & listed
         rows = [
             r
             for r in self.client.call("ticker_24hr").body.get("rows", [])
@@ -136,7 +151,7 @@ class BinanceScreen:
         # the order, so it rises with the account instead of going stale.
         scaled_floor = order_size * self.scfg.min_volume_multiple_of_order
 
-        by_book: dict[str, list[dict]] = {}
+        pool: list[dict] = []
         for r in rows:
             symbol = r["symbol"]
             rules = self.universe.rules_for(symbol)
@@ -145,11 +160,6 @@ class BinanceScreen:
             price, volume = _f(r.get("lastPrice")), _f(r.get("quoteVolume"))
             if min_price and price < min_price:
                 continue
-            chg = abs(_f(r.get("priceChangePercent"))) / 100
-            if self.scfg.min_change_pct and chg < self.scfg.min_change_pct:
-                continue
-            if self.scfg.max_change_pct and chg > self.scfg.max_change_pct:
-                continue
             book = self.universe.book_of(symbol)
             floor = max(
                 self.scfg.book_min_quote_volume.get(book, self.scfg.min_quote_volume),
@@ -157,7 +167,7 @@ class BinanceScreen:
             )
             if floor and volume < floor:
                 continue
-            by_book.setdefault(book, []).append(
+            pool.append(
                 {
                     "symbol": symbol,
                     "book": book,
@@ -166,6 +176,17 @@ class BinanceScreen:
                     "quote_volume": volume,
                 }
             )
+        return pool
+
+    def candidates(self, order_size: float = 0.0) -> list[dict]:
+        by_book: dict[str, list[dict]] = {}
+        for entry in self.tradable_pool(order_size):
+            chg = abs(entry["change_pct"]) / 100
+            if self.scfg.min_change_pct and chg < self.scfg.min_change_pct:
+                continue
+            if self.scfg.max_change_pct and chg > self.scfg.max_change_pct:
+                continue
+            by_book.setdefault(entry["book"], []).append(entry)
 
         # Flow is measured only for the liquidity-qualified pool: one kline call
         # per symbol is affordable for ~60 names, not for 489.

@@ -1,24 +1,29 @@
-# install_nssm_service.ps1 — Install trading-agent as a Windows service via NSSM.
+# install_nssm_service.ps1 — Install the trading-agent service via NSSM.
 #
-# One process: trades whichever session is open (KR then US) and serves the
-# Telegram control surface in between.
+#   .\install_nssm_service.ps1                      # trading-agent-binance
+#   .\install_nssm_service.ps1 -Uninstall
+#
+# Each service trades its own venue and serves the Telegram control surface only
+# if it is `notify.telegram.command_owner` — one getUpdates consumer per token.
 #
 # Prerequisites:
 #   1. Install NSSM:  winget install nssm  (or https://nssm.cc)
 #   2. Run this script as Administrator
 #
 # After install:
-#   nssm start trading-agent
-#   nssm status trading-agent
-#   nssm restart trading-agent
-#   nssm stop trading-agent
+#   nssm start trading-agent-binance
+#   nssm status trading-agent-binance
+#   nssm restart trading-agent-binance
+#   nssm stop trading-agent-binance
 #
 # NOTE: the service inherits config.yaml as it stands at start. Check
 #       `uv run python -m trading.preflight` first — it prints whether the run
 #       will be live and how each risk limit sizes against the account.
 
 param(
-    [switch]$Uninstall
+    [switch]$Uninstall,
+    [ValidateSet("binance")]
+    [string]$Broker = "binance"
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,7 +31,7 @@ $ErrorActionPreference = "Stop"
 $Root    = "W:\ai-trading-agent"
 $LogDir  = "$Root\logs"
 $UvExe   = "$env:USERPROFILE\.local\bin\uv.exe"
-$SvcName = "trading-agent"
+$SvcName = "trading-agent-$Broker"
 
 # -- Verify prerequisites -----------------------------------------------------
 
@@ -77,12 +82,12 @@ if (-not (Test-Path $LogDir)) {
 Write-Host "Installing $SvcName..." -ForegroundColor Cyan
 
 & $NssmExe install $SvcName $UvExe
-& $NssmExe set     $SvcName AppParameters   "run python run_service.py"
+& $NssmExe set     $SvcName AppParameters   "run python run_service.py --broker $Broker"
 & $NssmExe set     $SvcName AppDirectory    $Root
-& $NssmExe set     $SvcName DisplayName     "AI Trading Agent (Kiwoom KR/US)"
-& $NssmExe set     $SvcName Description     "Autonomous trading agent: DeepSeek/Qwen decisions, cost-derived exits, Kiwoom execution"
-& $NssmExe set     $SvcName AppStdout       "$LogDir\trading-agent-stdout.log"
-& $NssmExe set     $SvcName AppStderr       "$LogDir\trading-agent-stderr.log"
+& $NssmExe set     $SvcName DisplayName     "AI Trading Agent ($Broker)"
+& $NssmExe set     $SvcName Description     "Autonomous trading agent: DeepSeek decisions, cost-derived exits, $Broker execution"
+& $NssmExe set     $SvcName AppStdout       "$LogDir\$SvcName-stdout.log"
+& $NssmExe set     $SvcName AppStderr       "$LogDir\$SvcName-stderr.log"
 & $NssmExe set     $SvcName AppRotateFiles  1
 & $NssmExe set     $SvcName AppRotateBytes  10485760    # 10 MB
 & $NssmExe set     $SvcName Start           SERVICE_AUTO_START
@@ -128,7 +133,7 @@ Write-Host "  Preflight:  uv run python -m trading.preflight" -ForegroundColor Y
 Write-Host "  Start:      nssm start $SvcName" -ForegroundColor Yellow
 Write-Host "  Status:     nssm status $SvcName" -ForegroundColor Yellow
 Write-Host "  Stop:       nssm stop $SvcName" -ForegroundColor Yellow
-Write-Host "  Logs:       Get-Content $LogDir\trading-agent-stdout.log -Tail 50 -Wait" -ForegroundColor Yellow
+Write-Host "  Logs:       Get-Content $LogDir\$SvcName-stdout.log -Tail 50 -Wait" -ForegroundColor Yellow
 Write-Host "  Halt now:   New-Item -ItemType File data\HALT   (blocks entries; exits still run)" -ForegroundColor Yellow
 Write-Host "  Uninstall:  .\install_nssm_service.ps1 -Uninstall" -ForegroundColor Yellow
 Write-Host ""

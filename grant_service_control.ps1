@@ -16,8 +16,9 @@
 #
 # After this, `nssm restart trading-agent` works without elevation.
 
+param([string]$SvcName = "trading-agent-binance")
+
 $ErrorActionPreference = "Stop"
-$SvcName = "trading-agent"
 
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
     ).IsInRole([Security.Principal.WindowsBuiltInRole]"Administrator")) {

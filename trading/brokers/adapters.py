@@ -1,19 +1,13 @@
-"""One interface, two venues.
+"""The broker adapter seam.
 
 `TradingAgent` needs six things from a broker: reconciled state, screened
 candidates, prices, the venue's order rules, an executor, and the fee book a
 symbol belongs to. Everything else — the gate, the sizer, the exit supervisor,
 the cost ledger — is venue-agnostic already.
 
-Kiwoom and Binance are separate accounts and run as separate agents, so an
-adapter never has to reconcile two venues against one balance. What it does is
-absorb the differences that would otherwise leak into the loop:
-
-* Kiwoom prices come one call per symbol; Binance returns every price in one.
-* Kiwoom quantities are whole shares; Binance quantises per symbol.
-* Kiwoom has a session; crypto does not.
-* A Binance symbol's fee book (crypto vs bStocks) is a property of the symbol,
-  not of the agent, because the two hurdles differ (0.5% vs 0.6%).
+Binance is the only venue since 2026-09-01 (the Kiwoom side was removed when the
+project became Binance-only), but the seam stays: everything downstream talks to
+`BrokerAdapter`, never to the client, so a second venue is an adapter away.
 """
 
 from __future__ import annotations
@@ -21,17 +15,11 @@ from __future__ import annotations
 import datetime as dt
 import logging
 from typing import Protocol
-from zoneinfo import ZoneInfo
 
-from trading.agent.universe import Screen, Universe, _rows
 from trading.brokers.binance.account import BinanceAccountState, BinanceExecutor
 from trading.brokers.binance.client import BinanceClient
 from trading.brokers.binance.universe import BinanceScreen, BinanceUniverse
-from trading.brokers.kiwoom.account import AccountState
-from trading.brokers.kiwoom.client import KiwoomClient
-from trading.brokers.kiwoom.orders import OrderExecutor
 from trading.config import AppConfig, config
-from trading.rag.spec_parser import Market
 
 log = logging.getLogger(__name__)
 
@@ -58,117 +46,6 @@ class BrokerAdapter(Protocol):
     def realised_pnl(self, symbols=None) -> float | None: ...
 
 
-class KiwoomAdapter:
-    """KR or US equities via Kiwoom."""
-
-    def __init__(self, market: str, cfg: AppConfig | None = None):
-        self.cfg = cfg or config()
-        self.market = market
-        self.client = KiwoomClient(Market(market))
-        self._state = AccountState(self.client)
-        self.universe = Universe(self.client, self.cfg)
-        self.screen = Screen(self.client, self.universe, self.cfg)
-
-    def state(self):
-        return self._state
-
-    def normalise(self, snap):
-        """Give the US snapshot the canonical field names the gate and sizer read.
-
-        The KR and US endpoints answer with entirely different vocabularies --
-        KR: prsm_dpst_aset_amt / entr / rmnd_qty / pur_pric
-        US: tot_evlt_amt      / d0_usd_fx_entr / qty / frgn_stk_book_uv
-        Reading KR names off a US response yielded equity 0 and cash 0, so the
-        gate rejected every buy as "equity unavailable" and the sizer produced
-        quantity 0. Silent, and it would have looked like "no opportunities".
-        """
-        if self.market != "US":
-            return snap
-        pos, cash = snap.positions, snap.cash
-        holdings = _rows(pos)
-        equity = _num(pos.get("tot_evlt_amt"))
-        # d0_usd_fx_entr is the settled USD deposit; the won fields are irrelevant
-        # to a USD-denominated order.
-        usd_cash = _num(cash.get("d0_usd_fx_entr"))
-        pos.setdefault("prsm_dpst_aset_amt", equity + usd_cash)
-        cash.setdefault("ord_alow_amt", usd_cash)
-        cash.setdefault("entr", usd_cash)
-        for row in holdings:
-            # sell_alowq is what may actually be sold today; qty can include
-            # unsettled buys that the venue will reject on a sell.
-            row.setdefault("rmnd_qty", row.get("sell_alowq") or row.get("poss_qty") or row.get("qty"))
-            row.setdefault("pur_pric", row.get("frgn_stk_book_uv"))
-            row.setdefault("stk_nm", row.get("frgn_stk_nm"))
-        return snap
-
-    def executor(self, gate):
-        return OrderExecutor(self.client, gate, self.cfg)
-
-    def candidates(self, order_size: float = 0.0) -> list[dict]:
-        return self.screen.candidates()
-
-    def prices(self, symbols: list[str]) -> dict[str, float]:
-        """One call per symbol — Kiwoom has no bulk price endpoint."""
-        basic = self.cfg.agent.quotes_for(self.market).get("basic")
-        if basic is None:
-            return {}
-        needs_exchange = "stex_tp" in self.client.store.get(basic.api_id).required_body()
-        out: dict[str, float] = {}
-        for symbol in symbols:
-            body = {**basic.params, "stk_cd": symbol}
-            if needs_exchange:
-                exchange = self.universe.exchange_of(symbol)
-                if not exchange:
-                    log.warning("no exchange known for %s; quote skipped", symbol)
-                    continue
-                body["stex_tp"] = exchange
-            try:
-                # The sign encodes direction, not magnitude: -230500 is 230,500 down.
-                price = abs(_num(self.client.call(basic.api_id, body).body.get("cur_prc")))
-            except Exception as exc:  # noqa: BLE001 - a missing quote is not fatal
-                log.warning("quote failed for %s: %s", symbol, exc)
-                continue
-            if price:
-                out[symbol] = price
-        return out
-
-    def rules_for(self, symbol: str):
-        return None  # KRX trades whole shares; no per-symbol quantisation
-
-    def holdings(self, snapshot) -> dict[str, dict]:
-        self.normalise(snapshot)
-        out = {}
-        for row in _rows(snapshot.positions):
-            code = str(row.get("stk_cd", "")).lstrip("A")
-            qty = _num(row.get("rmnd_qty") or row.get("hldg_qty"))
-            if code and qty > 0:
-                basis = abs(_num(row.get("pur_pric") or row.get("avg_prc")))
-                out[code] = {"quantity": qty, "avg_price": basis, "cost_basis": basis}
-        return out
-
-    def fee_market(self, symbol: str) -> str:
-        return self.market
-
-    def realised_pnl(self, symbols=None) -> float | None:
-        """Today's realised P&L, as the BROKER reports it (일자별실현손익).
-
-        Never derived from equity change: the owner deposits and withdraws, and
-        an equity difference would book those as trading performance.
-        """
-        ep = self.cfg.risk.daily_pnl
-        if ep is None:
-            return None
-        today = dt.datetime.now(ZoneInfo(self.cfg.broker.kiwoom.timezone)).strftime("%Y%m%d")
-        try:
-            body = self.client.call(
-                ep.api_id, {**ep.params, "strt_dt": today, "end_dt": today}
-            ).body
-        except Exception as exc:  # noqa: BLE001 - reporting must not break a cycle
-            log.warning("realised P&L unavailable: %s", exc)
-            return None
-        return _num(body.get("rlzt_pl"))
-
-
 class BinanceAdapter:
     """Crypto and bStocks over one shared USDT balance — one agent, two books."""
 
@@ -182,6 +59,8 @@ class BinanceAdapter:
         self.universe = BinanceUniverse(self.client, books, self.cfg)
         self.screen = BinanceScreen(self.client, self.universe, self.cfg)
         self._state = BinanceAccountState(self.client, self.universe, self.cfg)
+        # symbol -> (quantity, basis). See _cost_basis for why quantity is the key.
+        self._basis: dict[str, tuple[float, float]] = {}
 
     def state(self):
         return self._state
@@ -198,13 +77,30 @@ class BinanceAdapter:
     def rules_for(self, symbol: str):
         return self.universe.rules_for(symbol)
 
+    def _cost_basis(self, symbol: str, qty: float) -> float:
+        """myTrades-backed basis, cached per (symbol, quantity).
+
+        The Spot Testnet seeds ~480 assets this system never bought, and
+        discovering "no fills" for each cost one signed myTrades call per symbol
+        PER CYCLE — ~48s of API traffic to learn nothing new. Quantity is the
+        invalidation key: any fill (and any deposit) changes the balance, which
+        forces a fresh read, while a balance that has not moved cannot have new
+        fills that change its basis.
+        """
+        cached = self._basis.get(symbol)
+        if cached and cached[0] == qty:
+            return cached[1]
+        basis = self._state.cost_basis(symbol)
+        self._basis[symbol] = (qty, basis)
+        return basis
+
     def holdings(self, snapshot) -> dict[str, dict]:
         out = {}
         for row in snapshot.positions.get("rows", []):
             symbol = row.get("stk_cd")
             qty = _num(row.get("rmnd_qty"))
             if symbol and qty > 0:
-                cost_basis = self._state.cost_basis(symbol)
+                cost_basis = self._cost_basis(symbol, qty)
                 out[symbol] = {
                     "quantity": qty,
                     # The stop is built from actual fill basis, never the current
@@ -260,13 +156,8 @@ class BinanceAdapter:
 
 def build_adapter(broker: str, market: str | None = None, cfg: AppConfig | None = None):
     cfg = cfg or config()
-    match broker.lower():
-        case "kiwoom":
-            return KiwoomAdapter(market or cfg.agent.market, cfg)
-        case "binance":
-            # `market` names a Kiwoom surface (KR/US) and is meaningless here:
-            # Binance is one market spanning both books, so it is ignored rather
-            # than passed through, which would otherwise label the agent "KR" and
-            # gate it on the Seoul session clock.
-            return BinanceAdapter("BINANCE", cfg)
-    raise KeyError(f"unknown broker {broker!r}; known: kiwoom, binance")
+    if broker.lower() == "binance":
+        # `market` is accepted for signature stability and ignored: Binance is
+        # one market spanning both books.
+        return BinanceAdapter("BINANCE", cfg)
+    raise KeyError(f"unknown broker {broker!r}; known: binance")

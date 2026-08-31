@@ -22,6 +22,7 @@ def ledger(tmp_path):
     cfg.accounting.fees.sell_tax_rate = 0.0015
     cfg.accounting.fees.slippage_bps = 5
     cfg.llm.usd_krw = 1380.0
+    cfg.llm.usd_cny = 7.15
     return CostLedger(cfg)
 
 
@@ -42,13 +43,88 @@ def test_round_trip_rate_is_the_hurdle(ledger):
 
 
 def test_llm_call_is_priced_from_config(ledger):
-    # deepseek-chat: 0.27 in / 1.10 out per 1M
-    usd = ledger.price_call("deepseek-chat", 1_000_000, 1_000_000)
-    assert usd == pytest.approx(1.37)
+    """DeepSeek bills this account in CNY, from a CNY list that is NOT market-FX
+    of the USD list -- the ledger must convert the native CNY price itself."""
+    # deepseek-v4-flash: ¥3 in / ¥9 out per 1M (peak cache-miss) -> USD at usd_cny
+    usd = ledger.price_call("deepseek-v4-flash", 1_000_000, 1_000_000)
+    assert usd == pytest.approx((3.00 + 9.00) / 7.15)
+    # Legacy alias stays priced so a tier rollback never bills at zero.
+    assert ledger.price_call("deepseek-chat", 1_000_000, 1_000_000) > 0
+    # A USD-priced model converts nothing.
+    assert ledger.price_call("qwen-plus", 1_000_000, 1_000_000) == pytest.approx(1.60)
+
+
+def test_cny_priced_call_lands_in_krw_at_the_market_rate(ledger):
+    """The user-facing number is KRW; for a CNY bill it must be CNY x (krw/cny),
+    not the USD list converted at market FX (~5% apart)."""
+    usd = ledger.price_call("deepseek-v4-flash", 1_000_000, 0)  # ¥3.00
+    ledger.record_llm(
+        Usage(
+            model="deepseek-v4-flash",
+            provider="deepseek",
+            tier="fast",
+            input_tokens=1_000_000,
+            output_tokens=0,
+            usd=usd,
+        )
+    )
+    krw = ledger.day().api_krw
+    assert krw == pytest.approx(3.00 / 7.15 * 1380.0, rel=1e-3)  # ≈ ¥3 x 193 KRW/CNY
 
 
 def test_unknown_model_costs_zero_rather_than_guessing(ledger):
     assert ledger.price_call("some-unreleased-model", 1000, 1000) == 0.0
+
+
+def test_llm_spend_is_aggregated_per_model(ledger):
+    """The tier mix is a cost decision (one reasoner call ~5x a chat call), so
+    the operator report breaks spend down by model, not just in total."""
+    for model, out_tokens in (
+        ("deepseek-chat", 500),
+        ("deepseek-chat", 700),
+        ("deepseek-reasoner", 9000),
+    ):
+        ledger.record_llm(
+            Usage(
+                model=model,
+                provider="deepseek",
+                tier="fast",
+                input_tokens=4000,
+                output_tokens=out_tokens,
+                usd=ledger.price_call(model, 4000, out_tokens),
+            )
+        )
+    by_model = ledger.llm_by_model()
+    assert by_model["deepseek-chat"]["calls"] == 2
+    assert by_model["deepseek-chat"]["tokens"] == 4500 + 4700
+    assert by_model["deepseek-reasoner"]["calls"] == 1
+    assert by_model["deepseek-reasoner"]["krw"] > by_model["deepseek-chat"]["krw"]
+
+    text = ledger.breakeven()
+    assert "deepseek-chat: 2 calls" in text
+    assert "deepseek-reasoner: 1 calls" in text
+    assert "API budget" in text, "the budget that pauses deciding must be visible"
+
+
+def test_closed_trades_and_open_lots_walk_fifo(ledger):
+    """The ledger's FIFO walk feeds both the bot's P&L section and the scorer's
+    closed-trade grades. Prices in the ledger are mainnet reference prices, so
+    both are marked to the real market."""
+    ledger.record_trade(symbol="AAAUSDT", side="BUY", quantity=10, price=100, market="CRYPTO")
+    ledger.record_trade(symbol="AAAUSDT", side="SELL", quantity=4, price=110, market="CRYPTO")
+    closed = ledger.closed_trades(markets={"CRYPTO"})
+    assert len(closed) == 1
+    assert closed[0]["pnl_quote"] == pytest.approx(40.0)  # 4 x (110 - 100)
+    assert closed[0]["return_pct"] == pytest.approx(10.0)
+    lots = ledger.open_lots(markets={"CRYPTO"})
+    assert lots["AAAUSDT"] == [[6, 100.0]], "the trimmed remainder stays an open lot"
+
+
+def test_orphan_sells_produce_no_pnl(ledger):
+    """A sell with no recorded buy (seed liquidation) is not a round trip."""
+    ledger.record_trade(symbol="TUTUSDT", side="SELL", quantity=18446, price=0.035, market="CRYPTO")
+    assert ledger.closed_trades(markets={"CRYPTO"}) == []
+    assert ledger.open_lots(markets={"CRYPTO"}) == {}
 
 
 def test_day_aggregates_api_and_fees(ledger):

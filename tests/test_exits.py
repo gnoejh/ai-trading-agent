@@ -128,20 +128,69 @@ def sup(cfg):
 
 def test_adopts_an_unmanaged_holding(cfg):
     s = sup(cfg)
-    s.check({"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY})
+    s.check(
+        {"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY}
+    )
     assert "005930" in s.plans, "a position with no plan must still get a stop"
 
 
 def test_drops_plans_the_broker_no_longer_reports(cfg):
     s = sup(cfg)
-    s.check({"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY})
+    s.check(
+        {"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY}
+    )
     s.check({}, {})
     assert s.plans == {}, "broker is the source of truth on what exists"
 
 
+def test_no_cost_basis_refused_and_logged_once_not_per_pass(cfg, caplog):
+    """A holding with no known entry gets no plan, and the refusal is logged
+    when the set changes -- the testnet seeds ~480 such balances, which was
+    482 error lines on EVERY cycle."""
+    s = sup(cfg)
+    seeds = {f"SEED{i}USDT": {"quantity": 100, "cost_basis": 0} for i in range(5)}
+    with caplog.at_level("WARNING", logger="trading.risk.exits"):
+        s.check(seeds, {})
+        assert s.plans == {}, "no entry price means no stop worth the name"
+        first_pass = [r for r in caplog.records if "no cost basis" in r.message]
+        assert len(first_pass) == 1, "one aggregate line, not one per holding"
+        caplog.clear()
+        s.check(seeds, {})
+        assert not [r for r in caplog.records if "no cost basis" in r.message], (
+            "an unchanged refused set must not re-log"
+        )
+
+
+def test_dust_plan_is_closed_not_alarmed_forever(cfg):
+    """Live 2026-08-31: a quantized exit left 0.34 PROM (~$2, under the $5
+    minNotional); its stop refired every cycle and every order was refused.
+    A holding that cannot form a valid order is dust: the plan closes and the
+    remainder is never re-adopted."""
+    s = PositionSupervisor(FakeState(), cfg, is_dust=lambda sym, qty, price: qty * price < 5)
+    s.check({"PROMUSDT": {"quantity": 300, "cost_basis": 6.9}}, {"PROMUSDT": 6.9})
+    assert "PROMUSDT" in s.plans
+    # The exit sold the quantized bulk; the broker now reports the remainder.
+    s.check({"PROMUSDT": {"quantity": 0.34, "cost_basis": 6.9}}, {"PROMUSDT": 6.2})
+    assert "PROMUSDT" not in s.plans, "a dust plan must close, not alarm forever"
+    signals = s.check({"PROMUSDT": {"quantity": 0.34, "cost_basis": 6.9}}, {"PROMUSDT": 6.2})
+    assert signals == [], "dust must not be re-adopted either"
+
+
+def test_exit_intents_keep_fractional_quantities(cfg):
+    """int(sig.quantity) truncated the 0.34-PROM exit to 0, and the gate then
+    refused it as non-positive -- the position was unexitable by construction."""
+    import inspect
+
+    from trading.agent.loop import TradingAgent
+
+    assert "int(sig.quantity)" not in inspect.getsource(TradingAgent.run_exits)
+
+
 def test_follows_broker_quantity_but_keeps_the_stop(cfg):
     s = sup(cfg)
-    s.check({"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY})
+    s.check(
+        {"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY}
+    )
     stop = s.plans["005930"].stop
     s.check({"005930": {"quantity": 4, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY})
     assert s.plans["005930"].quantity == 4
@@ -150,13 +199,17 @@ def test_follows_broker_quantity_but_keeps_the_stop(cfg):
 
 def test_missing_price_does_not_fabricate_a_stop_breach(cfg):
     s = sup(cfg)
-    s.check({"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY})
+    s.check(
+        {"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY}
+    )
     assert s.check({"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {}) == []
 
 
 def test_state_survives_a_restart(cfg):
     s = sup(cfg)
-    s.check({"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY})
+    s.check(
+        {"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY}
+    )
     stop = s.plans["005930"].stop
     revived = sup(cfg)
     assert revived.plans["005930"].stop == stop, "stops must outlive the process"
@@ -164,8 +217,13 @@ def test_state_survives_a_restart(cfg):
 
 def test_supervisor_emits_a_stop_exit(cfg):
     s = sup(cfg)
-    s.check({"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY})
-    signals = s.check({"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY * 0.9})
+    s.check(
+        {"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}}, {"005930": ENTRY}
+    )
+    signals = s.check(
+        {"005930": {"quantity": 10, "avg_price": ENTRY, "cost_basis": ENTRY}},
+        {"005930": ENTRY * 0.9},
+    )
     assert len(signals) == 1 and signals[0].reason is ExitReason.STOP
 
 

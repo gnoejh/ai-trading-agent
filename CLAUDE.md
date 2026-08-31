@@ -2,22 +2,28 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Binance-only since 2026-09-01
+
+The Kiwoom (KR/US equities) side — client, spec-RAG over the vendor workbooks, DART filings,
+KR flow capture — was removed at owner instruction; git history before `2026-09-01` retains all
+of it. What survived the split: the venue-neutral state contracts moved to
+`trading/brokers/state.py` (`Snapshot`, `StaleStateError`, `OrderRejected`), and the adapter seam
+(`trading/brokers/adapters.py`) stays, so a second venue is an adapter away. Untracked Kiwoom-era
+artifacts (`KIWOOM_API.pdf`, `data/flow_kr.jsonl`, `data/dart_corp.json`, `data/specs/`) were left
+on disk deliberately — `flow_kr.jsonl` is forward-accumulated and unrecoverable.
+
 ## Invariants
 
 These are decisions, not preferences. Violating one is a bug even if the code runs.
 
 1. **Broker records are the single source of truth.** Positions, cash and open orders come from a
-   live broker read, never from locally accumulated state. `AccountState` has no setters by design.
+   live broker read, never from locally accumulated state. Snapshots have no setters by design.
    Anything persisted locally is a derived cache for audit and analytics; if it disagrees with the
    broker, the broker is right. `state.reconcile_before_order` forces a fresh read on the order path.
 2. **No hardcoded parameters.** Tunables live in `config.yaml` and are read through `trading.config`.
    If you are about to write a literal timeout, limit, API id or model name into a module, add it to
    the YAML instead. `.env` holds secrets only and is never mirrored into the YAML.
-3. **KR and US are separate markets.** Kiwoom exposes them as distinct API surfaces sharing only a
-   host and the OAuth token — different URL trees (`/api/dostk/*` vs `/api/us/*`), different realtime
-   endpoints, separate entitlements. `Market` is an enum, a client is bound to exactly one, and a
-   cross-market API id raises. Never widen this to a string filter.
-4. **The model proposes, deterministic code disposes.** An LLM must never be the last thing before an
+3. **The model proposes, deterministic code disposes.** An LLM must never be the last thing before an
    order. Order endpoints are refused unless `allow_orders` is explicitly enabled, and the risk gate
    belongs in front of that switch.
 
@@ -27,11 +33,10 @@ Profit is `realised P&L − trading fees − API spend`. All three are recorded 
 by `trading/accounting/costs.py`, so break-even is measured, not assumed (`/costs` on Telegram, or
 `CostLedger.breakeven()`).
 
-At the configured KR rates a **round trip costs ~0.28% of notional** (0.015% commission each side,
-0.15% 거래세 on the sell, 5bps assumed slippage each side). That is the hurdle every trade must clear
-before it earns anything, and it is unaffected by model quality. API spend adds a fixed daily floor
-that matters disproportionately at this account size (~4.8M KRW equity). When tuning `max_orders_per_day`,
-remember each order is a fixed drag: 6 orders/day is already ~0.6% of traded notional in costs.
+**The book decides the hurdle**: a round trip costs 0.500% of notional on the crypto book and
+0.600% on bStocks (0.1% commission each side plus assumed slippage). That is the bar every trade
+must clear before it earns anything, and it is unaffected by model quality.
+`adapter.fee_market(symbol)` resolves it per symbol. API spend adds a fixed daily floor.
 
 Model prices in `llm.pricing` are estimates — **verify them against the providers' pricing pages**,
 because every break-even figure derives from them. Unknown models are billed at zero and warn.
@@ -40,7 +45,7 @@ because every break-even figure derives from them. Unknown models are billed at 
 
 ```
 uv sync                                   # create/refresh .venv from uv.lock
-uv run pytest                             # 146 tests, no network (httpx MockTransport)
+uv run pytest                             # 153 tests, no network (httpx MockTransport)
 uv run python scripts/wire_test.py        # dry run; --live sends ONE ~$6 order
 uv run pytest tests/test_risk_gate.py -k concentration
 uv run ruff check . --fix && uv run ruff format .
@@ -49,39 +54,33 @@ uv run python -m trading.preflight        # READ-ONLY pre-live check; run before
 uv run python -m trading.llm.check        # every LLM tier reachable?
 uv run python -m trading.watch --once     # print account status
 uv run python -m trading.watch            # serve Telegram commands
-uv run python -m trading.rag.build_index  # rebuild data/specs/kiwoom.json from the workbook
+uv run python -m trading.agent.scorer     # standalone scoring pass (RAG build step)
 ```
 
 Tests must stay hermetic: fixtures pin `use_testnet`, `allow_orders` and the risk limits rather than
 inheriting `config.yaml`, so a live-config change can never silently alter what a test asserts.
 
-On Windows the console is cp949 and the corpus is Korean: prefix with `PYTHONUTF8=1` or output is
-mojibake. `tzdata` is a real dependency, not incidental — Windows ships no zoneinfo database.
+On Windows the console is cp949: prefix with `PYTHONUTF8=1` or output is mojibake. `tzdata` is a
+real dependency, not incidental — Windows ships no zoneinfo database.
 
 ## Architecture
 
-**RAG runs at build time, not on the trading hot path.** The vendor workbooks are perfectly regular,
-so spec extraction is deterministic parsing with no model involved (`rag/spec_parser.py`). Retrieval
-is two-stage: `catalog_prompt(market)` renders all ~200 APIs for one market in ~2.2k tokens so the
-model picks ids by reading the menu, then `get(api_id)` is a dict lookup. There is no embedding
-similarity anywhere, so there is no recall risk on the field tables. `SpecRouter` discards any id the
-model returns that is not in the market's catalog.
-
-**One client covers ~300 endpoints.** Every Kiwoom REST call is `POST {domain}{url}` with `api-id` in
-the header and `cont-yn`/`next-key` for continuation, so `KiwoomClient.call()` takes the URL, required
-fields and field lengths from the parsed spec rather than from hand-written wrappers. Request bodies
-are validated against the spec *before* the network call.
+**One client, config-driven endpoints.** `BinanceClient.call(name, params)` reads the endpoint
+registry from `config.yaml` (`broker.binance.endpoints`), signs what needs signing, throttles, and
+normalises bare-list responses to `{"rows": [...]}`. Adding a call is a config edit.
 
 **Telegram is the operator surface** (`@hjeong_trading_agent_bot`, token `TRADING_AGENT_BOT_TOKEN`).
-`trading/watch.py` serves `/status`, `/positions`, `/cash`, `/halt`, `/resume` and can push reports on
-an interval. Inbound chat is untrusted: `poll()` drops any update whose chat id is not in
-`TELEGRAM_ALLOWED_IDS` — dropped silently, and the offset still advances so a stranger cannot wedge
-the loop. The watcher constructs its client with `allow_orders=False`; monitoring must not trade.
-Status labels are pulled from the parsed spec's Korean field names, so reports survive schema changes.
+`trading/watch.py` serves `/status`, `/positions`, `/cash`, `/pnl`, `/costs`, `/halt`, `/resume` and
+can push reports on an interval. Inbound chat is untrusted: `poll()` drops any update whose chat id
+is not in `TELEGRAM_ALLOWED_IDS` — dropped silently, and the offset still advances so a stranger
+cannot wedge the loop. The watcher constructs its client with `allow_orders=False`; monitoring must
+not trade.
 
-**Layout** — `trading/rag/` parse, store, route; `trading/brokers/kiwoom/` client + `AccountState`;
+**Layout** — `trading/agent/` loop, journal, scorer; `trading/brokers/binance/` client, account,
+universe, symbols; `trading/brokers/state.py` shared state contracts; `trading/brokers/adapters.py`
+the adapter seam; `trading/risk/` gate, sizing, exits, rungs; `trading/accounting/` cost ledger;
 `trading/notify/` Telegram + status rendering; `trading/llm/` provider access; `trading/config.py`
-YAML + `.env`. Not built yet: the risk gate, market-data ingest, and the realtime websocket client.
+YAML + `.env`.
 
 ## Exits are derived from the cost hurdle
 
@@ -91,10 +90,8 @@ R-multiples off an arbitrary stop (`trading/risk/exits.py`):
 - **A position is not flat at its entry price.** Net break-even is entry × (1 + round-trip rate) plus
   that position's share of API spend. Selling above entry but below that is a loss, and the policy
   refuses to call it a win.
-- **Reward:risk is guaranteed, not hoped for.** A hurdle-only target is dangerous — with a 3% stop and
-  a 0.28% hurdle, a 4× target is +1.1% against −3%, a 0.34 ratio needing a ~75% hit rate. `min_reward_risk`
-  widens the target so risk and reward scale together (currently ~+6.8% vs −3.0%, ratio 2.0, break-even
-  win rate 33%).
+- **Reward:risk is guaranteed, not hoped for.** A hurdle-only target is dangerous — `min_reward_risk`
+  widens the target so risk and reward scale together.
 - **The stop only ratchets up.** `tighten_stop` refuses to widen, in code.
 - **The trail arms only past net break-even**, never from entry — otherwise cost drag itself triggers stop-outs.
 - **Time is a cost.** A position that has not cleared its hurdle in `max_hold_minutes` is closed.
@@ -117,7 +114,7 @@ The fixes below were verified in code and by regression tests on 2026-08-12.
 - **`run_exits` is now called before the halt gate in `run_cycle()`.** Exits are evaluated on every pass
   before new entries are considered, so stop, target, trail and time-stop can act when the market moves.
 - **`ExitPolicy.hurdle` passes the market into the ledger.** Binance exits use the Binance hurdle instead
-  of the KR default; the live reproduction was `0.2800%` vs `0.6000%`.
+  of the old KR default; the live reproduction was `0.2800%` vs `0.6000%`.
 - **The daily-loss cap no longer applies to sells.** A breached loss cap stops new risk, but does not trap
   an open position that must be closed.
 - **`BinanceAdapter.holdings()` now populates `avg_price` from `cost_basis`**, not the live mark. A stop that
@@ -130,38 +127,121 @@ asserts that a breached loss cap still permits an exit; `tests/test_binance.py` 
 
 Cost of learning this: **$436 on TUTUSDT**, closed 2026-08-12 at −13.7% against an 8% stop.
 
-## Sessions: KR then US, same process
-
-Sessions are declared per market in **the exchange's own timezone** (`agent.sessions`), so DST is
-resolved by the zone database rather than by fixed KST offsets — the US open is 23:30 KST under EST
-but 22:30 under EDT, and hardcoding either would trade an hour wrong for half the year. KR runs
-09:00–15:20 Asia/Seoul, US 09:30–15:55 America/New_York. `AgentConfig.open_market()` returns whichever
-is trading; the two never overlap.
-
 ## The universe funnel
 
-The universe is the whole market, fetched from the broker (`ka10099`), never a hand-kept list.
-`ka10099` returns **4,293 KR rows**: 거래소 917 + 코스닥 1,820 common stocks, plus ETF 1,160 / ETN 361 /
-리츠 23, which are different instruments. After filtering to common stock with `auditInfo == 정상`,
-the tradable universe is **~2,483**. That is far too many to quote or prompt, so every cycle runs
+The universe is the whole market, fetched from the broker (`exchangeInfo`), never a hand-kept list:
+~485 tradable USDT pairs across two books. That is too many to prompt, so every cycle runs
 
-    universe (~2,483) → broker ranking screens → top N candidates (25) → model → risk gate → broker
+    universe (~485) → flow-ranked screens per book → top N candidates → model → risk gate → broker
 
 Screening is deterministic and happens **before** any model call, which bounds cost: context size is
 a function of `screen.candidates`, not market size. The model only ever sees the shortlist plus
 current holdings, and `_parse` discards any symbol it was not offered — that is what stops a
 hallucinated ticker from reaching the gate.
 
-## Credentials status (verified 2026-08-10)
+## Testnet operating mode (since 2026-08-30)
 
-`KIWOOM_TESTNET_APP_KEY` / `KIWOOM_TESTNET_SECRET_KEY` **do not authenticate** — both hosts return
-`8001 App Key와 Secret Key 검증에 실패했습니다`. The mainnet pair works, but only against
-`api.kiwoom.com`; `mockapi.kiwoom.com` correctly rejects it with `8030 투자구분이 달라` (wrong
-investment type). So with `use_testnet: true` the agent cannot authenticate at all, and paper trading
-is unavailable until 모의투자 keys are reissued at the Kiwoom developer portal.
+Owner constraints: Binance Spot **Testnet only**, **DeepSeek only**, learn by iterating.
 
-Kiwoom returns auth failures as **HTTP 200 with a non-zero `return_code`**, so `raise_for_status()`
-does not catch them; `_issue_token` checks the body explicitly.
+- **The data plane and trade plane are split** (`BinanceClient.data_url` / `trade_url`). The
+  testnet's books are thin and bot-seeded, so its tickers, klines and taker-flow are noise — and
+  order flow is the one signal this project ever measured an edge on. Unsigned market data therefore
+  **always reads mainnet**; `use_testnet` moves only signed traffic (account, orders) to
+  `testnet.binance.vision`. The seam is pinned by `test_testnet_splits_data_and_trade_planes`.
+- Testnet keys are `BINANCE_TESTNET_API_KEY`/`SECRET_KEY` in `.env` — verified working. The testnet
+  lists bStocks pairs too, but only ~1,382 pairs total, a strict subset of mainnet; `tradable_pool`
+  intersects the data-plane universe with `client.trade_plane_symbols()` (cached per process; an
+  unavailable fetch degrades to no filter and the order fails loudly). Quantisation filters still
+  come from mainnet exchangeInfo; a filter mismatch fails loudly at order time.
+- **The testnet seeds ~480 asset balances the system never bought.** Cost-basis reads are cached per
+  `(symbol, quantity)` — a fill or deposit changes the balance, which is what invalidates. Seed
+  balances are refused management (no cost basis → no stop worth the name). The **slot limit counts
+  MANAGED positions** (`TradingAgent._managed_count`: holdings with a cost basis) — counting raw
+  balances once filled every slot with seeds and silently disabled both entry arms.
+- **The decide prompt carries managed holdings only, contract-first.** Embedding the raw positions
+  snapshot blew the payload past its 20k truncation guard, which silently cut `trade_rules` — the
+  payoff contract — off the END of the prompt: the model declined cycle after cycle with
+  "trade_rules not supplied", journalled as considered judgement. Critical fields come FIRST so any
+  future overflow truncates detail, never the contract.
+- **Pick filters use MANAGED symbols, never raw balances.** `_managed_symbols` (cost basis > 0) is
+  the one definition of "held" for slots, shadow and explore alike — filtering by raw balance made
+  the shadow pick always None and biased the explore corpus toward unseeded coins, silently.
+- **Exit quantities are floats, and dust closes its own plan.** `int(sig.quantity)` truncated a
+  0.34-unit exit to 0, which the gate refused as non-positive. The supervisor takes an
+  `is_dust(symbol, qty, price)` predicate from the loop (venue lot rules live in the adapter): a
+  plan whose holding cannot form a valid order (e.g. remainder under the $5 minNotional) is closed
+  with one log line, and dust is never adopted.
+- **`cost_basis` is a moving-average book, walked oldest-first.** The old newest-first walk reset on
+  each sell and kept walking, so sell-then-rebuy wiped the rebuy's basis to 0 — a real position held
+  with no stop. Sells now reduce the tracked position at its average cost, and a sell larger than
+  the tracked position (seed units no fill paid for) just flattens it. One reconcile caveat remains,
+  accepted deliberately: plan quantity follows the broker, so a managed symbol that also has a seed
+  balance is exited in full when its stop fires — broker records are the single source of truth.
+- **Testnet balances reset periodically.** A discontinuous equity jump is a reset, not P&L — same
+  discipline as owner deposits. Testnet fees are zero, but the ledger keeps charging the mainnet
+  hurdle; otherwise every result overstates by exactly the margin that killed trades live.
+- **All three LLM tiers are DeepSeek, on the documented V4 ids**: `fast` is deepseek-v4-flash (the
+  decide tier), `deep`/`escalation` are deepseek-v4-pro. The legacy aliases still answer but bill at
+  undocumented rates. **This account is billed in CNY**, and DeepSeek's CNY list is NOT market-FX of
+  its USD list (fixed ~6.82 internal ratio vs ~7.15 market), so the DeepSeek entries in
+  `llm.pricing` carry CNY prices with `currency: CNY` and the ledger converts at `llm.usd_cny`.
+  Rates are PEAK cache-miss deliberately — the ledger overstates spend rather than flattering it.
+  API spend is the only real money this system spends.
+- **The bot is the only window into the testnet account** — the Binance app cannot display it.
+  `BinanceStatusReporter` (`trading/notify/status.py`) renders the full picture: USDT cash, equity,
+  each managed position with its committed exit plan read read-only via `exit_state_path()`, open
+  orders, seed balances collapsed to one unmanaged line, the day's DeepSeek spend per model against
+  `max_api_krw_per_day`, and the learning corpus. `/positions` and `/cash` answer scoped sections.
+- **The service**: `install_nssm_service.ps1` (run as Administrator) installs
+  `trading-agent-binance` running `run_service.py --broker binance`. `BinanceWatcher`'s
+  `/halt`–`/resume` act on the per-venue `HALT.BINANCE` (the file the gate actually checks), and
+  `/resume` warns if the global `data/HALT` is still set. Seam tests: `tests/test_watch.py`.
+
+## The learning loop (built 2026-08-30) — explore, score, retrieve
+
+The system learns through a measured-aggregates RAG, never by adapting the model online. Three
+arms produce observations, one scorer grades them, and the decide prompt retrieves only what has
+earned statistical standing:
+
+- **The exploration arm** (`explore` in config, `TradingAgent.run_explore`): with probability
+  `entry_pct` per cycle, one random small entry from `BinanceScreen.tradable_pool()` — the
+  tradable universe with **strategy filters removed** (liquidity, lot rules and the stablecoin
+  exclusion still apply; the screen's momentum/flow bounds deliberately do not, or the screen's
+  own thresholds could never be falsified). No model call, so it costs no tokens and runs even on
+  cycles the model skips. Everything downstream is the normal machinery — sizer, gate, executor,
+  exit supervisor: exploration changes who proposes, never what disposes. Decay `entry_pct`
+  toward `floor_pct` by hand as the corpus fills — never to zero, or model-vs-chance stops being
+  measurable.
+- **The shadow pick**: every decision record journals the full candidate MENU plus one random
+  symbol from that same menu (`shadow_random`) — never traded, resolved identically, the model's
+  paired chance baseline.
+- **The scorer** (`trading/agent/scorer.py`, interval-gated inside `run_cycle` after exits, or
+  standalone `uv run python -m trading.agent.scorer`): opens one observation per tradable symbol
+  at a time (de-overlap is methodology trap #2), resolves forward returns at the 72h horizon from
+  MAINNET klines (testnet fills are fantasy prices), and aggregates into `data/experience.json` —
+  buckets by source/book/change-band/flow-tertile, each with its n, plus the paired
+  model-vs-shadow summary.
+- **Retrieval** (`experience_block`): buckets below `score.min_bucket_n` never render; an
+  unfilled store contributes nothing to the prompt — silence, never fabricated priors. Qualifying
+  rows appear as `measured_record` in the decide prompt, always with their n.
+
+The seams are pinned in `tests/test_explore.py`.
+
+**Closed trades are scored from the ledger, not from fills.** The prices the ledger records are
+data-plane reference prices — mainnet by construction since the plane split — so FIFO-pairing its
+own BUY/SELL records per symbol yields mark-to-mainnet round trips with no extra network. Orphan
+sells (seed liquidations with no recorded buy) pair with nothing; `score.trade_since` keeps the
+live-mainnet era out of testnet statistics — the ledger spans both epochs and mixing them is
+exactly the false signal the scorer exists to prevent. `/status` shows the corpus filling
+(*Learning* section: observations opened/resolved, buckets past the gate, model-vs-random).
+
+Still open: the exploration decay schedule (manual by design — lower `explore.entry_pct` toward
+`floor_pct` once the corpus says what the model is worth).
+
+**Fill sprint (2026-08-31, owner instruction)**: ahead of an expected testnet reset the config
+temporarily optimises for CLOSED round trips — `explore.entry_pct: 1.0`, `entries_per_cycle: 5`,
+`max_positions: 30`, `sizing.fraction: 0.05`, `exits.markets.BINANCE.max_hold_minutes: 180`,
+`agent.loop_interval_s: 300`. Restore the marked "was" values after the reset.
 
 ## Providers
 
@@ -183,18 +263,6 @@ by trying the other host before assuming the key is wrong. The key is read from 
 **`.env` is a symlink to `C:\Users\hjeong\OneDrive\.env`** — one shared secrets file across all the
 user's projects. Writing to it changes every project, so edit deliberately and back up first.
 
-## The workbooks
-
-`KIWOOM_API.xlsx` is the authoritative endpoint reference — consult it (or the parsed index) rather
-than hand-writing request models. Sheet 0 is the catalog; each of the other 338 documents one API.
-Specs are keyed by the `API ID` inside the sheet, **not** by sheet name: REST sheets are named by bare
-id (`ka10001`) but realtime sheets are named `이름(id)` (`주문체결(00)`), and one substitutes `|` for `/`.
-The error-code table has no API ID and is reached via the `공통` alias. Realtime types are identified
-by a `wss://` domain, not by id shape.
-
-`KIS_API.xlsx` is the same format but keys its sheets by Korean API name, so reusing the parser for
-KIS needs a name-based resolver. `KIWOOM_API.pdf` covers the same surface in prose.
-
 ## Research findings (2026-08-10) — read before changing the strategy
 
 Measured, not assumed. Each test invalidated the previous one's optimism, so the
@@ -206,7 +274,7 @@ was **−0.06%** — noise. The original screen ranked on exactly this.
 
 **Order flow does.** The same test on 5-day average taker-buy share (kline field 9 /
 field 5) gave a **+1.05% spread** (+1.58% top decile vs +0.53% bottom) — roughly twice
-the round-trip cost. The Binance screen now ranks on this (`screen.use_flow`).
+the round-trip cost. The Binance screen ranks on this (`screen.use_flow`).
 
 **The trading premise did not beat buy-and-hold** in the one clean test: non-overlapping
 trades, train/test split, benchmark over the identical window. Over 2.7 years the strict
@@ -223,29 +291,18 @@ Three methodology traps that produced false positives, all of which looked convi
 3. **No benchmark.** A long-only rule in a +96% window looks brilliant and still loses
    to doing nothing. Always compare against buy-and-hold over the identical period.
 
-Untested and next: whether the model beats a random pick from its own shortlist, and
-whether the KR flow signals (외국인/기관 순매수, 거래원별 매매, 프로그램매매) — all already
-parsed in the spec index, all free — carry the same edge as taker flow does on Binance.
+Untested and next: whether the model beats a random pick from its own shortlist (the
+learning loop is accumulating exactly this).
 
-## Two brokers, one agent
+## One venue, two books
 
-`TradingAgent(broker="kiwoom"|"binance")` builds a `BrokerAdapter`
-(`trading/brokers/adapters.py`). Everything downstream — gate, sizer, exit supervisor, cost ledger —
-is venue-agnostic; the adapter absorbs what differs: Kiwoom quotes one symbol per call while Binance
-returns all prices in one, KRX trades whole shares while Binance quantises per symbol, KR has a
-session while crypto does not.
-
-Kiwoom and Binance are **separate accounts and separate agents**. Run them as two services:
-`--broker kiwoom` / `--broker binance`.
-
-- **Binance is two books over one balance.** CRYPTO (423) and BSTOCKS (66) share one USDT wallet, so
-  they are one agent choosing across the union, never two racing for the same cash. bStocks are
+- **Binance is two books over one balance.** CRYPTO (~420) and BSTOCKS (~66) share one USDT wallet,
+  so they are one agent choosing across the union, never two racing for the same cash. bStocks are
   identified by the `TRD_GRP_261` permission tag — a symbol-suffix rule wrongly matches BNB/SHIB/ARB.
-- **The book decides the hurdle**, not the agent: crypto 0.500%, bStocks 0.600%, KR 0.280%, US 0.130%.
+- **The book decides the hurdle**, not the agent: crypto 0.500%, bStocks 0.600%.
   `adapter.fee_market(symbol)` resolves it per symbol.
-- **The kill switch is per venue.** `data/HALT.<MARKET>` halts one; bare `data/HALT` halts everything.
-- **The gate validates against the market it was built for**, not `agent.market` — that config field
-  still reads `KR` while a Binance gate is `BINANCE`, and comparing to it rejected every Binance order.
+- **The kill switch is per venue.** `data/HALT.BINANCE` halts entries; bare `data/HALT` halts everything.
+- **The gate validates against the market it was built for**, not `agent.market`.
 
 Traps found live and worth not re-discovering:
 
@@ -267,43 +324,21 @@ next order larger and a withdrawal makes it smaller, with no stale figure in bet
 sizing, `max_position_pct` and the daily-loss check are all levels, never deltas.
 
 **Never compute performance as an equity difference.** `(equity_now − equity_then)` reads
-a ₩1M deposit as a spectacular gain and a withdrawal as a catastrophic loss. Performance is
+a deposit as a spectacular gain and a withdrawal as a catastrophic loss. Performance is
 realised P&L (broker-reported) minus fees minus API spend — which is flow-invariant.
 Flows are journalled separately via `CostLedger.record_cash_flow` and are excluded from
 every P&L figure; use them only to build a time-weighted return if one is ever needed.
 
 ## The reasoner returns empty content — check this before diagnosing "no trade"
 
-`deepseek-reasoner` (the `deep` tier) can spend its entire budget on reasoning and
-return **zero tokens of content**. Reproduced 2026-08-10 on a ~4,000-char prompt:
+A DeepSeek reasoning model can spend its entire budget on reasoning and return **zero
+tokens of content** (reproduced 2026-08-10: 29,751 reasoning chars against an 8,192
+`max_tokens` cap → empty content; v4-flash hit the same trap 2026-08-31, fixed by a 32k cap).
+`LLMClient.ask` returns `content or ""`, `_parse` finds no JSON, one warning is logged, and
+the cycle reports **0 intents** — indistinguishable in the journal from a considered
+decision not to trade.
 
-    content len   :      0
-    reasoning len : 29,751     (3.6x the configured max_tokens)
-    max_tokens    :  8,192
-
-`LLMClient.ask` returns `content or ""`, `_parse` finds no JSON, one warning is
-logged, and the cycle reports **0 intents**. That is indistinguishable in the
-journal from a considered decision not to trade — so some declines attributed to
-judgment were actually truncation.
-
-An agent that silently reports "no trade" when it never received an answer is
-worse than one that errors. Empty content WITH non-empty `reasoning_content` is a
-distinct, detectable state: log it as truncation and retry on another tier, never
-fold it into a decision. `fast` (deepseek-chat) answered the same prompts cleanly
-and far cheaper; it is a serious candidate for the decide tier.
-
-## DART filing polarity — read the verb, not the noun
-
-Korean filings invert meaning on a suffix: 체결(conclude) vs 해지(terminate),
-취득(acquire) vs 처분(dispose), 결정(decide) vs 철회(withdraw). An earlier keyword
-map scored `자기주식취득신탁계약해지` — a buyback ENDING — as bullish, because it
-matched on `자기주식취득`. Inverted forms must be matched BEFORE their base forms;
-`CATALYSTS` in `trading/info/dart.py` is an ordered list for exactly that reason.
-
-Ownership filings (주식등의대량보유상황보고서, 임원ㆍ주요주주…, 최대주주변경) are
-tagged NEU and never signed: the direction is in the document body, not the title.
-A 대량보유 filing covers accumulation and disposal alike.
-
-The classification was produced by asking the trader model rather than by hand —
-it caught the 해지/체결 inversion and refused to sign the ownership classes, both
-of which a string-matching approach got wrong.
+An agent that silently reports "no trade" when it never received an answer is worse than
+one that errors. Empty content WITH non-empty `reasoning_content` is a distinct, detectable
+state: log it as truncation and retry on `llm.fallback_tier` (which must be a non-reasoning
+model), never fold it into a decision.

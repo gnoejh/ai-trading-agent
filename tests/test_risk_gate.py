@@ -10,7 +10,7 @@ import datetime as dt
 
 import pytest
 
-from trading.brokers.kiwoom.account import Snapshot
+from trading.brokers.state import Snapshot
 from trading.config import load_config
 from trading.risk.gate import RiskGate, Side, TradeIntent
 
@@ -24,7 +24,6 @@ class FakeState:
         self.snapshot = snapshot
         self.fail = fail
         self.reconciled = 0
-        self.client = self  # gate reaches through .client for the daily P/L call
         self.pnl = pnl
 
     def assert_reconciled(self) -> Snapshot:
@@ -32,14 +31,6 @@ class FakeState:
         if self.fail:
             raise RuntimeError("broker unreachable")
         return self.snapshot
-
-    def call(self, api_id, body=None, **kw):
-        pnl = self.pnl
-
-        class Page:
-            body = {"rlzt_pl": str(int(pnl))}  # noqa: RUF012 - test stub
-
-        return Page()
 
 
 def snapshot(*, cash=12_000_000, total=100_000_000, held_qty=100, held_value=5_000_000):
@@ -72,7 +63,9 @@ def cfg(tmp_path):
 
 
 def gate(cfg, state):
-    return RiskGate(state, cfg)
+    # The realised-P&L seam is the injected provider, exactly as the adapter
+    # wires it in production.
+    return RiskGate(state, cfg, pnl_provider=lambda: state.pnl)
 
 
 def buy(qty=10, price=70_000, **kw):

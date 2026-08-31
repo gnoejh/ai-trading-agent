@@ -108,7 +108,7 @@ def test_exit_ladder_sells_the_whole_position(planner):
 
 def test_exit_spacing_scales_with_the_venue_hurdle(planner, cfg):
     """A costlier venue must demand a wider gain before scaling out."""
-    cheap = planner.exit_rungs(100.0, 100.0, None, "US")  # 0.130%
+    cheap = planner.exit_rungs(100.0, 100.0, None, "CRYPTO")  # 0.500%
     dear = planner.exit_rungs(100.0, 100.0, None, "BSTOCKS")  # 0.600%
     assert dear[0].price > cheap[0].price
 

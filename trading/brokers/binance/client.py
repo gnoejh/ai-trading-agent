@@ -1,25 +1,23 @@
 """Binance Spot client — crypto and bStocks.
 
-Deliberately shaped like :class:`~trading.brokers.kiwoom.client.KiwoomClient`:
-``call(endpoint_name, params) -> Page``. That is what lets `Universe`, `Screen`,
-`AccountState` and the risk gate work against either venue without a second
-implementation of each. The endpoint registry lives in `config.yaml`, so adding a
-Binance call is a config edit exactly as it is for Kiwoom.
+One generic seam: ``call(endpoint_name, params) -> Page``. The endpoint registry
+lives in `config.yaml`, so adding a Binance call is a config edit, and callers
+(`Universe`, `Screen`, `AccountState`, the risk gate) never touch HTTP.
 
-Two venues share this connection and one balance:
+Two books share this connection and one balance:
 
 * **crypto** — USDT-quoted coins.
 * **bStocks** — tokenized US equities, identified by the ``TRD_GRP_261``
   permission tag rather than by a symbol suffix. A suffix rule would sweep in
   BNB, SHIB, ARB and CKB, which are ordinary coins.
 
-Binance differs from Kiwoom in ways that matter to the rest of the system:
+Shape notes that matter to the rest of the system:
 
-* **Fees.** 0.1% maker/taker per side and no transaction tax, so a round trip is
-  ~0.2% against KR's ~0.28%. Fees are therefore per-market in `accounting`.
+* **Fees.** 0.1% maker/taker per side and no transaction tax; per-market rates
+  live in `accounting`.
 * **No session.** Crypto trades continuously; there is no open or close to gate on.
-* **Responses are often bare lists**, where Kiwoom always returns an object. They
-  are normalised to ``{"rows": [...]}`` so the shared row extraction works.
+* **Responses are often bare lists.** They are normalised to ``{"rows": [...]}``
+  so the shared row extraction works.
 """
 
 from __future__ import annotations
@@ -39,7 +37,7 @@ log = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class Page:
-    """Mirrors the Kiwoom client's Page so callers stay venue-agnostic."""
+    """One page of a broker response; callers stay venue-agnostic."""
 
     body: dict
     next_key: str | None = None
@@ -71,7 +69,14 @@ class BinanceClient:
         self.market_cfg = self.bcfg.market(market)
         self.secrets = secrets or BinanceSecrets()
         self.allow_orders = self.bcfg.allow_orders if allow_orders is None else allow_orders
-        self.base_url = self.secrets.base_url(testnet=self.bcfg.use_testnet)
+        # Trade plane vs data plane. The Spot Testnet's books are thin and
+        # bot-seeded: its tickers, klines and taker-flow are noise, and the flow
+        # screen's measured edge exists only in real market data. So unsigned
+        # market-data reads ALWAYS go to mainnet; only signed traffic (account,
+        # orders) follows use_testnet.
+        self.trade_url = self.secrets.base_url(testnet=self.bcfg.use_testnet)
+        self.data_url = self.secrets.base_url(testnet=False)
+        self._trade_symbols: set[str] | None = None
         self._http = client or httpx.Client(timeout=self.bcfg.timeout_s)
         self._last_call = 0.0
         # Binance rejects a request whose timestamp drifts outside recvWindow, and
@@ -90,7 +95,9 @@ class BinanceClient:
 
     def sync_time(self) -> int:
         """Measure clock drift against the exchange. Cheap, unsigned."""
-        r = self._http.get(f"{self.base_url}/api/v3/time")
+        # Drift matters for SIGNED timestamps, so measure against the host that
+        # receives them.
+        r = self._http.get(f"{self.trade_url}/api/v3/time")
         r.raise_for_status()
         server = int(r.json()["serverTime"])
         self._time_offset_ms = server - int(time.time() * 1000)
@@ -137,7 +144,7 @@ class BinanceClient:
                 self.sync_time()
             params = self._sign(params)
 
-        url = self.base_url + ep.path
+        url = (self.trade_url if ep.signed else self.data_url) + ep.path
         self._throttle()
         r = self._http.request(ep.method, url, params=params, headers=headers)
         self._last_call = time.monotonic()
@@ -160,11 +167,35 @@ class BinanceClient:
                 raise BinanceError(name, r.status_code, r.text[:200]) from None
 
         data = r.json()
-        # Kiwoom always answers with an object; Binance often answers with a bare
-        # list. Normalising here keeps the shared row extraction venue-agnostic.
+        # Binance often answers with a bare list. Normalising here keeps the
+        # shared row extraction venue-agnostic.
         if isinstance(data, list):
             data = {"rows": data}
         return Page(body=data)
+
+    def trade_plane_symbols(self) -> set[str]:
+        """Symbols the TRADE host actually lists, cached for the process.
+
+        On mainnet this equals the data plane. On testnet it is a strict
+        subset — the testnet lists far fewer names, and an order for anything
+        in the difference fails with -1121 Invalid symbol (observed live
+        2026-08-31 on the first widened-pool exploration pick). An empty set
+        means "unknown" (the fetch failed); callers treat that as no filter
+        and let the order fail loudly instead of silently narrowing the pool.
+        """
+        if self._trade_symbols is None:
+            try:
+                r = self._http.get(f"{self.trade_url}/api/v3/exchangeInfo")
+                r.raise_for_status()
+                self._trade_symbols = {
+                    s.get("symbol")
+                    for s in r.json().get("symbols", [])
+                    if s.get("status") == "TRADING"
+                }
+            except Exception as exc:  # noqa: BLE001 - degrade to unfiltered, never crash
+                log.warning("trade-plane exchangeInfo unavailable: %s", exc)
+                return set()
+        return self._trade_symbols
 
     def price(self, symbol: str) -> float:
         body = self.call("price", {"symbol": symbol}).body

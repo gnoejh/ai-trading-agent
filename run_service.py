@@ -1,18 +1,13 @@
-"""Service entry point: trade the open session, watch Telegram the rest of the time.
+"""Service entry point: trade continuously, serve Telegram commands between cycles.
 
     uv run python run_service.py
 
 One process, two responsibilities:
 
-* **Trading.** Runs :class:`TradingAgent` cycles for whichever market is open.
-  Sessions are declared per exchange in its own timezone, so this switches from
-  KR to US on its own and needs no wall-clock arithmetic here.
+* **Trading.** Runs :class:`TradingAgent` cycles. Binance never closes, so the
+  loop simply paces itself on `agent.loop_interval_s`.
 * **Operator control.** Serves `/status`, `/costs`, `/halt`, `/resume` between
   cycles, so the account is reachable from a phone while unattended.
-
-Nothing is scheduled by a cron: the loop asks the session which market is open
-each pass and sleeps until one is. When neither is, it idles cheaply — no broker
-calls, no tokens — and keeps answering Telegram.
 """
 
 from __future__ import annotations
@@ -24,8 +19,7 @@ from pathlib import Path
 from trading.agent.loop import TradingAgent
 from trading.config import config
 from trading.notify.telegram import TelegramNotifier
-from trading.rag.spec_parser import Market
-from trading.watch import Watcher
+from trading.watch import build_watcher
 
 log = logging.getLogger("service")
 
@@ -54,7 +48,7 @@ def main() -> int:
     import argparse
 
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--broker", default="kiwoom", choices=["kiwoom", "binance"])
+    ap.add_argument("--broker", default="binance", choices=["binance"])
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -71,16 +65,24 @@ def main() -> int:
         )
 
     mode = "DRY RUN" if cfg.agent.dry_run else "LIVE"
+    testnet = cfg.broker.binance.use_testnet
     telegram.send(
-        f"🟢 trading-agent service started — *{mode}*\n"
-        f"sizing: {cfg.sizing.mode}, max {cfg.sizing.max_positions} position(s)\n"
-        f"sessions: {', '.join(cfg.agent.sessions)}"
+        f"🟢 trading-agent service started — *{mode}*{' (testnet)' if testnet else ''}\n"
+        f"broker: {args.broker}\n"
+        # Backticks, not bare text: `full_balance` contains an underscore, which
+        # Telegram's legacy Markdown reads as an unclosed italic and rejects.
+        f"sizing: `{cfg.sizing.mode}`, max {cfg.sizing.max_positions} position(s)\n"
+        f"sessions: 24/7"
     )
-    log.info("service start: mode=%s sessions=%s", mode, list(cfg.agent.sessions))
+    log.info("service start: broker=%s mode=%s", args.broker, mode)
 
-    agents: dict[str, TradingAgent] = {}
-    watchers: dict[str, Watcher] = {}
-    current: str | None = None
+    # Built lazily so a Telegram-only stretch costs nothing; kept for the life
+    # of the process because constructing an agent authenticates and loads the
+    # universe.
+    agent: TradingAgent | None = None
+    # EVERY service gets a watcher. A broker-conditional guard here once meant a
+    # service polled commands and dropped them silently.
+    watcher = build_watcher(args.broker, notifier=telegram)
 
     while True:
         try:
@@ -92,39 +94,9 @@ def main() -> int:
                 telegram.send("♻️ restarting to pick up configuration changes")
                 return 0
 
-            market = "BINANCE" if args.broker == "binance" else cfg.agent.open_market()
+            if agent is None:
+                agent = TradingAgent(cfg, notifier=telegram, broker=args.broker)
 
-            if market is None:
-                # Closed everywhere. Stay responsive on Telegram, spend nothing.
-                if current is not None:
-                    log.info("%s session closed", current)
-                    telegram.send(f"⏹️ {current} session closed")
-                    current = None
-                watcher = watchers.get("KR") or watchers.setdefault(
-                    "KR", Watcher(Market.KR, notifier=telegram)
-                )
-                if owns_commands:
-                    for msg in telegram.poll(timeout_s=int(IDLE_POLL_S)):
-                        telegram.send(watcher.handle(msg.text), chat_id=msg.chat_id)
-                else:
-                    time.sleep(IDLE_POLL_S)
-                continue
-
-            if market != current:
-                log.info("%s session open", market)
-                telegram.send(f"▶️ {market} session open")
-                current = market
-
-            if market not in agents:
-                # Built lazily: constructing an agent authenticates and loads the
-                # universe, which is wasted work for a market that never opens.
-                market_cfg = cfg.model_copy(deep=True)
-                market_cfg.agent.market = market
-                agents[market] = TradingAgent(market_cfg, notifier=telegram, broker=args.broker)
-                if args.broker == "kiwoom":
-                    watchers[market] = Watcher(Market(market), notifier=telegram)
-
-            agent = agents[market]
             result = agent.run_cycle()
             log.info("%s", result.summary())
             if result.intents or result.exits or result.errors:
@@ -139,9 +111,7 @@ def main() -> int:
                     time.sleep(remaining)
                     continue
                 for msg in telegram.poll(timeout_s=remaining):
-                    watcher = watchers.get(market)
-                    if watcher:
-                        telegram.send(watcher.handle(msg.text), chat_id=msg.chat_id)
+                    telegram.send(watcher.handle(msg.text), chat_id=msg.chat_id)
 
         except KeyboardInterrupt:
             telegram.send("⏹️ trading-agent service stopping")
