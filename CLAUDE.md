@@ -1,6 +1,26 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+It doubles as the development record: keep the log below current when landing meaningful changes.
+
+## Development log (newest first)
+
+- **2026-09-01** — Kiwoom side removed; the codebase is Binance-only (see next section). `/costs`
+  currency fix: fees and realised P&L recorded in the venue's own currency, converted once;
+  realised scoped to flat symbols so open buys stop reading as losses (see *Economics*). Fill
+  sprint ongoing (~34 positions, 137+ closed round trips); the expected testnet reset had not
+  landed as of 02:47 KST. Corpus: ~489 observations opened, 0 resolved — first 72h resolutions
+  possible from 2026-09-02 23:44 KST.
+- **2026-08-31** — Fill sprint (owner: maximize closed round trips before the reset). Learning-loop
+  seam fixes: managed-only prompt/slots/filters, float exit quantities + dust plans,
+  moving-average cost basis, per-broker watcher. v4-flash needs 32k max_tokens.
+- **2026-08-30** — Revival under owner constraints: Binance Spot Testnet only, DeepSeek only,
+  learn by iterating. Data/trade plane split. Learning loop built: explore arm, shadow pick,
+  scorer, `measured_record` retrieval (see *The learning loop*).
+- **2026-08-12** — Four exit-path defects fixed after the $436 TUTUSDT loss (see *The wiring is
+  what breaks*).
+- **2026-08-10** — Research findings: momentum has no edge, taker flow does; the strategy did not
+  beat buy-and-hold in the clean test (see *Research findings*). Live KR trading began and ended.
 
 ## Binance-only since 2026-09-01
 
@@ -40,6 +60,16 @@ must clear before it earns anything, and it is unaffected by model quality.
 
 Model prices in `llm.pricing` are estimates — **verify them against the providers' pricing pages**,
 because every break-even figure derives from them. Unknown models are billed at zero and warn.
+
+**The ledger records money in the venue's own currency and converts once** (fixed 2026-09-01).
+Every fee book carries a `currency` (`FeeConfig.currency`; USDT is treated as USD), `record_trade`
+and `record_realised` convert to KRW at write time, and legacy rows convert on read — only for
+markets with an explicit `market_fees` entry, so KR-era rows that were genuinely KRW stay
+untouched. Before this, USDT figures sat under KRW labels and `/costs` under-reported Binance
+fees by the full FX rate. Related: **realised P&L is computed over FLAT symbols only**
+(`TradingAgent._flat_traded_symbols`) — Binance reconstructs it from myTrades cash flow, which
+reads every still-open buy as a loss; the unscoped figure once showed a −21,820 "realised loss"
+that was mostly committed cash, and the daily-loss cap reads the same number.
 
 ## Commands
 
