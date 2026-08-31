@@ -56,6 +56,11 @@ class FeeConfig(BaseModel):
     # Kept for venues that tax sells (KR did); Binance books leave it at zero.
     sell_tax_rate: float = 0.0
     slippage_bps: float = 0.0
+    # The currency a fee on this market is DENOMINATED in — the venue's quote
+    # currency (USDT is treated as USD). The ledger converts to KRW at write
+    # time; without this, USDT fee figures were stored under KRW labels and
+    # /costs under-reported Binance fees by the full FX rate.
+    currency: str = "USD"  # USD | KRW
 
     def round_trip_rate(self) -> float:
         """Fraction of notional consumed by one buy + one sell."""

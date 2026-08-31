@@ -117,6 +117,14 @@ class CostLedger:
     def round_trip_cost(self, notional: float, market: str | None = None) -> float:
         return notional * self.acc.fees_for(market).round_trip_rate()
 
+    def to_krw(self, amount: float, currency: str) -> float:
+        """Report-currency conversion. USDT amounts are treated as USD."""
+        if str(currency).upper() in ("USD", "USDT"):
+            return amount * self.cfg.llm.usd_krw
+        if str(currency).upper() != "KRW":
+            log.warning("unknown ledger currency %r; recorded unconverted", currency)
+        return amount
+
     def breakeven_move_pct(self, market: str | None = None) -> float:
         """How far price must move on a round trip before costs are covered."""
         return self.acc.fees_for(market).round_trip_rate()
@@ -146,8 +154,14 @@ class CostLedger:
     def record_trade(
         self, *, symbol: str, side: str, quantity: float, price: float, market: str | None = None
     ) -> float:
+        """Record one fill. The fee is computed and stored in the market's own
+        quote currency (`fee`, `currency`) and converted once for the KRW report
+        (`fee_krw`) — fees used to land in `fee_krw` unconverted, which
+        under-reported Binance costs by the full FX rate. Returns the fee in
+        quote units, which is what exit hurdles are computed in."""
         notional = abs(price * quantity)
         fee = self.trade_fee(notional, side=side, market=market)
+        currency = self.acc.fees_for(market).currency
         self._append(
             "trade",
             symbol=symbol,
@@ -156,13 +170,26 @@ class CostLedger:
             price=price,
             market=market,
             notional=round(notional, 2),
-            fee_krw=round(fee, 2),
+            fee=round(fee, 4),
+            currency=currency,
+            fee_krw=round(self.to_krw(fee, currency), 2),
         )
         return fee
 
-    def record_realised(self, amount_krw: float, source: str = "broker") -> None:
-        """Realised P&L as reported by the broker — the only authority on it."""
-        self._append("realised", krw=round(amount_krw, 2), source=source)
+    def record_realised(
+        self, amount: float, source: str = "broker", currency: str = "KRW"
+    ) -> None:
+        """Realised P&L as reported by the broker — the only authority on it.
+
+        `amount` is in the broker's own currency; it is converted once here so
+        the day report stays in KRW."""
+        self._append(
+            "realised",
+            amount=round(amount, 4),
+            currency=currency,
+            krw=round(self.to_krw(amount, currency), 2),
+            source=source,
+        )
 
     def record_cash_flow(self, amount_krw: float, kind: str = "deposit") -> None:
         """An owner deposit or withdrawal — NOT performance.
@@ -219,11 +246,22 @@ class CostLedger:
                     costs.output_tokens += int(rec.get("output_tokens", 0))
                 case "trade":
                     costs.trades += 1
-                    costs.trade_fees_krw += float(rec.get("fee_krw", 0))
+                    fee_krw = float(rec.get("fee_krw", 0))
+                    if "currency" not in rec:
+                        # Legacy row: fee_krw was written in the market's quote
+                        # units without conversion. Convert on read — but only
+                        # for markets with an explicit fee entry: rows from
+                        # removed markets (KR/US) were genuinely KRW and must
+                        # not be converted through the USD default block.
+                        entry = self.acc.market_fees.get(str(rec.get("market")))
+                        if entry is not None:
+                            fee_krw = self.to_krw(fee_krw, entry.currency)
+                    costs.trade_fees_krw += fee_krw
                     costs.traded_notional_krw += float(rec.get("notional", 0))
                 case "realised":
                     # Last writer wins: realised P&L is a running total from the
-                    # broker, not an increment to accumulate.
+                    # broker, not an increment to accumulate. (Legacy Binance
+                    # rows stored USDT under `krw`; they age out with the day.)
                     costs.realised_pl_krw = float(rec.get("krw", 0))
         return costs
 
@@ -318,7 +356,7 @@ class CostLedger:
         c = self.day(day)
         tokens = c.input_tokens + c.output_tokens
         api_detail = f"(${c.api_usd:.4f}, {c.llm_calls} calls, {tokens:,} tokens)"
-        fee_detail = f"({c.trades} fills, {c.traded_notional_krw:,.0f} notional)"
+        fee_detail = f"({c.trades} fills, {c.traded_notional_krw:,.0f} quote notional)"
         lines = [
             f"*Break-even — {c.date}*",
             f"  API spend    : {c.api_krw:>12,.0f} KRW  {api_detail}",
@@ -338,7 +376,9 @@ class CostLedger:
         lines += [
             f"  Trading fees : {c.trade_fees_krw:>12,.0f} KRW  {fee_detail}",
             f"  Total cost   : {c.total_cost_krw:>12,.0f} KRW",
-            f"  Realised P/L : {c.realised_pl_krw:>12,.0f} KRW",
+            # Flat symbols only, by construction upstream: an open position's
+            # buys are committed cash, not a realised loss.
+            f"  Realised P/L : {c.realised_pl_krw:>12,.0f} KRW  (closed symbols only)",
             f"  *Net*        : {c.net_krw:>12,.0f} KRW",
         ]
         if c.breakeven_gap_krw > 0:

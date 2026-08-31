@@ -144,7 +144,9 @@ class TradingAgent:
             self.state,
             self.cfg,
             market=self.market,
-            pnl_provider=lambda: self.adapter.realised_pnl(sorted(self._traded_symbols)),
+            # Flat symbols only: an open position's buys are not realised losses,
+            # and the loss cap must not trip on cash merely committed.
+            pnl_provider=self._flat_realised_pnl,
         )
         self.executor = self.adapter.executor(self.gate)
         self.sizer = PositionSizer(self.cfg)
@@ -362,6 +364,30 @@ class TradingAgent:
 
     # -- one cycle ------------------------------------------------------------
 
+    def _flat_traded_symbols(self) -> list[str]:
+        """Symbols this process traded today that the account no longer holds.
+
+        Binance reconstructs realised P&L from myTrades cash flow, which is only
+        exact for a FLAT symbol -- an open position reads as pure outflow. During
+        a many-position day that made "realised P&L" mostly measure cash
+        committed, and pushed the daily-loss check toward tripping on phantom
+        losses. So both the ledger and the loss cap only ever see flat symbols.
+        """
+        try:
+            snap = self.state.current()
+            held = {
+                str(row.get("stk_cd"))
+                for row in snap.positions.get("rows", [])
+                if _num(row.get("rmnd_qty")) > 0
+            }
+        except Exception:  # noqa: BLE001 - an unreadable account means no symbols are provably flat
+            return []
+        return sorted(self._traded_symbols - held)
+
+    def _flat_realised_pnl(self) -> float | None:
+        """Broker-reported realised P&L over today's closed symbols."""
+        return self.adapter.realised_pnl(self._flat_traded_symbols())
+
     def _record_realised(self, observation) -> None:
         """Feed broker-reported realised P&L to the ledger.
 
@@ -371,10 +397,11 @@ class TradingAgent:
         withdrawals must not read as performance.
         """
         try:
-            symbols = sorted(self._traded_symbols)
-            pnl = self.adapter.realised_pnl(symbols)
+            pnl = self._flat_realised_pnl()
             if pnl is not None:
-                self.ledger.record_realised(pnl)
+                # In the venue's own currency; the ledger converts for the report.
+                currency = self.cfg.accounting.fees_for(self.market).currency
+                self.ledger.record_realised(pnl, currency=currency)
         except Exception:
             log.exception("realised P&L update failed")
 

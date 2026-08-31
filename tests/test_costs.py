@@ -21,6 +21,9 @@ def ledger(tmp_path):
     cfg.accounting.fees.commission_rate = 0.00015
     cfg.accounting.fees.sell_tax_rate = 0.0015
     cfg.accounting.fees.slippage_bps = 5
+    # KRW-denominated default book: these tests assert the KR-era arithmetic,
+    # where the quote currency IS the report currency and nothing converts.
+    cfg.accounting.fees.currency = "KRW"
     cfg.llm.usd_krw = 1380.0
     cfg.llm.usd_cny = 7.15
     return CostLedger(cfg)
@@ -201,3 +204,62 @@ def test_owner_flows_are_never_counted_as_performance(ledger):
     assert day.realised_pl_krw == 5_000, "flows must not touch realised P&L"
     assert day.net_krw == pytest.approx(5_000 - day.total_cost_krw)
     assert ledger.cash_flows() == pytest.approx(800_000)
+
+
+# -- currency correctness (the /costs mislabeling found 2026-09-01) -----------
+
+
+def test_usdt_fees_convert_to_krw_in_the_day_report(ledger):
+    """A Binance fee is charged in USDT; /costs reports KRW. Storing the quote
+    figure under a KRW label under-reported fees by the full FX rate."""
+    fee_quote = ledger.record_trade(
+        symbol="BTCUSDT", side="BUY", quantity=1.0, price=10_000.0, market="CRYPTO"
+    )
+    day = ledger.day()
+    assert day.trade_fees_krw == pytest.approx(fee_quote * 1380.0, rel=1e-3)
+
+
+def test_realised_pnl_converts_from_the_venue_currency(ledger):
+    ledger.record_realised(100.0, currency="USD")
+    assert ledger.day().realised_pl_krw == pytest.approx(100.0 * 1380.0)
+    # Default stays KRW so legacy call sites keep meaning what they said.
+    ledger.record_realised(5_000)
+    assert ledger.day().realised_pl_krw == pytest.approx(5_000)
+
+
+def test_legacy_trade_rows_convert_only_for_configured_markets(ledger):
+    """Pre-fix rows stored quote units in fee_krw with no currency field. On
+    read they convert for markets with an explicit fee entry (Binance books),
+    but never for removed markets (KR) whose rows were genuinely KRW."""
+    import json
+
+    ts = dt.datetime.now(dt.UTC).isoformat()
+    with open(ledger.path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ts": ts, "kind": "trade", "market": "CRYPTO", "fee_krw": 2.0}) + "\n")
+        fh.write(json.dumps({"ts": ts, "kind": "trade", "market": "KR", "fee_krw": 650.0}) + "\n")
+    assert ledger.day().trade_fees_krw == pytest.approx(2.0 * 1380.0 + 650.0)
+
+
+def test_flat_symbol_scoping_excludes_open_positions():
+    """myTrades cash flow is only exact for a flat symbol: an open position's
+    buys must read as committed cash, not as a realised loss that could trip
+    the daily-loss cap."""
+    import datetime as _dt
+
+    from trading.agent.loop import TradingAgent
+    from trading.brokers.state import Snapshot
+
+    class Stub:
+        _traded_symbols = frozenset({"AAAUSDT", "BBBUSDT", "CCCUSDT"})
+
+        class state:
+            @staticmethod
+            def current():
+                return Snapshot(
+                    market="BINANCE",
+                    taken_at=_dt.datetime.now(_dt.UTC),
+                    positions={"rows": [{"stk_cd": "BBBUSDT", "rmnd_qty": "5"}]},
+                )
+
+    flat = TradingAgent._flat_traded_symbols(Stub())
+    assert flat == ["AAAUSDT", "CCCUSDT"], "the still-held symbol must be excluded"
