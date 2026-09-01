@@ -71,6 +71,25 @@ def test_service_scopes_the_flip_per_market():
     assert cfg.broker.kiwoom.allow_orders
 
 
+def test_adapter_hands_its_config_to_the_client():
+    """The scoped copy must reach the wire, or the scoping is decoration.
+
+    Found live on the first paper night: `KiwoomClient(Market(market))` with no
+    cfg re-read the GLOBAL config and sent US quote traffic to the mock host —
+    the per-market scoping existed but nothing carried it to the client.
+    """
+    from trading.brokers.adapters import KiwoomAdapter
+
+    cfg = _flip_cfg(use_testnet=True, allow_orders=True)
+
+    us = KiwoomAdapter("US", _kiwoom_cfg(cfg, "US"))
+    assert us.client.kcfg.use_testnet is False, "US reads must stay on the mainnet host"
+    assert us.client.allow_orders is False
+
+    kr = KiwoomAdapter("KR", _kiwoom_cfg(cfg, "KR"))
+    assert kr.client.kcfg.use_testnet is True, "KR paper reads the mock host"
+
+
 def test_service_forces_dry_run_when_flip_is_off():
     cfg = _flip_cfg(use_testnet=False, allow_orders=False)
     for market in ("KR", "US"):

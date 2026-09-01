@@ -59,7 +59,11 @@ class KiwoomAdapter:
     def __init__(self, market: str, cfg: AppConfig | None = None):
         self.cfg = cfg or config()
         self.market = market
-        self.client = KiwoomClient(Market(market))
+        # The agent's config copy MUST reach the client: run_service scopes the
+        # paper flip per market (KR paper on the mock host, US mainnet reads),
+        # and a bare KiwoomClient() would re-read the global config and send US
+        # traffic to the mock host. Found live 2026-09-01, first paper night.
+        self.client = KiwoomClient(Market(market), cfg=self.cfg)
         self._state = AccountState(self.client)
         self.universe = Universe(self.client, self.cfg)
         self.screen = Screen(self.client, self.universe, self.cfg)
