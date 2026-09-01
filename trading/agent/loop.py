@@ -72,7 +72,15 @@ pick, however impressive its change today.
 Reply with JSON only:
 {"intents": [{"side": "BUY"|"SELL", "symbol": "...", "quantity": 0,
               "limit_price": null, "reason": "...", "confidence": 0.0-1.0}],
+ "best_candidate": {"symbol": "...", "confidence": 0.0-1.0},
  "commentary": "one or two sentences"}
+
+- `best_candidate` is ALWAYS required, even when `intents` is empty: the single
+  most promising name on the menu right now, with your honest probability that
+  it reaches the target before the stop. It is never traded — it exists so your
+  selection skill is measured against a random pick on every decision, not only
+  on the rare cycles you trade. Declining to trade while still naming your best
+  candidate is the expected common case.
 
 - `confidence` is your estimate of the probability that the trade reaches target
   before stop. 0.5 means a coin flip. Be honest: below the floor in `trade_rules`
@@ -300,12 +308,12 @@ class TradingAgent:
             ),
         }
 
-    def decide(self, observation: dict) -> tuple[list[TradeIntent], str]:
+    def decide(self, observation: dict) -> tuple[list[TradeIntent], str, str | None]:
         tiers = self.acfg.tiers
         allowed = set(observation["tradable"])
         prices = {c["symbol"]: c["price"] for c in observation["candidates"] if c.get("price")}
         raw = self.llm.ask(self._prompt(observation), system=_SYSTEM, tier=tiers.decide)
-        intents, commentary = self._parse(raw, allowed, prices)
+        intents, commentary, best = self._parse(raw, allowed, prices)
 
         # Escalate rather than act on a low-confidence view.
         if intents and min(i.confidence for i in intents) < tiers.confidence_floor:
@@ -313,21 +321,21 @@ class TradingAgent:
             raw = self.llm.ask(
                 self._prompt(observation), system=_SYSTEM, tier=tiers.escalate_on_low_confidence
             )
-            intents, commentary = self._parse(raw, allowed, prices)
-        return intents, commentary
+            intents, commentary, best = self._parse(raw, allowed, prices)
+        return intents, commentary, best
 
     def _parse(
         self, raw: str, allowed: set[str], prices: dict[str, float]
-    ) -> tuple[list[TradeIntent], str]:
+    ) -> tuple[list[TradeIntent], str, str | None]:
         match = _JSON.search(raw or "")
         if not match:
             log.warning("decide: no JSON in model reply")
-            return [], ""
+            return [], "", None
         try:
             payload = json.loads(match.group(0))
         except json.JSONDecodeError as exc:
             log.warning("decide: bad JSON (%s)", exc)
-            return [], ""
+            return [], "", None
 
         intents = []
         for item in payload.get("intents", []):
@@ -360,7 +368,18 @@ class TradingAgent:
                 )
             except (KeyError, ValueError, TypeError) as exc:
                 log.warning("decide: dropping malformed intent %s (%s)", item, exc)
-        return intents, str(payload.get("commentary", ""))[:1000]
+
+        # The virtual pick: the model's top-ranked candidate, present on declines
+        # too. Same anti-hallucination rule as intents — off the menu, discarded.
+        best = None
+        best_raw = payload.get("best_candidate")
+        if isinstance(best_raw, dict):
+            candidate = str(best_raw.get("symbol", ""))
+            if candidate in allowed:
+                best = candidate
+            elif candidate:
+                log.warning("decide: dropping best_candidate %s that was not offered", candidate)
+        return intents, str(payload.get("commentary", ""))[:1000], best
 
     # -- one cycle ------------------------------------------------------------
 
@@ -670,7 +689,7 @@ class TradingAgent:
         self._last_fingerprint = fingerprint
 
         try:
-            intents, commentary = self.decide(observation)
+            intents, commentary, best = self.decide(observation)
         except Exception as exc:
             log.exception("decide failed")
             result.errors.append(f"decide: {type(exc).__name__}: {exc}")
@@ -693,6 +712,13 @@ class TradingAgent:
 
         result.intents, result.commentary = len(intents), commentary
         verdicts = self.gate.evaluate_all(intents)
+        # The virtual pick: the model's top-ranked candidate on EVERY decision,
+        # declines included. Never traded; resolved like the shadow. Without it
+        # the model-vs-random corpus grows only on the rare cycles the model
+        # trades, and the mainnet gate's slowest criterion waits weeks for an n
+        # it could collect in days. Falls back to the first proposed buy for a
+        # reply that omits the field.
+        virtual = best or next((i.symbol for i in intents if i.side is Side.BUY), None)
         # The decision record carries the MENU, not just the picks: the scorer
         # needs the candidates' features to grade every choice, and the shadow
         # random pick from the same shortlist is the model's paired control.
@@ -701,6 +727,7 @@ class TradingAgent:
             commentary=commentary,
             candidates=observation["candidates"],
             shadow_random=self._shadow_pick(observation),
+            virtual_pick=virtual,
             verdicts=[
                 {"intent": asdict(v.intent), "approved": v.approved, "reasons": v.reasons}
                 for v in verdicts

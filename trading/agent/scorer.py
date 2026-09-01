@@ -150,6 +150,13 @@ class ExperienceScorer:
                         for v in rec.get("verdicts", [])
                         if str(v.get("intent", {}).get("side", "")).upper().endswith("BUY")
                     }
+                    # The virtual pick is the model's top candidate on EVERY
+                    # decision, declines included — it grows the model-vs-random
+                    # corpus at decision rate instead of trade rate. Traded picks
+                    # still open below; identical ids dedupe.
+                    virtual = rec.get("virtual_pick")
+                    if virtual:
+                        count += self._open_pick("model", virtual, ts, features, opens, resolves)
                     for symbol in picked:
                         count += self._open_pick("model", symbol, ts, features, opens, resolves)
                     shadow = rec.get("shadow_random")

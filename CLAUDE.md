@@ -20,7 +20,10 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 - **2026-09-01 (later)** — The goal above stated by the owner and encoded: mainnet promotion gate
   built (`promotion.py`, `/status` *Mainnet gate* section); exits capped at bought units so a stop
   can never liquidate owner deposits alongside the position. First gate reading: 322 trips,
-  aggregate net +544 USDT but −0.274%/trip average, 0 shadow pairs — not yet.
+  aggregate net +544 USDT but −0.274%/trip average, 0 shadow pairs — not yet. Then the **virtual
+  pick**: `best_candidate` required on every decide reply so model-vs-random accumulates at
+  decision rate (~25× faster), attacking the gate's slowest criterion without spending a token
+  or a dollar more.
 - **2026-09-01** — Kiwoom side removed; the codebase is Binance-only (see next section). `/costs`
   currency fix: fees and realised P&L recorded in the venue's own currency, converted once;
   realised scoped to flat symbols so open buys stop reading as losses (see *Economics*). Fill
@@ -261,6 +264,12 @@ earned statistical standing:
 - **The shadow pick**: every decision record journals the full candidate MENU plus one random
   symbol from that same menu (`shadow_random`) — never traded, resolved identically, the model's
   paired chance baseline.
+- **The virtual pick** (2026-09-01): the decide contract requires `best_candidate` on EVERY reply,
+  declines included — the model's top-ranked name, journalled as `virtual_pick`, scored as a
+  `model` observation, never traded. Without it the model-vs-random corpus grew only on the rare
+  cycles the model traded (~2/day); with it, at decision rate (~50/day) — the mainnet gate's
+  slowest criterion collects in days instead of weeks. Same anti-hallucination rule as intents:
+  off the menu, discarded.
 - **The scorer** (`trading/agent/scorer.py`, interval-gated inside `run_cycle` after exits, or
   standalone `uv run python -m trading.agent.scorer`): opens one observation per tradable symbol
   at a time (de-overlap is methodology trap #2), resolves forward returns at the 72h horizon from

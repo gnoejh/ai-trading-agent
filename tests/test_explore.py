@@ -405,3 +405,59 @@ def test_closed_trades_pair_fifo_and_skip_orphans_and_old_epochs(cfg, tmp_path):
     assert outcomes[0]["symbol"] == "AAAUSDT"
     assert outcomes[0]["cleared_hurdle"] is True
     assert outcomes[0]["forward_return_pct"] == pytest.approx(10.0)
+
+
+# -- virtual picks (the mainnet gate's evidence accelerator) ------------------
+
+
+def test_parse_extracts_best_candidate_from_the_menu(cfg):
+    """The virtual pick obeys the same anti-hallucination rule as intents:
+    a symbol the model was not shown is discarded, never scored."""
+    from types import SimpleNamespace
+
+    from trading.agent.loop import TradingAgent
+
+    stub = SimpleNamespace(market="BINANCE")
+    raw = (
+        '{"intents": [], "best_candidate": {"symbol": "BBBUSDT", "confidence": 0.4},'
+        ' "commentary": "declining"}'
+    )
+    intents, commentary, best = TradingAgent._parse(stub, raw, {"AAAUSDT", "BBBUSDT"}, {})
+    assert intents == [] and best == "BBBUSDT"
+
+    hallucinated = raw.replace("BBBUSDT", "EVILUSDT")
+    _, _, best = TradingAgent._parse(stub, hallucinated, {"AAAUSDT", "BBBUSDT"}, {})
+    assert best is None, "an unoffered best_candidate must be dropped"
+
+
+def test_scorer_opens_the_virtual_pick_on_a_decline(cfg, tmp_path):
+    """A decline used to contribute nothing to model-vs-random; the virtual
+    pick makes every decision a paired measurement."""
+    ts = dt.datetime.now(dt.UTC).isoformat()
+    decision = {
+        "ts": ts,
+        "kind": "decision",
+        "candidates": POOL,
+        "shadow_random": "AAAUSDT",
+        "virtual_pick": "BBBUSDT",
+        "verdicts": [],  # the model declined to trade
+    }
+    (tmp_path / "journal.jsonl").write_text(json.dumps(decision) + "\n", encoding="utf-8")
+    scorer = make_scorer(cfg, pool=[])
+    stats = scorer.run_once()
+    assert stats["opened_journal"] == 2, "virtual pick + shadow, even with no trade"
+    opened = [
+        json.loads(line) for line in (tmp_path / "observations.jsonl").read_text().splitlines()
+    ]
+    sources = {(r["source"], r["symbol"]) for r in opened if r["kind"] == "open"}
+    assert ("model", "BBBUSDT") in sources and ("shadow", "AAAUSDT") in sources
+
+
+def test_cycle_journals_the_virtual_pick():
+    import inspect
+
+    from trading.agent.loop import TradingAgent
+
+    assert "virtual_pick" in inspect.getsource(TradingAgent.run_cycle), (
+        "the decision record must carry the model's virtual pick"
+    )
