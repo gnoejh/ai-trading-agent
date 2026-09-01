@@ -178,7 +178,7 @@ def test_replay_pairs_model_against_random_from_the_same_menu(cfg):
             )
 
     replayer = Replayer(client, screen, cfg, llm=FakeLLM(), rng=__import__("random").Random(1))
-    summary = replayer.run(decisions=4)
+    summary = replayer.run(decisions=4, min_menu=2)
     assert summary["n"] >= 1
     assert FakeLLM.calls <= 4, "--decisions is a hard billing cap"
     assert summary["model_avg_pct"] > 0, "the model picked the rising name"
@@ -188,10 +188,46 @@ def test_replay_pairs_model_against_random_from_the_same_menu(cfg):
 
 
 def test_menu_is_built_without_lookahead(cfg):
+    from trading.agent.replay import SymbolHistory
+
     history = bars(FLOW_HOURS + 100)
-    by_symbol = {"AAAUSDT": ("CRYPTO", history)}
+    histories = {"AAAUSDT": SymbolHistory("CRYPTO", history)}
     cfg.agent.screen.min_change_pct = 0.0
     cfg.agent.screen.max_change_pct = 0.0
-    menu_before = build_menu(by_symbol, FLOW_HOURS + 10, cfg)
+    t_ms = int(history[FLOW_HOURS + 10][0])
+    menu_before = build_menu(histories, t_ms, cfg)
+    assert menu_before, "the aligned moment must produce a menu"
     history[FLOW_HOURS + 50][4] = 99_999.0  # wild future bar
-    assert build_menu(by_symbol, FLOW_HOURS + 10, cfg) == menu_before
+    assert build_menu(histories, t_ms, cfg) == menu_before
+
+
+def test_menus_align_symbols_by_timestamp_not_index(cfg):
+    """A coin listed mid-window starts its bar array later; aligning by index
+    would put its features at a different wall-clock time than everyone
+    else's. Alignment must be by timestamp, and pre-listing moments must
+    simply exclude the late symbol."""
+    from trading.agent.replay import SymbolHistory
+
+    old = bars(FLOW_HOURS + 300)
+    late_start = int(old[150][0])  # listed 150h into the window
+    late = bars(FLOW_HOURS + 150, start_ms=late_start)
+    histories = {
+        "OLDUSDT": SymbolHistory("CRYPTO", old),
+        "LATEUSDT": SymbolHistory("CRYPTO", late),
+    }
+    cfg.agent.screen.min_change_pct = 0.0
+    cfg.agent.screen.max_change_pct = 0.0
+
+    before_listing = int(old[FLOW_HOURS + 10][0])
+    menu = build_menu(histories, before_listing, cfg)
+    assert [m["symbol"] for m in menu] == ["OLDUSDT"], "unlisted names must sit out"
+
+    after_listing = int(late[FLOW_HOURS + 10][0])
+    menu = build_menu(histories, after_listing, cfg)
+    symbols = {m["symbol"] for m in menu}
+    assert symbols == {"OLDUSDT", "LATEUSDT"}
+    # Both features must describe the SAME moment: identical synthetic price
+    # paths at the same timestamp give identical prices.
+    prices = {m["symbol"]: m["price"] for m in menu}
+    idx_old = histories["OLDUSDT"].at[after_listing]
+    assert prices["OLDUSDT"] == pytest.approx(float(old[idx_old][4]))

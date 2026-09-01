@@ -46,18 +46,32 @@ log = logging.getLogger(__name__)
 MS_PER_HOUR = 3_600_000
 
 
-def build_menu(bars_by_symbol: dict[str, tuple[str, list[list]]], index: int, cfg) -> list[dict]:
-    """The candidate menu as the screen would have built it at bar `index`.
+class SymbolHistory:
+    """One symbol's bars plus an open-time index, so cross-symbol alignment is
+    by TIMESTAMP. Aligning by bar index looked equivalent and was not: a coin
+    listed mid-window starts its array later, so index i meant a different
+    wall-clock moment per symbol — features from different times in one menu.
+    """
+
+    def __init__(self, book: str, bars: list[list]):
+        self.book = book
+        self.bars = bars
+        self.at = {int(b[0]): i for i, b in enumerate(bars)}
+
+
+def build_menu(histories: dict[str, SymbolHistory], t_ms: int, cfg) -> list[dict]:
+    """The candidate menu as the screen would have built it at time `t_ms`.
 
     Same strategy bounds (min/max 24h change) and the same flow ranking per
-    book, using only bars up to the decision moment.
+    book, using only bars at or before the decision moment.
     """
     scfg = cfg.agent.screen
     rows = []
-    for symbol, (book, bars) in bars_by_symbol.items():
-        if index >= len(bars):
+    for symbol, h in histories.items():
+        i = h.at.get(t_ms)
+        if i is None:
             continue
-        f = features_at(bars, index)
+        f = features_at(h.bars, i)
         if f is None:
             continue
         chg = f["change_pct"]
@@ -65,7 +79,7 @@ def build_menu(bars_by_symbol: dict[str, tuple[str, list[list]]], index: int, cf
             continue
         if scfg.max_change_pct and chg > scfg.max_change_pct * 100:
             continue
-        rows.append({"symbol": symbol, "book": book, **f})
+        rows.append({"symbol": symbol, "book": h.book, **f})
     menu: list[dict] = []
     by_book: dict[str, list[dict]] = {}
     for r in rows:
@@ -102,7 +116,13 @@ class Replayer:
             default=str,
         )[:20000]
 
-    def run(self, decisions: int, days: int | None = None, symbols: int = 60) -> dict:
+    def run(
+        self,
+        decisions: int,
+        days: int | None = None,
+        symbols: int = 300,
+        min_menu: int = 4,
+    ) -> dict:
         days = days or self.cfg.score.backfill_days
         horizon_h = max(int(self.cfg.score.horizon_minutes // 60), 1)
         end = dt.datetime.now(dt.UTC).replace(minute=0, second=0, microsecond=0)
@@ -114,7 +134,7 @@ class Replayer:
         pool = sorted(
             self.screen.tradable_pool(0.0), key=lambda e: -float(e.get("quote_volume") or 0)
         )[:symbols]
-        bars_by_symbol: dict[str, tuple[str, list[list]]] = {}
+        histories: dict[str, SymbolHistory] = {}
         for entry in pool:
             try:
                 bars = fetch_hourly(self.client, entry["symbol"], start_ms, end_ms)
@@ -122,25 +142,35 @@ class Replayer:
                 log.warning("replay klines %s failed: %s", entry["symbol"], exc)
                 continue
             if len(bars) > FLOW_HOURS + horizon_h:
-                bars_by_symbol[entry["symbol"]] = (entry["book"], bars)
-        if not bars_by_symbol:
+                histories[entry["symbol"]] = SymbolHistory(entry["book"], bars)
+        if not histories:
             return {"decisions": 0, "note": "no usable history"}
 
-        n_bars = min(len(b) for _, b in bars_by_symbol.values())
-        # Decision moments spread evenly across the usable window, one horizon
-        # apart at minimum so paired outcomes stay non-overlapping.
-        first, last = FLOW_HOURS, n_bars - horizon_h - 1
-        if last <= first:
+        # Decision MOMENTS on the shared wall clock, one horizon apart at
+        # minimum so paired outcomes stay non-overlapping. Each symbol joins a
+        # moment only if it has a bar exactly there (build_menu aligns by
+        # timestamp, so late listings simply sit out their pre-listing moments).
+        first_ms = start_ms + FLOW_HOURS * MS_PER_HOUR
+        last_ms = end_ms - (horizon_h + 1) * MS_PER_HOUR
+        if last_ms <= first_ms:
             return {"decisions": 0, "note": "window shorter than flow lookback + horizon"}
-        step = max((last - first) // max(decisions, 1), horizon_h)
-        indices = list(range(first, last, step))[:decisions]
+        span = last_ms - first_ms
+        # Whole hours only: a moment that is not a bar's open time matches no
+        # symbol's timestamp index and silently yields an empty menu.
+        step_ms = max(
+            (span // max(decisions, 1)) // MS_PER_HOUR * MS_PER_HOUR,
+            horizon_h * MS_PER_HOUR,
+        )
+        moments = list(range(first_ms, last_ms, step_ms))[:decisions]
 
         results = []
         with self.out_path.open("a", encoding="utf-8") as fh:
-            for i in indices:
-                menu = build_menu(bars_by_symbol, i, self.cfg)
-                if len(menu) < 2:
-                    continue  # a pick against a 1-name menu measures nothing
+            for t_ms in moments:
+                menu = build_menu(histories, t_ms, self.cfg)
+                if len(menu) < min_menu:
+                    # A pick from a near-empty menu measures nothing: with two
+                    # names, half of all pairs are forced ties.
+                    continue
                 raw = self.llm.ask(
                     self._payload(menu), system=_SYSTEM, tier=self.cfg.agent.tiers.decide
                 )
@@ -151,20 +181,17 @@ class Replayer:
                 if not model_pick:
                     continue
 
-                def fwd(symbol):
-                    book, bars = bars_by_symbol[symbol]
-                    entry_price = float(bars[i][4])
-                    r = resolve_forward(bars, i, horizon_h, entry_price)
+                def fwd(symbol, t=t_ms):
+                    h = histories[symbol]
+                    i = h.at[t]
+                    r = resolve_forward(h.bars, i, horizon_h, float(h.bars[i][4]))
                     return r["forward_return_pct"] if r else None
 
                 m_ret, s_ret = fwd(model_pick), fwd(shadow_pick)
                 if m_ret is None or s_ret is None:
                     continue
-                ts = dt.datetime.fromtimestamp(
-                    int(next(iter(bars_by_symbol.values()))[1][i][0]) / 1000, dt.UTC
-                ).isoformat()
                 rec = {
-                    "ts": ts,
+                    "ts": dt.datetime.fromtimestamp(t_ms / 1000, dt.UTC).isoformat(),
                     "menu_size": len(menu),
                     "model": model_pick,
                     "model_return_pct": m_ret,
@@ -213,14 +240,17 @@ def main() -> int:
     ap.add_argument("--broker", default="binance", choices=["binance"])
     ap.add_argument("--decisions", type=int, default=50, help="hard cap on billed model calls")
     ap.add_argument("--days", type=int, default=None)
-    ap.add_argument("--symbols", type=int, default=60, help="deepest N names to download")
+    ap.add_argument("--symbols", type=int, default=300, help="deepest N names to download")
+    ap.add_argument(
+        "--min-menu", type=int, default=4, help="skip moments with fewer qualifying candidates"
+    )
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     cfg = config()
     adapter = build_adapter(args.broker, None, cfg)
     summary = Replayer(adapter.client, adapter.screen, cfg).run(
-        decisions=args.decisions, days=args.days, symbols=args.symbols
+        decisions=args.decisions, days=args.days, symbols=args.symbols, min_menu=args.min_menu
     )
     print(json.dumps(summary, ensure_ascii=False, indent=1))
     return 0
