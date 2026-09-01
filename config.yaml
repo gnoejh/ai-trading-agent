@@ -11,13 +11,15 @@ broker:
   # is PAPER, then mainnet through the promotion gate (owner, same night).
   #
   # TO TURN ON PAPER TRADING (the whole flip, once 모의투자 keys are reissued
-  # at the developer portal — the old pair fails auth with 8001):
+  # at the developer portal — the old pair fails 8001 even on the mock host,
+  # verified 2026-09-01):
   #   1. put the new keys in .env as KIWOOM_TESTNET_APP_KEY / _SECRET_KEY
   #   2. set use_testnet: true and allow_orders: true below
   #   3. touch data/RESTART
   # Paper uses a DIFFERENT app key, so it never touches the mainnet token the
   # ai-trading-history downloader owns. Until both flags are set, dry_run is
-  # forced and this venue only measures.
+  # forced and this venue only measures. 모의투자 is KR-ONLY (paper_markets):
+  # US stays measurement-only on mainnet reads even with the flip on.
   kiwoom:
     use_testnet: false         # mainnet keys are the only working credential (READS ONLY)
     timezone: Asia/Seoul
@@ -33,6 +35,7 @@ broker:
     token_cache: data/kiwoom_token.json
     max_pages: 20
     allow_orders: false        # master switch; measurement-only
+    paper_markets: [KR]        # 모의투자 serves KR only; US never flips to the mock host
     order_paths:
       - /api/dostk/ordr
       - /api/us/ordr

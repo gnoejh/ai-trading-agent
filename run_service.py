@@ -57,16 +57,25 @@ def _kiwoom_agent(cfg, market: str, telegram) -> TradingAgent:
     PAPER MODE is a config flip once 모의투자 keys are reissued:
     `broker.kiwoom.use_testnet: true` + `allow_orders: true` routes orders to
     the mock host under a DIFFERENT app key, so paper trading never touches
-    the mainnet token the archive downloader owns. In every other
-    configuration dry_run is forced — the mainnet account is live money that
-    has passed no gate, and the venue exists to measure.
+    the mainnet token the archive downloader owns. 모의투자 is KR-only
+    (`paper_markets`), so the flip is scoped per market: a non-paper market
+    gets dry_run forced AND use_testnet stripped on its config copy — its
+    reads and token must stay on the mainnet host, not follow the flip to a
+    mock host that cannot serve it. The mainnet account is live money that
+    has passed no gate, and outside paper the venue exists to measure.
     """
+    return TradingAgent(_kiwoom_cfg(cfg, market), notifier=telegram, broker="kiwoom")
+
+
+def _kiwoom_cfg(cfg, market: str):
+    """Per-market config copy: the paper flip applies only to `paper_markets`."""
     mcfg = cfg.model_copy(deep=True)
     mcfg.agent.market = market
-    paper = cfg.broker.kiwoom.use_testnet and cfg.broker.kiwoom.allow_orders
-    if not paper:
+    if not cfg.broker.kiwoom.paper(market):
         mcfg.agent.dry_run = True
-    return TradingAgent(mcfg, notifier=telegram, broker="kiwoom")
+        mcfg.broker.kiwoom.use_testnet = False
+        mcfg.broker.kiwoom.allow_orders = False
+    return mcfg
 
 
 def main() -> int:

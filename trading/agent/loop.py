@@ -827,15 +827,22 @@ def main() -> int:
         cfg.agent.market = args.market
     if args.broker == "kiwoom":
         # PAPER MODE (use_testnet + allow_orders, on reissued 모의투자 keys)
-        # trades against the mock host. Every other configuration is
-        # measurement-only: dry_run forced, allow_orders=false backing it up
-        # at the client, so nothing can reach the wire.
-        paper = cfg.broker.kiwoom.use_testnet and cfg.broker.kiwoom.allow_orders
-        if paper:
-            log.info("kiwoom PAPER mode: orders go to the mock host")
+        # trades against the mock host — KR only (`paper_markets`; 모의투자
+        # does not serve US). Every other market/configuration is
+        # measurement-only: dry_run forced, allow_orders stripped, and
+        # use_testnet stripped too so reads and token stay on the mainnet
+        # host instead of following the flip to a mock host that cannot
+        # serve them.
+        if cfg.broker.kiwoom.paper(cfg.agent.market):
+            log.info("kiwoom PAPER mode (%s): orders go to the mock host", cfg.agent.market)
         else:
             cfg.agent.dry_run = True
-            log.info("kiwoom is measurement-only: dry_run forced, allow_orders stays false")
+            cfg.broker.kiwoom.use_testnet = False
+            cfg.broker.kiwoom.allow_orders = False
+            log.info(
+                "kiwoom %s is measurement-only: dry_run forced, mainnet reads",
+                cfg.agent.market,
+            )
     if args.dry_run:
         cfg.agent.dry_run = True
 

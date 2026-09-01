@@ -17,6 +17,17 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 
 ## Development log (newest first)
 
+- **2026-09-01 (night, +1)** — **Paper flip scoped per market: 모의투자 is KR-only.** The owner
+  confirmed 모의투자 is the same API on a different endpoint (`mockapi.kiwoom.com`) and opened a
+  상시모의투자 국내주식 account (81336915, 500M KRW seed, valid through 2026-12-01). The domain
+  switch was already wired (`spec.domain(testnet=...)`; every workbook page carries the mock
+  domain — US pages too, so the spec CANNOT encode KR-only and `broker.kiwoom.paper_markets`
+  does). New seam: `KiwoomConfig.paper(market)`; `run_service._kiwoom_cfg` gives each market its
+  own config copy — a non-paper market gets dry_run forced AND `use_testnet` stripped, because
+  a US agent following the flip would send reads and token to a mock host that cannot serve it.
+  Pinned in `tests/test_kiwoom_paper.py`. Old 모의투자 keys retested against the mock host
+  directly: still `8001` — dead on both hosts, and opening the paper account did not revive
+  them. Still blocked on the owner reissuing keys at the developer portal.
 - **2026-09-01 (night, last)** — **Kiwoom path confirmed by the owner: paper, then mainnet
   through the gate.** Paper mode is now a pure config flip (`use_testnet: true` +
   `allow_orders: true` on reissued 모의투자 keys — the flip recipe is commented in config.yaml);
@@ -94,7 +105,9 @@ shadow picks, observations) runs on KR/US menus without a single order, "using D
 it is still cheap." Hard constraints: the Kiwoom account is LIVE MAINNET MONEY that has passed
 no gate — `broker.kiwoom.allow_orders: false` and `--broker kiwoom` forces `dry_run`; there is
 no working paper trading until 모의투자 keys are reissued at the developer portal (the old pair
-fails auth with 8001, and mainnet reads work only against `api.kiwoom.com`). Kiwoom returns
+fails 8001 on BOTH hosts — verified against `mockapi.kiwoom.com` directly). 모의투자 is the
+same API on the mock endpoint, KR-only: `paper_markets` scopes the flip, US never leaves the
+mainnet host. Kiwoom returns
 auth failures as HTTP 200 with a non-zero `return_code` — `_issue_token` checks the body.
 Each broker journals separately (`journal.jsonl` = Binance, `journal.kiwoom.jsonl`), because
 observations resolve against the venue's own price source. Not built yet for KR/US: the

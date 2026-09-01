@@ -86,8 +86,18 @@ class KiwoomConfig(BaseModel):
     token_cache: str = "data/kiwoom_token.json"
     max_pages: int = 20
     allow_orders: bool = False
+    # Kiwoom 모의투자 serves KR only (same API, mockapi.kiwoom.com endpoint);
+    # the workbook prints a mock domain on every page, US included, so the
+    # spec index cannot encode this — the config does. Markets outside this
+    # list stay measurement-only on mainnet reads even when the paper flip
+    # (use_testnet + allow_orders) is on.
+    paper_markets: list[str] = Field(default_factory=lambda: ["KR"])
     order_paths: list[str] = Field(default_factory=list)
     markets: dict[str, MarketConfig] = Field(default_factory=dict)
+
+    def paper(self, market: str) -> bool:
+        """True when this market trades against the 모의투자 host."""
+        return self.use_testnet and self.allow_orders and str(market) in self.paper_markets
 
     def market(self, market: str) -> MarketConfig:
         try:
