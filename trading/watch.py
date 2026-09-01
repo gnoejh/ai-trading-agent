@@ -17,6 +17,8 @@ the client is constructed read-only.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import json
 import logging
 import time
 from pathlib import Path
@@ -32,16 +34,53 @@ from trading.notify.telegram import TelegramNotifier
 log = logging.getLogger(__name__)
 
 HELP = (
-    "*Trading agent*\n"
-    "/status — full account status\n"
-    "/positions — holdings only\n"
-    "/cash — deposit detail only\n"
+    "*Trading agent* (BINANCE 24/7 · KR/US measurement)\n"
+    "/status — all markets: Binance account + KR/US measurement\n"
+    "/positions — Binance holdings only\n"
+    "/cash — Binance deposit detail only\n"
     "/pnl — trading P&L, realised and unrealised\n"
     "/costs — fees, API spend, break-even arithmetic\n"
-    "/halt — set the kill switch (blocks orders)\n"
+    "/kiwoom — KR/US measurement detail\n"
+    "/halt — set the kill switch (blocks Binance orders)\n"
     "/resume — clear the kill switch\n"
     "/help — this message"
 )
+
+
+def kiwoom_summary(cfg: AppConfig) -> str:
+    """KR/US measurement status WITHOUT touching the Kiwoom API.
+
+    The bot answers at any hour, and an after-hours Kiwoom call can mint the
+    shared OAuth token and silently revoke the archive downloader's — so this
+    section reads only the venue journals. Live account detail belongs to the
+    in-session measurement agents, never to the operator surface.
+    """
+    lines = ["*KIWOOM KR/US (measurement-only — no orders possible)*"]
+    base = Path(cfg.agent.journal)
+    today = dt.date.today().isoformat()
+    for market in ("KR", "US"):
+        state = "OPEN" if cfg.agent.is_open(market) else "closed"
+        path = base.with_name(f"{base.stem}.kiwoom.{market}{base.suffix}")
+        decisions = picks = 0
+        last_pick = None
+        if path.exists():
+            with path.open(encoding="utf-8") as fh:
+                for line in fh:
+                    if '"kind": "decision"' not in line or f'"ts": "{today}' not in line:
+                        continue
+                    decisions += 1
+                    try:
+                        vp = json.loads(line).get("virtual_pick")
+                    except json.JSONDecodeError:
+                        continue
+                    if vp:
+                        picks += 1
+                        last_pick = vp
+        detail = f"{decisions} decision(s) today, {picks} virtual pick(s)"
+        if last_pick:
+            detail += f", last: {last_pick}"
+        lines.append(f"  {market}: session {state} · {detail}")
+    return "\n".join(lines)
 
 
 class BinanceWatcher:
@@ -81,7 +120,9 @@ class BinanceWatcher:
         command = text.strip().split()[0].lower() if text.strip() else ""
         match command:
             case "/status" | "status":
-                return self.reporter.safe_report()
+                return self.reporter.safe_report() + "\n\n" + kiwoom_summary(self.cfg)
+            case "/kiwoom":
+                return kiwoom_summary(self.cfg)
             case "/positions":
                 return self.reporter.safe_report(sections=("positions",))
             case "/cash":

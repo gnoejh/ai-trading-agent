@@ -17,6 +17,14 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 
 ## Development log (newest first)
 
+- **2026-09-01 (night, latest)** — **One service, every venue**: `run_service.py` runs Binance
+  24/7 plus Kiwoom KR/US measurement cycles in their own sessions (agents built lazily
+  in-session only — after hours the Kiwoom token belongs to the archive downloader). Service
+  renamed `trading-agent` (legacy `trading-agent-binance` and its `--broker` flag still work;
+  the install script removes the old service). Telegram covers all three markets: `/status`
+  appends a KR/US measurement section, `/kiwoom` scopes it — journal-based after hours, never
+  a Kiwoom API call from the bot. Kiwoom journals split per surface
+  (`journal.kiwoom.KR.jsonl` / `.US.jsonl`).
 - **2026-09-01 (night, later)** — **KR/US RAG filled from the ai-trading-history archive**
   (`backfill_kiwoom.py`: offline parquet reads, zero Kiwoom API calls — the archive's downloader
   owns the SINGLE Kiwoom OAuth token and works while markets are closed, so this repo must never

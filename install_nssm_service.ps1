@@ -1,6 +1,10 @@
 # install_nssm_service.ps1 — Install the trading-agent service via NSSM.
 #
-#   .\install_nssm_service.ps1                      # trading-agent-binance
+# ONE service, every venue: Binance trades 24/7, Kiwoom KR/US run
+# measurement-only cycles in their own sessions. Installing also removes the
+# legacy per-broker service (trading-agent-binance) if present.
+#
+#   .\install_nssm_service.ps1                      # trading-agent
 #   .\install_nssm_service.ps1 -Uninstall
 #
 # Each service trades its own venue and serves the Telegram control surface only
@@ -21,9 +25,7 @@
 #       will be live and how each risk limit sizes against the account.
 
 param(
-    [switch]$Uninstall,
-    [ValidateSet("binance")]
-    [string]$Broker = "binance"
+    [switch]$Uninstall
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,7 +33,8 @@ $ErrorActionPreference = "Stop"
 $Root    = "W:\ai-trading-agent"
 $LogDir  = "$Root\logs"
 $UvExe   = "$env:USERPROFILE\.local\bin\uv.exe"
-$SvcName = "trading-agent-$Broker"
+$SvcName = "trading-agent"
+$LegacySvc = "trading-agent-binance"
 
 # -- Verify prerequisites -----------------------------------------------------
 
@@ -65,6 +68,15 @@ if ($Uninstall) {
 # -- Remove old service if present (re-install support) -----------------------
 
 try {
+    $legacy = & $NssmExe status $LegacySvc 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Removing legacy service: $LegacySvc" -ForegroundColor Yellow
+        & $NssmExe stop   $LegacySvc 2>&1 | Out-Null
+        & $NssmExe remove $LegacySvc confirm
+    }
+} catch { }
+
+try {
     $status = & $NssmExe status $SvcName 2>&1
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Removing existing service: $SvcName" -ForegroundColor Yellow
@@ -82,10 +94,10 @@ if (-not (Test-Path $LogDir)) {
 Write-Host "Installing $SvcName..." -ForegroundColor Cyan
 
 & $NssmExe install $SvcName $UvExe
-& $NssmExe set     $SvcName AppParameters   "run python run_service.py --broker $Broker"
+& $NssmExe set     $SvcName AppParameters   "run python run_service.py"
 & $NssmExe set     $SvcName AppDirectory    $Root
-& $NssmExe set     $SvcName DisplayName     "AI Trading Agent ($Broker)"
-& $NssmExe set     $SvcName Description     "Autonomous trading agent: DeepSeek decisions, cost-derived exits, $Broker execution"
+& $NssmExe set     $SvcName DisplayName     "AI Trading Agent"
+& $NssmExe set     $SvcName Description     "Autonomous trading agent: DeepSeek decisions, cost-derived exits; Binance 24/7 + Kiwoom KR/US measurement"
 & $NssmExe set     $SvcName AppStdout       "$LogDir\$SvcName-stdout.log"
 & $NssmExe set     $SvcName AppStderr       "$LogDir\$SvcName-stderr.log"
 & $NssmExe set     $SvcName AppRotateFiles  1

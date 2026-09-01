@@ -16,7 +16,7 @@
 #
 # After this, `nssm restart trading-agent` works without elevation.
 
-param([string]$SvcName = "trading-agent-binance")
+param([string]$SvcName = "trading-agent")
 
 $ErrorActionPreference = "Stop"
 

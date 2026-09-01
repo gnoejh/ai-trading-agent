@@ -206,13 +206,14 @@ class TradingAgent:
         )
         self.ledger = CostLedger(self.cfg)
         self.llm = LLMClient(self.cfg, ledger=self.ledger)
-        # One journal per broker: the scorer resolves observations against the
+        # One journal per venue: the scorer resolves observations against the
         # venue's own price source, so venues must never share a decision file.
-        # The bare configured name stays Binance's for continuity.
+        # The bare configured name stays Binance's for continuity; Kiwoom gets
+        # one per market surface (journal.kiwoom.KR.jsonl / .US.jsonl).
         journal_path = Path(self.acfg.journal)
         if broker != "binance":
             journal_path = journal_path.with_name(
-                f"{journal_path.stem}.{broker}{journal_path.suffix}"
+                f"{journal_path.stem}.{broker}.{self.acfg.market}{journal_path.suffix}"
             )
         self.journal = Journal(str(journal_path))
         self.telegram = notifier or TelegramNotifier()
