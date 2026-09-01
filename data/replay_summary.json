@@ -1,0 +1,8 @@
+{
+ "generated_at": "2026-09-01T09:14:46.183327+00:00",
+ "n": 4,
+ "model_avg_pct": -2.022,
+ "shadow_avg_pct": -1.695,
+ "model_wins": 0,
+ "note": "backtest PRIOR (survivorship-biased); live pairs decide promotion"
+}

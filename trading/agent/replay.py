@@ -219,9 +219,14 @@ class Replayer:
                     except json.JSONDecodeError:
                         continue
         n = len(rows)
+        # A tie (shadow drew the model's own pick) is a legitimate draw from
+        # the menu but carries no information about the difference; the win
+        # rate is only meaningful over decided pairs.
+        ties = sum(1 for r in rows if r["model"] == r["shadow"])
         return {
             "generated_at": dt.datetime.now(dt.UTC).isoformat(),
             "n": n,
+            "ties": ties,
             "model_avg_pct": round(sum(r["model_return_pct"] for r in rows) / n, 3) if n else None,
             "shadow_avg_pct": round(sum(r["shadow_return_pct"] for r in rows) / n, 3)
             if n
