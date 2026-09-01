@@ -826,12 +826,16 @@ def main() -> int:
     if args.market:
         cfg.agent.market = args.market
     if args.broker == "kiwoom":
-        # MEASUREMENT-ONLY venue: the account is live money that has passed no
-        # gate. dry_run is forced (allow_orders=false backs it up at the
-        # client), so decisions, virtual and shadow picks are journalled while
-        # nothing can reach the wire.
-        cfg.agent.dry_run = True
-        log.info("kiwoom is measurement-only: dry_run forced, allow_orders stays false")
+        # PAPER MODE (use_testnet + allow_orders, on reissued 모의투자 keys)
+        # trades against the mock host. Every other configuration is
+        # measurement-only: dry_run forced, allow_orders=false backing it up
+        # at the client, so nothing can reach the wire.
+        paper = cfg.broker.kiwoom.use_testnet and cfg.broker.kiwoom.allow_orders
+        if paper:
+            log.info("kiwoom PAPER mode: orders go to the mock host")
+        else:
+            cfg.agent.dry_run = True
+            log.info("kiwoom is measurement-only: dry_run forced, allow_orders stays false")
     if args.dry_run:
         cfg.agent.dry_run = True
 

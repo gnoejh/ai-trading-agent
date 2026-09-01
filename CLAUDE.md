@@ -17,6 +17,14 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 
 ## Development log (newest first)
 
+- **2026-09-01 (night, last)** — **Kiwoom path confirmed by the owner: paper, then mainnet
+  through the gate.** Paper mode is now a pure config flip (`use_testnet: true` +
+  `allow_orders: true` on reissued 모의투자 keys — the flip recipe is commented in config.yaml);
+  until both flags are set, dry_run stays forced. Paper uses a different app key, so it never
+  touches the mainnet token. Blocked on the owner reissuing keys at the Kiwoom developer portal.
+  Service renamed: `trading-agent` running since 21:44. Next code increment: KR/US observation
+  resolution from the archive parquet (the venue's data plane), so tomorrow's measurement
+  decisions grade in ~3 trading days.
 - **2026-09-01 (night, latest)** — **One service, every venue**: `run_service.py` runs Binance
   24/7 plus Kiwoom KR/US measurement cycles in their own sessions (agents built lazily
   in-session only — after hours the Kiwoom token belongs to the archive downloader). Service

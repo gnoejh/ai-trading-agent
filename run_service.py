@@ -52,14 +52,20 @@ def restart_requested(cfg) -> bool:
 
 
 def _kiwoom_agent(cfg, market: str, telegram) -> TradingAgent:
-    """A measurement-only Kiwoom agent, built lazily while its session is open.
+    """A Kiwoom agent, built lazily while its session is open.
 
-    dry_run is forced in the agent's own config copy — this venue is live
-    mainnet money that has passed no gate, and it exists here to measure.
+    PAPER MODE is a config flip once 모의투자 keys are reissued:
+    `broker.kiwoom.use_testnet: true` + `allow_orders: true` routes orders to
+    the mock host under a DIFFERENT app key, so paper trading never touches
+    the mainnet token the archive downloader owns. In every other
+    configuration dry_run is forced — the mainnet account is live money that
+    has passed no gate, and the venue exists to measure.
     """
     mcfg = cfg.model_copy(deep=True)
     mcfg.agent.market = market
-    mcfg.agent.dry_run = True
+    paper = cfg.broker.kiwoom.use_testnet and cfg.broker.kiwoom.allow_orders
+    if not paper:
+        mcfg.agent.dry_run = True
     return TradingAgent(mcfg, notifier=telegram, broker="kiwoom")
 
 

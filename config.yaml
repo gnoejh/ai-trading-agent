@@ -7,12 +7,17 @@ specs:
   index: data/specs/kiwoom.json
 
 broker:
-  # Restored 2026-09-01 evening as a MEASUREMENT-ONLY venue: the context-RL
-  # loop (decisions, virtual + shadow picks, observations) runs on KR/US
-  # without a single order. This is LIVE MAINNET MONEY that has passed no
-  # gate — allow_orders stays false, and `--broker kiwoom` forces dry_run.
-  # Paper trading unlocks when 모의투자 keys are reissued at the developer
-  # portal (the old pair fails auth with 8001).
+  # Restored 2026-09-01 evening as a MEASUREMENT-ONLY venue; the destination
+  # is PAPER, then mainnet through the promotion gate (owner, same night).
+  #
+  # TO TURN ON PAPER TRADING (the whole flip, once 모의투자 keys are reissued
+  # at the developer portal — the old pair fails auth with 8001):
+  #   1. put the new keys in .env as KIWOOM_TESTNET_APP_KEY / _SECRET_KEY
+  #   2. set use_testnet: true and allow_orders: true below
+  #   3. touch data/RESTART
+  # Paper uses a DIFFERENT app key, so it never touches the mainnet token the
+  # ai-trading-history downloader owns. Until both flags are set, dry_run is
+  # forced and this venue only measures.
   kiwoom:
     use_testnet: false         # mainnet keys are the only working credential (READS ONLY)
     timezone: Asia/Seoul
