@@ -261,6 +261,15 @@ Owner constraints: Binance Spot **Testnet only**, **DeepSeek only**, learn by it
 
 ## The learning loop (built 2026-08-30) — explore, score, retrieve
 
+**The principle (named by the owner, 2026-09-01): context RL — reinforcement learning with a
+frozen policy.** The model's weights never change; policy improvement is the growth of the
+measured record it reads at decision time. ε-greedy with two twists: exploration updates a
+ledger, not the policy (auditable, revertible, immune to reward hacking), and ε never reaches
+zero because the random arm's second job — the control group that keeps the model permanently
+verifiable — outlives its first. Two loops: the fast frozen inner policy learning in context,
+and the slow human outer loop taking evidence-driven gradient steps on the config, each committed
+to git with its reasoning. The mainnet gate is the outer loop's convergence test.
+
 The system learns through a measured-aggregates RAG, never by adapting the model online. Three
 arms produce observations, one scorer grades them, and the decide prompt retrieves only what has
 earned statistical standing:
