@@ -10,18 +10,15 @@ broker:
   # Restored 2026-09-01 evening as a MEASUREMENT-ONLY venue; the destination
   # is PAPER, then mainnet through the promotion gate (owner, same night).
   #
-  # TO TURN ON PAPER TRADING (the whole flip, once 모의투자 keys are reissued
-  # at the developer portal — the old pair fails 8001 even on the mock host,
-  # verified 2026-09-01):
-  #   1. put the new keys in .env as KIWOOM_TESTNET_APP_KEY / _SECRET_KEY
-  #   2. set use_testnet: true and allow_orders: true below
-  #   3. touch data/RESTART
-  # Paper uses a DIFFERENT app key, so it never touches the mainnet token the
-  # ai-trading-history downloader owns. Until both flags are set, dry_run is
-  # forced and this venue only measures. 모의투자 is KR-ONLY (paper_markets):
-  # US stays measurement-only on mainnet reads even with the flip on.
+  # PAPER TRADING ON since 2026-09-01 night: the owner reissued 모의투자 keys
+  # (account 81336915, 500M KRW seed, valid to 2026-12-01) and the token +
+  # cash reads verified against mockapi.kiwoom.com. Paper uses a DIFFERENT
+  # app key, so it never touches the mainnet token the ai-trading-history
+  # downloader owns. 모의투자 is KR-ONLY (paper_markets): US stays
+  # measurement-only on mainnet reads even with the flip on.
+  # To revert to measurement-only: use_testnet: false + allow_orders: false.
   kiwoom:
-    use_testnet: false         # mainnet keys are the only working credential (READS ONLY)
+    use_testnet: true          # KR trades PAPER on mockapi.kiwoom.com (모의투자 keys in .env)
     timezone: Asia/Seoul
     timeout_s: 10.0
     min_call_interval_s: 0.25  # Kiwoom 429s when quoted back-to-back
@@ -34,7 +31,7 @@ broker:
     # ONE token per app key -- a second client silently revokes the first.
     token_cache: data/kiwoom_token.json
     max_pages: 20
-    allow_orders: false        # master switch; measurement-only
+    allow_orders: true         # master switch; paper orders on the mock host (KR only)
     paper_markets: [KR]        # 모의투자 serves KR only; US never flips to the mock host
     order_paths:
       - /api/dostk/ordr

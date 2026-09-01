@@ -17,6 +17,16 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 
 ## Development log (newest first)
 
+- **2026-09-01 (night, +2)** — **KIWOOM KR PAPER TRADING IS ON.** The owner reissued 모의투자
+  keys at the portal (account 81336915, tied to the 상시모의투자 account, valid to 2026-12-01)
+  and dropped them in `.env`. Verified end-to-end through the real client against
+  `mockapi.kiwoom.com`: token issued (`return_code: 0`), cash read 500,000,000 KRW (matches the
+  portal), positions empty. Config flipped per the recipe: `use_testnet: true` +
+  `allow_orders: true`, `data/RESTART` touched. KR now trades paper in-session; US remains
+  measurement-only on mainnet reads (`paper_markets`). Note: issuing a token by hand revokes
+  the client's paper token (one token per app key — same rule as mainnet, separate cache file
+  `data/kiwoom_token_testnet.json`). The paper account expires 2026-12-01 — three months to
+  produce a KR verdict for the gate.
 - **2026-09-01 (night, +1)** — **Paper flip scoped per market: 모의투자 is KR-only.** The owner
   confirmed 모의투자 is the same API on a different endpoint (`mockapi.kiwoom.com`) and opened a
   상시모의투자 국내주식 account (81336915, 500M KRW seed, valid through 2026-12-01). The domain
