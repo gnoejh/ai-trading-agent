@@ -17,6 +17,15 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 
 ## Development log (newest first)
 
+- **2026-09-01 (night, later)** — **KR/US RAG filled from the ai-trading-history archive**
+  (`backfill_kiwoom.py`: offline parquet reads, zero Kiwoom API calls — the archive's downloader
+  owns the SINGLE Kiwoom OAuth token and works while markets are closed, so this repo must never
+  mint one after hours; its measurement loop runs only in-session, which the market-open gate
+  already enforces). 22,385 KR + 16,236 US observations over one year. **Measured finding: the
+  KR 외국인/기관 flow signal carries an edge** — high net-buy-share tertile +2.01% vs low +0.64%
+  over 3 trading days (n=334/tertile), ~5× the 0.28% KR hurdle, same shape as the Binance
+  taker-flow edge. US 15–40% band: +3.93% vs +0.53% baseline (n=88). KR momentum band mild
+  (+1.68%). Flow feature is a unit-free net-buy share in [-1,1].
 - **2026-09-01 (night)** — **Kiwoom KR/US restored as a measurement-only venue** (owner: apply
   context RL to KR/US, use DeepSeek while cheap). Stack restored from git and adapted to the new
   architecture (shared `state.py` contracts, per-broker journals, sessions back in `AgentConfig`).

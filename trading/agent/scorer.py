@@ -346,9 +346,9 @@ class ExperienceScorer:
         # backtest replay — but NEVER pooled: provenance stays in the label, so
         # the prompt and the operator always see which numbers were waited for
         # and which were reconstructed from history.
-        for prefix in ("universe", "backtest"):
+        for prefix in ("universe", "backtest", "backtest_kr", "backtest_us"):
             members_all = by_source.get(prefix, [])
-            if prefix == "backtest" and not members_all:
+            if prefix != "universe" and not members_all:
                 continue
             by_book: dict[str, list[dict]] = {}
             for r in members_all:

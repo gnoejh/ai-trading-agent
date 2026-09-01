@@ -531,6 +531,10 @@ class ScoreConfig(BaseModel):
     backfill_days: int = 60
     replay: str = "data/replay.jsonl"
     replay_summary: str = "data/replay_summary.json"
+    # The sibling archive (read-only!) that feeds the KR/US backfill. Its
+    # downloader owns the single Kiwoom OAuth token — never call Kiwoom APIs
+    # for history; read these parquet files instead.
+    kiwoom_archive: str = "W:/ai-trading-history/data_store"
 
 
 class PromotionConfig(BaseModel):
