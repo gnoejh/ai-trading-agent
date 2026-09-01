@@ -204,24 +204,21 @@ sizing:
   # bar (min_volume_multiple_of_order scales with the order), which widens the
   # tradable universe the random arm samples from. Was full_balance/1.0.
   mode: fixed_fraction           # full_balance | fixed_fraction
-  # FILL SPRINT 2026-08-31 (owner instruction): the testnet resets tomorrow and
-  # open positions die unresolved, so today optimises for CLOSED round trips --
-  # smaller entries, more slots, short holds. Was 0.04 / 6.
-  # 5% of REMAINING cash: ~$500 first entries, still ~$150+ at fifteen open
-  # positions (owner: enough positions, but not small ones).
-  fraction: 0.05                 # of orderable cash (fixed_fraction mode)
+  # MEASUREMENT REGIME (2026-09-01, owner instruction: end the fill sprint,
+  # start the mainnet-verdict clock). Small fixed fractions, many slots:
+  # sample count is the scarce resource, and every trade must stay at a
+  # mainnet-transferable size relative to liquidity.
+  fraction: 0.04                 # of orderable cash (fixed_fraction mode)
   # Orderable cash is what can actually be spent TODAY, never the marked equity.
   cash_field: ord_alow_amt
   cash_fallback_field: entr
   # Held back from every order. A market order that prices up between sizing and
   # fill is rejected outright if the balance is committed to the last won.
   reserve_pct: 0.005
-  # 0 = unlimited (owner: the testnet balance is free). What actually bounds
-  # concurrency is cash and the $5 minNotional: fraction sizes each entry off
-  # REMAINING free cash, so entries shrink as positions stack and the sizer
-  # refuses when a rung would fall under the venue minimum. Restore 6 after
-  # the reset.
-  max_positions: 0
+  # 15, not the pre-sprint 6: closed-trip accumulation scales with slots, and
+  # the 100-trip promotion criterion arrives in ~3 weeks at 15 slots vs ~6 at
+  # six. Entries pause while the sprint's surplus positions unwind below this.
+  max_positions: 15
   lot_size: 1                    # Binance quantises per symbol; this is a floor only
 
 explore:
@@ -233,10 +230,10 @@ explore:
   # entry_pct toward floor_pct by hand as the corpus fills -- never to zero,
   # or model-vs-chance stops being measurable.
   enabled: true
-  entry_pct: 1.0                 # fill sprint: attempt entries EVERY cycle (was 0.5)
+  entry_pct: 0.5                 # measurement regime; decay toward floor_pct as the corpus fills
   floor_pct: 0.15                # documented decay floor (manual)
-  max_positions: 30              # concurrently open random-arm entries (was 4)
-  entries_per_cycle: 5           # fill sprint: batch entries (restore 1 after reset)
+  max_positions: 12              # concurrently open random-arm entries (within sizing's 15)
+  entries_per_cycle: 1
   seed: 20260830                 # reproducible sequence; 0 = OS entropy
 
 score:
@@ -266,9 +263,11 @@ promotion:
   min_closed_trades: 100         # sample floor for the net-P&L verdict
   min_shadow_pairs: 30           # model must beat random with a real n
   # Measurement epoch start; empty = score.trade_since. Bump past regime
-  # changes (the fill sprint, a testnet reset) so the verdict measures the
+  # changes (a sprint, a testnet reset) so the verdict measures the
   # configuration that would actually trade on mainnet.
-  since: ""
+  # 2026-09-02: the fill sprint ended the evening of 09-01; the verdict clock
+  # starts the next UTC day, skipping the transitional evening.
+  since: "2026-09-02"
 
 rungs:
   # Ladder in and out instead of committing everything at one price. Fees are
@@ -343,13 +342,13 @@ exits:
   # Per venue: volatility does not transfer, so levels are set where they apply.
   markets:
     BINANCE:
-      # FILL SPRINT 2026-08-31: a round trip only fills the corpus when it
-      # CLOSES, and the testnet reset tomorrow kills anything still open --
-      # so holds are short and the time-stop is the main closer. Restore
-      # 0.08 / 4320 after the reset for the real measurement regime.
-      stop_loss_pct: 0.05
+      # Measurement regime (2026-09-01): the window must fit the move. The
+      # backtest's +15.5% band average and the 2026-08-10 research both live
+      # at multi-day horizons; 180-minute sprint holds guaranteed the hurdle
+      # bled every trip.
+      stop_loss_pct: 0.08
       min_reward_risk: 2.0
-      max_hold_minutes: 180
+      max_hold_minutes: 4320
 
 agent:
   enabled: true
@@ -357,11 +356,7 @@ agent:
   # Set true to stop trading while keeping the observe/decide/journal pipeline
   # running.
   dry_run: false
-  # FILL SPRINT 2026-08-31: 5 min, so the explore arm (which costs no tokens)
-  # can cycle entries fast before the testnet reset. Model spend stays capped
-  # by max_api_krw_per_day regardless of cadence -- deciding stops when the
-  # budget is spent, exploring does not. Restore 900 after the reset.
-  loop_interval_s: 300
+  loop_interval_s: 900
   # Skip the model entirely when the screen output has not materially changed --
   # re-deciding on an identical candidate set buys nothing and costs tokens.
   skip_decide_if_unchanged: true

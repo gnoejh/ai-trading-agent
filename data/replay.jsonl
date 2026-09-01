@@ -2,3 +2,8 @@
 {"ts": "2026-08-10T09:00:00+00:00", "menu_size": 4, "model": "BMTUSDT", "model_return_pct": -39.0201, "shadow": "BMTUSDT", "shadow_return_pct": -39.0201}
 {"ts": "2026-08-22T09:00:00+00:00", "menu_size": 6, "model": "ZECUSDT", "model_return_pct": 5.419, "shadow": "POLUSDT", "shadow_return_pct": 6.725}
 {"ts": "2026-08-28T09:00:00+00:00", "menu_size": 5, "model": "BMTUSDT", "model_return_pct": -16.3087, "shadow": "BMTUSDT", "shadow_return_pct": -16.3087}
+{"ts": "2026-04-13T17:00:00+00:00", "menu_size": 5, "model": "币安人生USDT", "model_return_pct": 54.2388, "shadow": "PROMUSDT", "shadow_return_pct": 1.8882}
+{"ts": "2026-05-09T11:00:00+00:00", "menu_size": 5, "model": "ICPUSDT", "model_return_pct": -10.9822, "shadow": "JUPUSDT", "shadow_return_pct": -5.0184}
+{"ts": "2026-06-25T16:00:00+00:00", "menu_size": 7, "model": "MUBUSDT", "model_return_pct": -5.7649, "shadow": "TNSRUSDT", "shadow_return_pct": -20.8333}
+{"ts": "2026-08-07T14:00:00+00:00", "menu_size": 4, "model": "BICOUSDT", "model_return_pct": -16.6242, "shadow": "TUTUSDT", "shadow_return_pct": 231.733}
+{"ts": "2026-08-20T11:00:00+00:00", "menu_size": 22, "model": "MSTRBUSDT", "model_return_pct": 4.4819, "shadow": "MVLLBUSDT", "shadow_return_pct": 1.5878}

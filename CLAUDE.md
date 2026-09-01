@@ -17,6 +17,13 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 
 ## Development log (newest first)
 
+- **2026-09-01 (evening)** — **Fill sprint ended, measurement regime started** (owner instruction:
+  the sprint's reset never came, and its 180-min holds bled ~0.4%/trip on terms that never counted
+  toward the verdict). Config: loop 900s, sizing 4% × 15 slots (15, not the pre-sprint 6 — trip
+  rate scales with slots), explore 0.5/12/1, exits BINANCE 8% stop / 72h hold.
+  `promotion.since: 2026-09-02` — the mainnet-verdict clock starts there. The ~50 sprint
+  positions unwind under the new 72h contract; entries pause until managed count < 15.
+
 - **2026-09-01 (latest)** — Historical evidence machinery: `backfill.py` (opens+resolves backtest
   observations from 60 days of mainnet klines in one pass — no lookahead, no overlap, `backtest`
   provenance separate from live buckets) and `replay.py` (model-vs-random on reconstructed menus,

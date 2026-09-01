@@ -1,8 +1,9 @@
 {
- "generated_at": "2026-09-01T09:14:46.183327+00:00",
- "n": 4,
- "model_avg_pct": -2.022,
- "shadow_avg_pct": -1.695,
- "model_wins": 0,
+ "generated_at": "2026-09-01T09:23:26.610140+00:00",
+ "n": 9,
+ "ties": 3,
+ "model_avg_pct": 1.918,
+ "shadow_avg_pct": 22.508,
+ "model_wins": 3,
  "note": "backtest PRIOR (survivorship-biased); live pairs decide promotion"
 }
