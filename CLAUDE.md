@@ -17,6 +17,12 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 
 ## Development log (newest first)
 
+- **2026-09-01 (latest)** — Historical evidence machinery: `backfill.py` (opens+resolves backtest
+  observations from 60 days of mainnet klines in one pass — no lookahead, no overlap, `backtest`
+  provenance separate from live buckets) and `replay.py` (model-vs-random on reconstructed menus,
+  same prompt and trade-rules contract, `--decisions` billing cap; renders in the gate as a
+  labelled PRIOR, never a criterion). Collapses the "which regimes pay" and "does the model beat
+  chance" questions from weeks to days; live pairs still decide promotion.
 - **2026-09-01 (later)** — The goal above stated by the owner and encoded: mainnet promotion gate
   built (`promotion.py`, `/status` *Mainnet gate* section); exits capped at bought units so a stop
   can never liquidate owner deposits alongside the position. First gate reading: 322 trips,
