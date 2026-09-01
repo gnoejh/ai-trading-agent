@@ -3,8 +3,24 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 It doubles as the development record: keep the log below current when landing meaningful changes.
 
+## The goal (owner, 2026-09-01)
+
+**Switch to Binance mainnet and earn profit there. Promote when measured profit is positive;
+stay on testnet and keep learning otherwise.** Every design decision serves that sentence. It is
+implemented as the **mainnet gate** (`trading/agent/promotion.py`, thresholds in `promotion:` in
+config, rendered in `/status` and `uv run python -m trading.agent.promotion`): closed-trip sample
+floor, net P&L after costs > 0, positive avg net per trip, and the model beating its paired random
+shadow. The gate measures; the OWNER flips `use_testnet` — after `preflight` and one
+`wire_test.py --live` (~$6). Anything benign only on testnet is a mainnet bug: the exit over-sell
+of unmanaged balance was exactly that, and exits are now capped at the units this system bought
+(`cost_position`; the balance stays the upper bound).
+
 ## Development log (newest first)
 
+- **2026-09-01 (later)** — The goal above stated by the owner and encoded: mainnet promotion gate
+  built (`promotion.py`, `/status` *Mainnet gate* section); exits capped at bought units so a stop
+  can never liquidate owner deposits alongside the position. First gate reading: 322 trips,
+  aggregate net +544 USDT but −0.274%/trip average, 0 shadow pairs — not yet.
 - **2026-09-01** — Kiwoom side removed; the codebase is Binance-only (see next section). `/costs`
   currency fix: fees and realised P&L recorded in the venue's own currency, converted once;
   realised scoped to flat symbols so open buys stop reading as losses (see *Economics*). Fill

@@ -258,6 +258,18 @@ score:
   trade_since: "2026-08-30"
   trade_markets: [CRYPTO, BSTOCKS, BINANCE]
 
+promotion:
+  # THE POINT OF THE REPOSITORY: promote to mainnet when measured profit is
+  # positive, stay on testnet and keep learning otherwise. The gate renders in
+  # /status and `python -m trading.agent.promotion`; it measures, the OWNER
+  # flips use_testnet (after preflight and a ~$6 wire_test --live).
+  min_closed_trades: 100         # sample floor for the net-P&L verdict
+  min_shadow_pairs: 30           # model must beat random with a real n
+  # Measurement epoch start; empty = score.trade_since. Bump past regime
+  # changes (the fill sprint, a testnet reset) so the verdict measures the
+  # configuration that would actually trade on mainnet.
+  since: ""
+
 rungs:
   # Ladder in and out instead of committing everything at one price. Fees are
   # proportional to notional, so N rungs cost the same in commission as one order;

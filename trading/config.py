@@ -374,6 +374,22 @@ class ScoreConfig(BaseModel):
     trade_markets: list[str] = Field(default_factory=lambda: ["CRYPTO", "BSTOCKS", "BINANCE"])
 
 
+class PromotionConfig(BaseModel):
+    """The mainnet gate: promote when measured profit is positive, stay otherwise.
+
+    The gate only measures and reports (`trading/agent/promotion.py`, the
+    *Mainnet gate* section of /status). Flipping `use_testnet` is the owner's
+    deliberate config edit, made by reading that report.
+    """
+
+    min_closed_trades: int = 100
+    min_shadow_pairs: int = 30
+    # Measurement epoch start (ISO date). Empty = score.trade_since. Bump this
+    # past regime changes (a sprint, a reset) so the verdict reflects the
+    # configuration that would actually trade on mainnet.
+    since: str = ""
+
+
 class AppConfig(BaseModel):
     broker: BrokerConfig = Field(default_factory=BrokerConfig)
     state: StateConfig = Field(default_factory=StateConfig)
@@ -388,6 +404,7 @@ class AppConfig(BaseModel):
     agent: AgentConfig = Field(default_factory=AgentConfig)
     explore: ExploreConfig = Field(default_factory=ExploreConfig)
     score: ScoreConfig = Field(default_factory=ScoreConfig)
+    promotion: PromotionConfig = Field(default_factory=PromotionConfig)
 
 
 def load_config(path: str | Path = CONFIG_PATH) -> AppConfig:

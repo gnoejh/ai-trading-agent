@@ -271,10 +271,39 @@ def test_binance_holdings_use_cost_basis_for_avg_price(cfg):
         open_orders={},
         evaluation={},
     )
-    adapter._state.cost_basis = lambda symbol: 95.0
+    adapter._state.cost_position = lambda symbol: (1.0, 95.0)
     holdings = adapter.holdings(snapshot)
     assert holdings["BTCUSDT"]["avg_price"] == pytest.approx(95.0)
     assert holdings["BTCUSDT"]["cost_basis"] == pytest.approx(95.0)
+
+
+def test_exit_quantity_is_capped_at_bought_units(cfg):
+    """The balance can hold units no fill paid for (seeds; on mainnet, owner
+    deposits). A plan quantity that follows the raw balance liquidates them
+    alongside the stop -- benign on testnet, the owner's own holdings on
+    mainnet. Exits sell at most what this system bought."""
+    from trading.brokers.adapters import BinanceAdapter
+    from trading.brokers.state import Snapshot
+
+    adapter = BinanceAdapter("CRYPTO", cfg)
+    # 58 bought by this system, 261 seeded: balance reads 319.
+    adapter._state.cost_position = lambda symbol: (58.0, 7.30)
+    snapshot = Snapshot(
+        market="CRYPTO",
+        taken_at=dt.datetime.now(dt.UTC),
+        positions={"rows": [{"stk_cd": "PROMUSDT", "rmnd_qty": 319.0, "cur_prc": 7.5}]},
+        cash={"entr": 5000},
+        open_orders={},
+        evaluation={},
+    )
+    holdings = adapter.holdings(snapshot)
+    assert holdings["PROMUSDT"]["quantity"] == pytest.approx(58.0)
+
+    # A withdrawal can shrink the balance below the tracked buys: the broker
+    # stays the upper bound.
+    snapshot.positions["rows"][0]["rmnd_qty"] = 40.0
+    adapter._basis.clear()
+    assert adapter.holdings(snapshot)["PROMUSDT"]["quantity"] == pytest.approx(40.0)
 
 
 def test_binance_cost_basis_cached_until_quantity_changes(cfg):
@@ -292,9 +321,9 @@ def test_binance_cost_basis_cached_until_quantity_changes(cfg):
 
     def counting_basis(symbol):
         calls.append(symbol)
-        return 95.0
+        return (1.0, 95.0)
 
-    adapter._state.cost_basis = counting_basis
+    adapter._state.cost_position = counting_basis
 
     def snap(qty):
         return Snapshot(

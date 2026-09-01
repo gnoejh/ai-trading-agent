@@ -71,7 +71,15 @@ class BinanceStatusReporter:
 
     def report(
         self,
-        sections: tuple[str, ...] = ("cash", "positions", "pnl", "orders", "api", "learning"),
+        sections: tuple[str, ...] = (
+            "cash",
+            "positions",
+            "pnl",
+            "orders",
+            "api",
+            "learning",
+            "gate",
+        ),
     ) -> str:
         snapshot = self.state.reconcile()
         taken = snapshot.taken_at.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
@@ -214,5 +222,14 @@ class BinanceStatusReporter:
                     )
             else:
                 lines.append("  no experience store yet — the scorer fills it hourly")
+
+        if "gate" in sections:
+            # The repository's purpose, rendered: promote to mainnet on measured
+            # profit, stay otherwise. Imported here to keep costs<-status free of
+            # a cycle (promotion imports costs).
+            from trading.agent.promotion import render as render_gate
+
+            lines.append("")
+            lines.append(render_gate(self.cfg))
 
         return "\n".join(lines)

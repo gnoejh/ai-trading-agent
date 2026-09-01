@@ -59,8 +59,9 @@ class BinanceAdapter:
         self.universe = BinanceUniverse(self.client, books, self.cfg)
         self.screen = BinanceScreen(self.client, self.universe, self.cfg)
         self._state = BinanceAccountState(self.client, self.universe, self.cfg)
-        # symbol -> (quantity, basis). See _cost_basis for why quantity is the key.
-        self._basis: dict[str, tuple[float, float]] = {}
+        # symbol -> (balance qty, tracked bought qty, basis). See _cost_position
+        # for why the balance quantity is the cache key.
+        self._basis: dict[str, tuple[float, float, float]] = {}
 
     def state(self):
         return self._state
@@ -77,22 +78,22 @@ class BinanceAdapter:
     def rules_for(self, symbol: str):
         return self.universe.rules_for(symbol)
 
-    def _cost_basis(self, symbol: str, qty: float) -> float:
-        """myTrades-backed basis, cached per (symbol, quantity).
+    def _cost_position(self, symbol: str, qty: float) -> tuple[float, float]:
+        """myTrades-backed (bought qty, basis), cached per (symbol, balance).
 
         The Spot Testnet seeds ~480 assets this system never bought, and
         discovering "no fills" for each cost one signed myTrades call per symbol
-        PER CYCLE — ~48s of API traffic to learn nothing new. Quantity is the
-        invalidation key: any fill (and any deposit) changes the balance, which
-        forces a fresh read, while a balance that has not moved cannot have new
-        fills that change its basis.
+        PER CYCLE — ~48s of API traffic to learn nothing new. The balance
+        quantity is the invalidation key: any fill (and any deposit) changes the
+        balance, which forces a fresh read, while a balance that has not moved
+        cannot have new fills that change its basis.
         """
         cached = self._basis.get(symbol)
         if cached and cached[0] == qty:
-            return cached[1]
-        basis = self._state.cost_basis(symbol)
-        self._basis[symbol] = (qty, basis)
-        return basis
+            return cached[1], cached[2]
+        tracked, basis = self._state.cost_position(symbol)
+        self._basis[symbol] = (qty, tracked, basis)
+        return tracked, basis
 
     def holdings(self, snapshot) -> dict[str, dict]:
         out = {}
@@ -100,9 +101,15 @@ class BinanceAdapter:
             symbol = row.get("stk_cd")
             qty = _num(row.get("rmnd_qty"))
             if symbol and qty > 0:
-                cost_basis = self._cost_basis(symbol, qty)
+                tracked, cost_basis = self._cost_position(symbol, qty)
+                # An exit may sell only what this system BOUGHT. The balance can
+                # hold more (testnet seeds; on mainnet, the owner's own deposits)
+                # and a plan quantity that follows the raw balance liquidates
+                # those alongside the stop. The balance stays the upper bound —
+                # a withdrawal can make it the smaller of the two.
+                managed_qty = min(qty, tracked) if tracked > 0 else qty
                 out[symbol] = {
-                    "quantity": qty,
+                    "quantity": managed_qty,
                     # The stop is built from actual fill basis, never the current
                     # mark, otherwise a trailing stop will chase the falling price
                     # and never fire.

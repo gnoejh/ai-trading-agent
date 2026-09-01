@@ -176,9 +176,7 @@ class CostLedger:
         )
         return fee
 
-    def record_realised(
-        self, amount: float, source: str = "broker", currency: str = "KRW"
-    ) -> None:
+    def record_realised(self, amount: float, source: str = "broker", currency: str = "KRW") -> None:
         """Realised P&L as reported by the broker — the only authority on it.
 
         `amount` is in the broker's own currency; it is converted once here so

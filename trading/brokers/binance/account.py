@@ -110,11 +110,19 @@ class BinanceAccountState:
         return {r["symbol"]: _f(r.get("price")) for r in rows if r.get("symbol") in wanted}
 
     def cost_basis(self, symbol: str) -> float:
-        """Average price actually paid, reconstructed from the broker's fills.
+        """Average price actually paid, reconstructed from the broker's fills."""
+        return self.cost_position(symbol)[1]
 
-        A Binance balance read reports quantity, never what it cost. Using the
-        current price as a stand-in makes any stop derived from it trail the
-        market down and never fire.
+    def cost_position(self, symbol: str) -> tuple[float, float]:
+        """(quantity this system actually bought, average price paid), from fills.
+
+        A Binance balance read reports quantity, never what it cost — and the
+        balance can include units no fill ever paid for (testnet seeds; on
+        mainnet, owner deposits). The tracked quantity is what exits are allowed
+        to sell: liquidating the rest alongside a stop was benign on testnet but
+        would sell the owner's own holdings on mainnet. Using the current price
+        as a basis stand-in makes any stop derived from it trail the market
+        down and never fire.
         """
         try:
             rows = self.client.call("my_trades", {"symbol": symbol, "limit": 200}).body.get(
@@ -122,7 +130,7 @@ class BinanceAccountState:
             )
         except Exception as exc:  # noqa: BLE001 - absence is reported, never guessed
             log.warning("cost basis unavailable for %s: %s", symbol, exc)
-            return 0.0
+            return 0.0, 0.0
         qty = quote = 0.0
         # Oldest-first moving-average book. Sells reduce the position at its
         # average cost; a sell larger than the tracked position (seed units no
@@ -143,7 +151,7 @@ class BinanceAccountState:
             take = min(q, qty)
             quote -= take * (quote / qty)
             qty -= take
-        return quote / qty if qty > 0 else 0.0
+        return (qty, quote / qty) if qty > 0 else (0.0, 0.0)
 
     def open_orders(self) -> dict:
         return {"rows": self.client.call("open_orders").body.get("rows", [])}
