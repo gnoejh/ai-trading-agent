@@ -2,7 +2,57 @@
 # Secrets live in .env and are never mirrored here. Code should read values from
 # this file rather than hardcoding them; see trading/config.py.
 
+specs:
+  workbook: KIWOOM_API.xlsx
+  index: data/specs/kiwoom.json
+
 broker:
+  # Restored 2026-09-01 evening as a MEASUREMENT-ONLY venue: the context-RL
+  # loop (decisions, virtual + shadow picks, observations) runs on KR/US
+  # without a single order. This is LIVE MAINNET MONEY that has passed no
+  # gate — allow_orders stays false, and `--broker kiwoom` forces dry_run.
+  # Paper trading unlocks when 모의투자 keys are reissued at the developer
+  # portal (the old pair fails auth with 8001).
+  kiwoom:
+    use_testnet: false         # mainnet keys are the only working credential (READS ONLY)
+    timezone: Asia/Seoul
+    timeout_s: 10.0
+    min_call_interval_s: 0.25  # Kiwoom 429s when quoted back-to-back
+    max_retries_429: 3
+    # Non-zero return codes that mean "query matched nothing", not "call
+    # failed" (ust21050 -> 20). Reads only; never orders.
+    empty_result_codes: ["20"]
+    retry_backoff_s: 1.0
+    token_refresh_skew_min: 5
+    # ONE token per app key -- a second client silently revokes the first.
+    token_cache: data/kiwoom_token.json
+    max_pages: 20
+    allow_orders: false        # master switch; measurement-only
+    order_paths:
+      - /api/dostk/ordr
+      - /api/us/ordr
+    markets:
+      KR:
+        url_prefix: /api/dostk
+        exchange: KRX
+        state:
+          positions:   {api_id: kt00018, params: {qry_tp: "1", dmst_stex_tp: "KRX"}}
+          cash:        {api_id: kt00001, params: {qry_tp: "2"}}
+          open_orders: {api_id: ka10075, params: {all_stk_tp: "0", trde_tp: "0", stex_tp: "0"}}
+          fills:       {api_id: ka10076, params: {qry_tp: "0", sell_tp: "0", stex_tp: "0"}}
+          evaluation:  {api_id: kt00004, params: {qry_tp: "0", dmst_stex_tp: "KRX"}}
+        orders: {buy: kt10000, sell: kt10001, modify: kt10002, cancel: kt10003}
+      US:
+        url_prefix: /api/us
+        exchange: KRX
+        state:
+          positions:   {api_id: ust21070}
+          cash:        {api_id: ust21160}
+          open_orders: {api_id: ust21050}
+          fills:       {api_id: ust21510}
+          evaluation:  {api_id: ust21121}
+        orders: {buy: ust20000, sell: ust20001, modify: ust20002, cancel: ust20003}
+
   binance:
     # Spot TESTNET since 2026-08-30 (revival: learn on fake money, real data).
     # use_testnet routes only SIGNED traffic (account, orders) to the testnet
@@ -149,6 +199,10 @@ accounting:
     BINANCE: {commission_rate: 0.001,   sell_tax_rate: 0.0,    slippage_bps: 20}
     CRYPTO:  {commission_rate: 0.001,   sell_tax_rate: 0.0,    slippage_bps: 15}
     BSTOCKS: {commission_rate: 0.001,   sell_tax_rate: 0.0,    slippage_bps: 20}
+    # Kiwoom books, in KRW terms (currency drives the ledger's conversion).
+    # KR pays the 0.15% 거래세 on sells; verify the rate each budget year.
+    KR:      {commission_rate: 0.00015, sell_tax_rate: 0.0015, slippage_bps: 5, currency: KRW}
+    US:      {commission_rate: 0.00015, sell_tax_rate: 0.0,    slippage_bps: 5, currency: USD}
   report_currency: KRW
 
 notify:
@@ -341,6 +395,14 @@ exits:
 
   # Per venue: volatility does not transfer, so levels are set where they apply.
   markets:
+    KR:
+      stop_loss_pct: 0.04
+      min_reward_risk: 2.0
+      max_hold_minutes: 2880      # 2 trading days
+    US:
+      stop_loss_pct: 0.025        # US large caps; 8% is several days of range
+      min_reward_risk: 1.8
+      max_hold_minutes: 2880
     BINANCE:
       # Measurement regime (2026-09-01): the window must fit the move. The
       # backtest's +15.5% band average and the 2026-08-10 research both live
@@ -360,13 +422,37 @@ agent:
   # Skip the model entirely when the screen output has not materially changed --
   # re-deciding on an identical candidate set buys nothing and costs tokens.
   skip_decide_if_unchanged: true
-  journal: data/journal.jsonl     # append-only decision record; audit, not state
+  journal: data/journal.jsonl     # append-only per broker; non-binance gets journal.<broker>.jsonl
 
   # The universe is the whole market, fetched from the broker -- never a
   # hand-maintained list. That is far too many to price or to put in a prompt,
   # so each cycle runs a deterministic funnel:
   #   full universe -> ranking screens -> top N candidates -> model
   # The model only ever sees `candidates`; the screens decide what it may consider.
+  universe:
+    refresh_hours: 12             # re-fetch the tradable list this often
+    cache: data/universe
+    KR:
+      list: {api_id: ka10099}     # 종목정보 리스트, one call per market segment
+      segments: {mrkt_tp: ["0", "10"]}   # 0 코스피, 10 코스닥
+      # ka10099 returns ~4,293 rows; filtering to common stock with normal
+      # audit status leaves the ~2,483-name tradable universe.
+      include_market_names: ["거래소", "코스닥"]
+      require_audit_normal: true
+      exclude_states: ["거래정지", "정리매매"]
+    US:
+      # stex_tp is REQUIRED (%:전체); without it the call 400s and the
+      # universe silently comes back empty.
+      list: {api_id: usa10099, params: {stex_tp: "%"}}
+      segments: {}
+      market_name_field: mkgb
+      exchange_field: stex_tp
+      etf_field: isEtf
+      exclude_etf: true
+      include_market_names: ["NYSE", "NASDAQ", "AMEX"]
+      require_audit_normal: false
+      exclude_states: []
+
   screen:
     candidates: 25                # how many symbols reach the model
     min_price: 0                  # fallback only; each market sets its own below
@@ -410,10 +496,37 @@ agent:
     flow_pool_per_book: 30
     BINANCE:
       min_price: 0                # any price; quantisation handles sub-cent coins
+    KR:
+      min_price: 1000             # KRW
+      rankers:
+        - {api_id: ka10032, params: {mrkt_tp: "000", mang_stk_incls: "0", stex_tp: "1"}}  # 거래대금상위
+        # 전일대비등락률상위: 상승률순, 우선주+관리주 제외, 1억원 이상 거래대금만.
+        - {api_id: ka10027, params: {mrkt_tp: "000", sort_tp: "1", trde_qty_cnd: "0100", stk_cnd: "4", crd_cnd: "0", updown_incls: "0", pric_cnd: "0", trde_prica_cnd: "10", stex_tp: "1"}}
+    US:
+      min_price: 1                # USD
+      min_change_pct: 0.02
+      max_change_pct: 0.25
+      # stk_tp "1" restricts to 주식; the default mixes in ETFs and indices.
+      rankers:
+        - {api_id: usa20540, params: {stk_tp: "1", stex_tp: "0"}}                  # 당일 거래대금 상위
+        - {api_id: usa20910, params: {stk_tp: "1", stex_tp: "0", sort_tp: "1"}}    # 전일대비 등락률상위
   # BINANCE is 24/7: `always_open` markets skip the clock gate entirely rather
   # than being given fake 00:00-23:59 hours that would still close for a minute
   # each day and stop trading at a weekend boundary.
   always_open: ["BINANCE"]
+  # Equities follow their exchange's own clock, declared in its own timezone so
+  # DST resolves from the zone database rather than fixed KST offsets.
+  sessions:
+    KR: {timezone: Asia/Seoul,       open: "09:00", close: "15:20"}
+    US: {timezone: America/New_York, open: "09:30", close: "15:55"}
+  trade_on_weekends: false
+  # Quote endpoints the observe step uses, per market surface.
+  quotes:
+    KR:
+      basic: {api_id: ka10001}                              # 주식기본정보요청
+      orderbook: {api_id: ka10004}                          # 주식호가요청
+    US:
+      basic: {api_id: usa20100, params: {stex_tp: "%"}}     # 미국주식 현재가 종목정보
   tiers:
     # deepseek-chat, not deepseek-reasoner: the reasoner returned EMPTY content
     # on 36% of decisions (budget burned on reasoning) and costs ~2x more, and

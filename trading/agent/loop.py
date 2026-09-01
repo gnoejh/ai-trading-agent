@@ -21,6 +21,7 @@ import random
 import re
 import time
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from trading.accounting.costs import CostLedger
@@ -184,7 +185,8 @@ class TradingAgent:
         self.cfg = cfg or config()
         self.acfg = self.cfg.agent
         self.broker = broker
-        self.tz = ZoneInfo(self.cfg.broker.binance.timezone)
+        bcfg = getattr(self.cfg.broker, broker, self.cfg.broker.binance)
+        self.tz = ZoneInfo(getattr(bcfg, "timezone", "Asia/Seoul"))
 
         self.adapter = adapter or build_adapter(self.broker, self.acfg.market, self.cfg)
         self.market = self.adapter.market
@@ -204,7 +206,15 @@ class TradingAgent:
         )
         self.ledger = CostLedger(self.cfg)
         self.llm = LLMClient(self.cfg, ledger=self.ledger)
-        self.journal = Journal(self.acfg.journal)
+        # One journal per broker: the scorer resolves observations against the
+        # venue's own price source, so venues must never share a decision file.
+        # The bare configured name stays Binance's for continuity.
+        journal_path = Path(self.acfg.journal)
+        if broker != "binance":
+            journal_path = journal_path.with_name(
+                f"{journal_path.stem}.{broker}{journal_path.suffix}"
+            )
+        self.journal = Journal(str(journal_path))
         self.telegram = notifier or TelegramNotifier()
         self._last_fingerprint: tuple[str, ...] | None = None
         # Symbols this process has traded today -- Binance's myTrades needs a
@@ -802,7 +812,8 @@ def main() -> int:
     import argparse
 
     ap = argparse.ArgumentParser(description="Run the trading agent.")
-    ap.add_argument("--broker", default="binance", choices=["binance"])
+    ap.add_argument("--broker", default="binance", choices=["binance", "kiwoom"])
+    ap.add_argument("--market", default=None, choices=["KR", "US"], help="kiwoom only")
     ap.add_argument("--cycles", type=int, default=None, help="stop after N cycles")
     ap.add_argument(
         "--dry-run", action="store_true", help="force dry run regardless of config.yaml"
@@ -811,6 +822,15 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     cfg = config()
+    if args.market:
+        cfg.agent.market = args.market
+    if args.broker == "kiwoom":
+        # MEASUREMENT-ONLY venue: the account is live money that has passed no
+        # gate. dry_run is forced (allow_orders=false backs it up at the
+        # client), so decisions, virtual and shadow picks are journalled while
+        # nothing can reach the wire.
+        cfg.agent.dry_run = True
+        log.info("kiwoom is measurement-only: dry_run forced, allow_orders stays false")
     if args.dry_run:
         cfg.agent.dry_run = True
 

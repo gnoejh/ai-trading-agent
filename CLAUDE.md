@@ -17,6 +17,13 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 
 ## Development log (newest first)
 
+- **2026-09-01 (night)** — **Kiwoom KR/US restored as a measurement-only venue** (owner: apply
+  context RL to KR/US, use DeepSeek while cheap). Stack restored from git and adapted to the new
+  architecture (shared `state.py` contracts, per-broker journals, sessions back in `AgentConfig`).
+  Verified live: mainnet auth, KR universe 2,454 from cache, screen 218→25 candidates,
+  measurement cycle journalled to `journal.kiwoom.jsonl`. No orders possible (`allow_orders`
+  false + forced dry_run). Next increments: KR/US scorer resolution via Kiwoom chart endpoints,
+  KR backfill, a scheduled measurement service.
 - **2026-09-01 (evening)** — **Fill sprint ended, measurement regime started** (owner instruction:
   the sprint's reset never came, and its 180-min holds bled ~0.4%/trip on terms that never counted
   toward the verdict). Config: loop 900s, sizing 4% × 15 slots (15, not the pre-sprint 6 — trip
@@ -54,15 +61,22 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 - **2026-08-10** — Research findings: momentum has no edge, taker flow does; the strategy did not
   beat buy-and-hold in the clean test (see *Research findings*). Live KR trading began and ended.
 
-## Binance-only since 2026-09-01
+## Two venues, one algorithm (since 2026-09-01 evening)
 
-The Kiwoom (KR/US equities) side — client, spec-RAG over the vendor workbooks, DART filings,
-KR flow capture — was removed at owner instruction; git history before `2026-09-01` retains all
-of it. What survived the split: the venue-neutral state contracts moved to
-`trading/brokers/state.py` (`Snapshot`, `StaleStateError`, `OrderRejected`), and the adapter seam
-(`trading/brokers/adapters.py`) stays, so a second venue is an adapter away. Untracked Kiwoom-era
-artifacts (`KIWOOM_API.pdf`, `data/flow_kr.jsonl`, `data/dart_corp.json`, `data/specs/`) were left
-on disk deliberately — `flow_kr.jsonl` is forward-accumulated and unrecoverable.
+The Kiwoom (KR/US) side was removed on 2026-09-01 morning and **restored the same evening at
+owner instruction as a MEASUREMENT-ONLY venue** — the context-RL loop (decisions, virtual and
+shadow picks, observations) runs on KR/US menus without a single order, "using DeepSeek while
+it is still cheap." Hard constraints: the Kiwoom account is LIVE MAINNET MONEY that has passed
+no gate — `broker.kiwoom.allow_orders: false` and `--broker kiwoom` forces `dry_run`; there is
+no working paper trading until 모의투자 keys are reissued at the developer portal (the old pair
+fails auth with 8001, and mainnet reads work only against `api.kiwoom.com`). Kiwoom returns
+auth failures as HTTP 200 with a non-zero `return_code` — `_issue_token` checks the body.
+Each broker journals separately (`journal.jsonl` = Binance, `journal.kiwoom.jsonl`), because
+observations resolve against the venue's own price source. Not built yet for KR/US: the
+scorer's resolution path (Kiwoom chart endpoints) and backfill — decisions journalled now
+resolve retroactively once it exists. DART and the KR flow capture remain removed; git history
+before the morning commit retains them. The spec-RAG (`trading/rag/`) is back: deterministic
+workbook parsing at build time, `catalog_prompt`/`get(api_id)` at run time, no embeddings.
 
 ## Invariants
 
