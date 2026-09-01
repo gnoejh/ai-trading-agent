@@ -91,11 +91,26 @@ def evaluate(cfg: AppConfig | None = None) -> dict:
 
 def render(cfg: AppConfig | None = None) -> str:
     """The operator-facing verdict, one line per criterion."""
+    cfg = cfg or config()
     result = evaluate(cfg)
     lines = ["*Mainnet gate* (promote on measured profit, stay otherwise)"]
     for c in result["checks"]:
         mark = "✅" if c["ok"] else "▫️"
         lines.append(f"  {mark} {c['name']} — {c['detail']}")
+    # Backtest evidence is a PRIOR, never a criterion: it is survivorship-biased
+    # and cost-free, so it informs the reading but cannot open the gate.
+    replay_path = Path(cfg.score.replay_summary)
+    if replay_path.exists():
+        try:
+            r = json.loads(replay_path.read_text(encoding="utf-8"))
+            if r.get("n"):
+                lines.append(
+                    f"  ℹ️ backtest prior (not a criterion): n={r['n']}, model "
+                    f"{r['model_avg_pct']:+.2f}% vs random {r['shadow_avg_pct']:+.2f}%, "
+                    f"model wins {r['model_wins']}/{r['n']}"
+                )
+        except (OSError, ValueError):
+            pass
     if result["ready"]:
         lines.append(
             "  🟢 ALL CRITERIA MET — the owner may set `use_testnet: false` "

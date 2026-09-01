@@ -342,28 +342,37 @@ class ExperienceScorer:
         for source, members in sorted(by_source.items()):
             buckets.append(bucket(f"{source} picks", members))
 
-        universe = by_source.get("universe", [])
-        by_book: dict[str, list[dict]] = {}
-        for r in universe:
-            by_book.setdefault(r.get("book") or "?", []).append(r)
-        for book, members in sorted(by_book.items()):
-            buckets.append(bucket(f"universe:{book}", members))
+        # Same band/tertile structure for the live universe sweep and the
+        # backtest replay — but NEVER pooled: provenance stays in the label, so
+        # the prompt and the operator always see which numbers were waited for
+        # and which were reconstructed from history.
+        for prefix in ("universe", "backtest"):
+            members_all = by_source.get(prefix, [])
+            if prefix == "backtest" and not members_all:
+                continue
+            by_book: dict[str, list[dict]] = {}
+            for r in members_all:
+                by_book.setdefault(r.get("book") or "?", []).append(r)
+            for book, members in sorted(by_book.items()):
+                buckets.append(bucket(f"{prefix}:{book}", members))
 
-        for lo, hi in CHANGE_BANDS:
-            members = [r for r in universe if _in_band(float(r.get("change_pct") or 0), lo, hi)]
-            buckets.append(bucket(f"universe 24h-change {_band_label(lo, hi)}", members))
+            for lo, hi in CHANGE_BANDS:
+                members = [
+                    r for r in members_all if _in_band(float(r.get("change_pct") or 0), lo, hi)
+                ]
+                buckets.append(bucket(f"{prefix} 24h-change {_band_label(lo, hi)}", members))
 
-        flowed = sorted(
-            (r for r in universe if r.get("taker_share") is not None),
-            key=lambda r: r["taker_share"],
-        )
-        if flowed:
-            k = max(len(flowed) // 3, 1)
-            for label, members in (
-                ("flow tertile low", flowed[:k]),
-                ("flow tertile high", flowed[-k:]),
-            ):
-                buckets.append(bucket(f"universe {label}", members))
+            flowed = sorted(
+                (r for r in members_all if r.get("taker_share") is not None),
+                key=lambda r: r["taker_share"],
+            )
+            if flowed:
+                k = max(len(flowed) // 3, 1)
+                for label, members in (
+                    ("flow tertile low", flowed[:k]),
+                    ("flow tertile high", flowed[-k:]),
+                ):
+                    buckets.append(bucket(f"{prefix} {label}", members))
 
         closed = self._trade_outcomes()
         if closed:

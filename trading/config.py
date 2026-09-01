@@ -372,6 +372,10 @@ class ScoreConfig(BaseModel):
     # testnet) and closed-trade stats must not mix them.
     trade_since: str = ""
     trade_markets: list[str] = Field(default_factory=lambda: ["CRYPTO", "BSTOCKS", "BINANCE"])
+    # Historical backfill/replay (provenance-separated backtest evidence).
+    backfill_days: int = 60
+    replay: str = "data/replay.jsonl"
+    replay_summary: str = "data/replay_summary.json"
 
 
 class PromotionConfig(BaseModel):

@@ -93,6 +93,47 @@ Reply with JSON only:
 - Never propose selling more than the reported holding."""
 
 
+def build_trade_rules(cfg: AppConfig, market: str, ledger: CostLedger) -> dict:
+    """The exit contract every pick is judged by, in the model's terms.
+
+    Module-level because the historical replay harness must ask the model the
+    IDENTICAL question the live loop asks — a backtest against a different
+    payoff contract measures a different trader.
+    """
+    ecfg = cfg.exits.for_market(market)
+    hurdle = ledger.breakeven_move_pct(market)
+    stop_pct = ecfg.stop_loss_pct
+    # Mirrors ExitPolicy: target is the wider of the hurdle multiple and the
+    # minimum reward:risk, measured from NET break-even.
+    breakeven_pct = hurdle
+    risk_pct = breakeven_pct + stop_pct
+    target_pct = max(
+        (1 + breakeven_pct) * (1 + ecfg.target_hurdle_multiple * hurdle) - 1,
+        breakeven_pct + ecfg.min_reward_risk * risk_pct,
+    )
+    # Break-even win rate implied by the payoff. A 0.60 floor against a 1.8:1
+    # trade demands near-certainty for a bet that pays above 36% -- which is
+    # why the trader kept declining candidates it plainly liked.
+    breakeven_wr = risk_pct / (target_pct + risk_pct) if (target_pct + risk_pct) else 0.5
+    return {
+        "round_trip_cost_pct": round(hurdle * 100, 3),
+        "breakeven_win_rate_pct": round(breakeven_wr * 100, 1),
+        "breakeven_move_pct": round(breakeven_pct * 100, 3),
+        "target_gain_pct": round(target_pct * 100, 2),
+        "stop_loss_pct": round(stop_pct * 100, 2),
+        "reward_risk": round((target_pct - breakeven_pct) / risk_pct, 2),
+        "max_hold_minutes": ecfg.max_hold_minutes,
+        "confidence_floor": cfg.agent.tiers.confidence_floor,
+        "note": (
+            f"A pick must gain {target_pct * 100:.1f}% before losing "
+            f"{stop_pct * 100:.1f}%, within {ecfg.max_hold_minutes:.0f} minutes. "
+            f"Below {breakeven_pct * 100:.2f}% it loses money even if it rises. "
+            f"This payoff is PROFITABLE above a {breakeven_wr * 100:.0f}% hit rate -- "
+            f"you do not need to be confident of winning, only better than that."
+        ),
+    }
+
+
 def _describe_limits(risk) -> dict:
     """Render risk limits as the model should understand them."""
 
@@ -274,39 +315,7 @@ class TradingAgent:
         )[:20000]
 
     def _trade_rules(self) -> dict:
-        """The exit contract every pick is judged by, in the model's terms."""
-        ecfg = self.cfg.exits.for_market(self.market)
-        hurdle = self.ledger.breakeven_move_pct(self.market)
-        stop_pct = ecfg.stop_loss_pct
-        # Mirrors ExitPolicy: target is the wider of the hurdle multiple and the
-        # minimum reward:risk, measured from NET break-even.
-        breakeven_pct = hurdle
-        risk_pct = breakeven_pct + stop_pct
-        target_pct = max(
-            (1 + breakeven_pct) * (1 + ecfg.target_hurdle_multiple * hurdle) - 1,
-            breakeven_pct + ecfg.min_reward_risk * risk_pct,
-        )
-        # Break-even win rate implied by the payoff. A 0.60 floor against a 1.8:1
-        # trade demands near-certainty for a bet that pays above 36% -- which is
-        # why the trader kept declining candidates it plainly liked.
-        breakeven_wr = risk_pct / (target_pct + risk_pct) if (target_pct + risk_pct) else 0.5
-        return {
-            "round_trip_cost_pct": round(hurdle * 100, 3),
-            "breakeven_win_rate_pct": round(breakeven_wr * 100, 1),
-            "breakeven_move_pct": round(breakeven_pct * 100, 3),
-            "target_gain_pct": round(target_pct * 100, 2),
-            "stop_loss_pct": round(stop_pct * 100, 2),
-            "reward_risk": round((target_pct - breakeven_pct) / risk_pct, 2),
-            "max_hold_minutes": ecfg.max_hold_minutes,
-            "confidence_floor": self.acfg.tiers.confidence_floor,
-            "note": (
-                f"A pick must gain {target_pct * 100:.1f}% before losing "
-                f"{stop_pct * 100:.1f}%, within {ecfg.max_hold_minutes:.0f} minutes. "
-                f"Below {breakeven_pct * 100:.2f}% it loses money even if it rises. "
-                f"This payoff is PROFITABLE above a {breakeven_wr * 100:.0f}% hit rate -- "
-                f"you do not need to be confident of winning, only better than that."
-            ),
-        }
+        return build_trade_rules(self.cfg, str(self.market), self.ledger)
 
     def decide(self, observation: dict) -> tuple[list[TradeIntent], str, str | None]:
         tiers = self.acfg.tiers
