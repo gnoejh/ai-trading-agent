@@ -175,7 +175,9 @@ class Replayer:
                     self._payload(menu), system=_SYSTEM, tier=self.cfg.agent.tiers.decide
                 )
                 stub = SimpleNamespace(market="BINANCE")
-                intents, _, best = TradingAgent._parse(stub, raw, {m["symbol"] for m in menu}, {})
+                intents, _, best, _conf = TradingAgent._parse(
+                    stub, raw, {m["symbol"] for m in menu}, {}
+                )
                 model_pick = best or next((x.symbol for x in intents if str(x.side) == "BUY"), None)
                 shadow_pick = self.rng.choice(menu)["symbol"]
                 if not model_pick:

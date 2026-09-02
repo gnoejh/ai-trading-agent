@@ -215,10 +215,27 @@ class BinanceStatusReporter:
                 )
                 pairs = exp.get("model_vs_shadow", {})
                 if pairs.get("n"):
-                    lines.append(
+                    line = (
                         f"  model vs random: n={pairs['n']}"
                         f" · model {pairs.get('model_avg_pct', 0):+.2f}%"
                         f" vs random {pairs.get('shadow_avg_pct', 0):+.2f}%"
+                    )
+                    if pairs.get("ci_low") is not None:
+                        line += f" · CI {pairs['ci_low']:+.2f}..{pairs['ci_high']:+.2f}"
+                    lines.append(line)
+                for venue, pv in sorted((exp.get("model_vs_shadow_by_venue") or {}).items()):
+                    if pv.get("n"):
+                        lines.append(
+                            f"    {venue}: n={pv['n']} · model {pv.get('model_avg_pct', 0):+.2f}%"
+                            f" vs random {pv.get('shadow_avg_pct', 0):+.2f}%"
+                        )
+                graded = [c for c in exp.get("calibration", []) if not c.get("venue")]
+                if graded:
+                    lines.append(
+                        "  calibration: "
+                        + " · ".join(
+                            f"{c['band']} → {c['hit_rate']:.0%} (n={c['n']})" for c in graded
+                        )
                     )
             else:
                 lines.append("  no experience store yet — the scorer fills it hourly")

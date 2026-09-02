@@ -17,6 +17,31 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 
 ## Development log (newest first)
 
+- **2026-09-03** — **Seven learning-loop fixes, one commit** (owner: "fix the above seven
+  items", after the day-1 reading below). Each answers a defect measured on the first epoch
+  day. (1) **Measurement decoupled from execution** (`agent.decide_when_full`): a full book
+  still asks the model and journals the virtual + shadow picks, only execution is withheld
+  (62 "no free slots" cycles had produced zero pairs); the random arm now also runs on the KR
+  paper account (`explore.markets`, a Kiwoom `tradable_pool` from 거래대금상위) and never on a
+  dry-run venue. (2) **Calibration feedback**: the virtual pick's stated confidence is
+  journalled, every resolution grades target-before-stop under the live exit contract, and
+  the prompt gets `your_calibration` per confidence band. (3) **Excess return + robust
+  stats**: each resolution measures the book's benchmark over the same window
+  (`score.benchmarks`: BTCUSDT / SPYBUSDT / 069500 / SPY); buckets carry median and clearance
+  rate; the paired comparison carries a seeded bootstrap CI and the gate now requires the CI
+  lower bound > 0 (`promotion.require_ci`). (4) **Frozen fitted prior** (`trading/agent/fit.py`,
+  `uv run python -m trading.agent.fit`): pure-Python ridge logistic over log turnover, change,
+  |change|, flow share, book; artifact `data/scorer_model.json` with its own holdout report;
+  candidates carry `p_clear`; `screen.rank_by: model` orders by it (kept on `flow` until the
+  report earns the switch). (5) **KR screen on the measured signal**: 외국인기관매매상위
+  (ka90009, multi-column ranker) + 거래대금상위, per-candidate net-buy share from ka10061,
+  10% change cap, ordered by flow. (6) **Exit counterfactuals** (`trading/agent/exit_eval.py`):
+  every closed trip replayed under a hold × stop grid with the live ExitPolicy arithmetic,
+  written to `data/exit_eval.json`. (7) **Store pooled across sleeves**: the scorer reads all
+  three journals, KR/US resolve from the archive parquet on their own hold horizon
+  (`trading/agent/prices.py`, never a Kiwoom call), buckets render pooled and per venue, and
+  each venue's prompt sees pooled rows plus its own. Ledger closed trips carry entry/exit
+  timestamps. 236 tests.
 - **2026-09-02** — **API budget 2,000 → 6,000 KRW/day; owner deposited $4,820 to mainnet.**
   The budget day is UTC (`CostLedger.day()`), and the US session occupies its last 6.5 hours
   (22:30–05:00 KST = 13:30–20:00 UTC) — so US measurement always eats leftovers after Binance
@@ -134,10 +159,13 @@ fails 8001 on BOTH hosts — verified against `mockapi.kiwoom.com` directly). �
 same API on the mock endpoint, KR-only: `paper_markets` scopes the flip, US never leaves the
 mainnet host. Kiwoom returns
 auth failures as HTTP 200 with a non-zero `return_code` — `_issue_token` checks the body.
-Each broker journals separately (`journal.jsonl` = Binance, `journal.kiwoom.jsonl`), because
-observations resolve against the venue's own price source. Not built yet for KR/US: the
-scorer's resolution path (Kiwoom chart endpoints) and backfill — decisions journalled now
-resolve retroactively once it exists. DART and the KR flow capture remain removed; git history
+Each broker journals separately (`journal.jsonl` = Binance, `journal.kiwoom.KR.jsonl` /
+`.US.jsonl`, one definition in `AppConfig.journal_for`), because observations resolve against
+the venue's own price source. Since 2026-09-03 the scorer reads every venue's journal and
+resolves KR/US from the archive's parquet bars (`trading/agent/prices.py`, hourly when it
+covers the window, else daily) — never a Kiwoom chart call, which after hours would revoke
+the downloader's token. The experience store is POOLED across sleeves with the venue as a
+label: pooled buckets inform every venue, per-venue buckets show which sleeve earned them. DART and the KR flow capture remain removed; git history
 before the morning commit retains them. The spec-RAG (`trading/rag/`) is back: deterministic
 workbook parsing at build time, `catalog_prompt`/`get(api_id)` at run time, no embeddings.
 
@@ -184,7 +212,7 @@ that was mostly committed cash, and the daily-loss cap reads the same number.
 
 ```
 uv sync                                   # create/refresh .venv from uv.lock
-uv run pytest                             # 153 tests, no network (httpx MockTransport)
+uv run pytest                             # 236 tests, no network (httpx MockTransport)
 uv run python scripts/wire_test.py        # dry run; --live sends ONE ~$6 order
 uv run pytest tests/test_risk_gate.py -k concentration
 uv run ruff check . --fix && uv run ruff format .
@@ -194,6 +222,10 @@ uv run python -m trading.llm.check        # every LLM tier reachable?
 uv run python -m trading.watch --once     # print account status
 uv run python -m trading.watch            # serve Telegram commands
 uv run python -m trading.agent.scorer     # standalone scoring pass (RAG build step)
+uv run python -m trading.agent.scorer --venue KR   # ...and render KR's prompt block
+uv run python -m trading.agent.fit        # refit the frozen prior (writes data/scorer_model.json)
+uv run python -m trading.agent.exit_eval  # exit counterfactual grid over closed trips
+uv run python -m trading.agent.promotion  # the mainnet gate, with the paired CI
 ```
 
 Tests must stay hermetic: fixtures pin `use_testnet`, `allow_orders` and the risk limits rather than
@@ -391,6 +423,36 @@ exactly the false signal the scorer exists to prevent. `/status` shows the corpu
 
 Still open: the exploration decay schedule (manual by design — lower `explore.entry_pct` toward
 `floor_pct` once the corpus says what the model is worth).
+
+**Since 2026-09-03 the loop also measures itself, not only its picks:**
+
+- **A full book still measures.** `agent.decide_when_full` keeps the decide call, the virtual
+  pick and the shadow pick running when no slot is free; only execution is withheld (verdicts
+  carry "no free slots (measurement only)"). The random arm honours `explore.markets` and
+  never runs on a dry-run venue.
+- **Calibration.** `virtual_confidence` is journalled; each resolution records `outcome`
+  (target / stop / time under the venue's live exit contract) and `cleared_target`; the
+  scorer aggregates hit rates per `score.confidence_bands`; the prompt renders them as
+  `your_calibration`. The 0.45 floor is now a measured boundary.
+- **Excess return and robust statistics.** Every resolution measures `score.benchmarks[book]`
+  over the identical window (`excess_return_pct`). Buckets carry `median_return_pct`,
+  `clear_rate`, `avg_excess_pct`. The paired model-vs-shadow summary carries a seeded
+  percentile-bootstrap CI (`ci_low`/`ci_high`) and `model_wins`; the gate's shadow criterion
+  requires the lower bound above zero (`promotion.require_ci`).
+- **The frozen fitted prior** (`trading/agent/fit.py`). Ridge logistic regression by Newton's
+  method in pure Python over `FEATURES` (log turnover, change, |change|, flow share, a
+  missing-flow flag, book one-hots), label `cleared_hurdle`, trained on non-model sources only
+  (model picks are selected by the thing being measured), holdout = the LAST fifth by time.
+  Artifact `data/scorer_model.json` carries n, base rate, holdout AUC, log-loss and
+  calibration deciles. The running system only reads it: candidates get `p_clear`
+  (journalled too, so the prior's own calls resolve), `screen.rank_by: model` orders the move
+  ranking by it. Refitting is a deliberate command plus a commit.
+- **Exit counterfactuals** (`uv run python -m trading.agent.exit_eval`). Every closed trip
+  since `promotion.since` (or `--since`) is replayed from the venue's own price record under
+  `exit_eval.holds_minutes × stops_pct` with `ExitPolicy` itself (config copy, two knobs
+  overridden). Output `data/exit_eval.json`; the owner edits `exits` with the reasoning
+  committed. Approximation stated in the module: hourly bars, stop on the low before target
+  on the high, trail on closes.
 
 **Fill sprint (2026-08-31, owner instruction)**: ahead of an expected testnet reset the config
 temporarily optimises for CLOSED round trips — `explore.entry_pct: 1.0`, `entries_per_cycle: 5`,

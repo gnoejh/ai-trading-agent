@@ -109,28 +109,17 @@ class KiwoomAdapter:
         return self.screen.candidates()
 
     def prices(self, symbols: list[str]) -> dict[str, float]:
-        """One call per symbol — Kiwoom has no bulk price endpoint."""
-        basic = self.cfg.agent.quotes_for(self.market).get("basic")
-        if basic is None:
-            return {}
-        needs_exchange = "stex_tp" in self.client.store.get(basic.api_id).required_body()
+        """One call per symbol — Kiwoom has no bulk price endpoint.
+
+        Served through the screen's quote cache: the screen quoted the flow
+        candidates seconds ago, and a second round of the same calls is
+        rate-limit budget spent on nothing (the mock host 429s at ~4/s).
+        """
         out: dict[str, float] = {}
         for symbol in symbols:
-            body = {**basic.params, "stk_cd": symbol}
-            if needs_exchange:
-                exchange = self.universe.exchange_of(symbol)
-                if not exchange:
-                    log.warning("no exchange known for %s; quote skipped", symbol)
-                    continue
-                body["stex_tp"] = exchange
-            try:
-                # The sign encodes direction, not magnitude: -230500 is 230,500 down.
-                price = abs(_num(self.client.call(basic.api_id, body).body.get("cur_prc")))
-            except Exception as exc:  # noqa: BLE001 - a missing quote is not fatal
-                log.warning("quote failed for %s: %s", symbol, exc)
-                continue
-            if price:
-                out[symbol] = price
+            q = self.screen.quote(symbol)
+            if q and q.get("price"):
+                out[symbol] = float(q["price"])
         return out
 
     def rules_for(self, symbol: str):

@@ -34,10 +34,25 @@ def _round_trip(ledger, symbol, entry, exit_price, qty=10.0):
     ledger.record_trade(symbol=symbol, side="SELL", quantity=qty, price=exit_price, market="CRYPTO")
 
 
-def _pairs(cfg, n, model, shadow):
+def _pairs(cfg, n, model, shadow, ci=None):
+    """A store with paired results; `ci` defaults to an interval that agrees
+    with the point estimate's sign (a clean win or a clean loss)."""
+    diff = model - shadow
+    lo, hi = ci if ci else ((diff * 0.5, diff * 1.5) if diff > 0 else (diff * 1.5, diff * 0.5))
     with open(cfg.score.experience, "w", encoding="utf-8") as fh:
         json.dump(
-            {"model_vs_shadow": {"n": n, "model_avg_pct": model, "shadow_avg_pct": shadow}}, fh
+            {
+                "model_vs_shadow": {
+                    "n": n,
+                    "model_avg_pct": model,
+                    "shadow_avg_pct": shadow,
+                    "mean_diff_pct": diff,
+                    "ci_low": lo,
+                    "ci_high": hi,
+                    "model_wins": n // 2,
+                }
+            },
+            fh,
         )
 
 
@@ -89,3 +104,18 @@ def test_since_scopes_the_measurement_epoch(cfg):
     result = evaluate(cfg)
     n_check = next(c for c in result["checks"] if "round trips" in c["name"])
     assert not n_check["ok"], "epoch-excluded trades must not count"
+
+
+def test_a_positive_edge_whose_interval_straddles_zero_does_not_open_the_gate(cfg):
+    """n=30 with a +0.8% point edge and a CI of -0.5..+2.1 is luck not yet
+    ruled out. The interval decides, not the point estimate."""
+    ledger = CostLedger(cfg)
+    _round_trip(ledger, "AAAUSDT", 100.0, 103.0)
+    _round_trip(ledger, "BBBUSDT", 100.0, 102.0)
+    _pairs(cfg, 30, 1.0, 0.2, ci=(-0.5, 2.1))
+    result = evaluate(cfg)
+    shadow = next(c for c in result["checks"] if c["name"].startswith("model beats"))
+    assert not shadow["ok"] and "CI" in shadow["detail"]
+    assert not result["ready"]
+    cfg.promotion.require_ci = False
+    assert evaluate(cfg)["ready"], "the point comparison is still available by config"

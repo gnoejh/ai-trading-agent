@@ -21,10 +21,10 @@ import random
 import re
 import time
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from trading.accounting.costs import CostLedger
+from trading.agent.fit import ScorerModel
 from trading.agent.journal import Journal
 from trading.agent.scorer import ExperienceScorer, experience_block
 from trading.brokers.adapters import build_adapter
@@ -32,7 +32,7 @@ from trading.config import AppConfig, config
 from trading.llm.client import LLMClient
 from trading.notify.telegram import TelegramNotifier
 from trading.risk.exits import PositionSupervisor
-from trading.risk.gate import RiskGate, Side, TradeIntent
+from trading.risk.gate import RiskGate, Side, TradeIntent, Verdict
 from trading.risk.sizing import PositionSizer
 
 log = logging.getLogger(__name__)
@@ -86,7 +86,15 @@ Reply with JSON only:
 - `confidence` is your estimate of the probability that the trade reaches target
   before stop. 0.5 means a coin flip. Be honest: below the floor in `trade_rules`
   the decision is escalated to a stronger model rather than acted on, so
-  overstating it removes a safety net rather than helping the trade.
+  overstating it removes a safety net rather than helping the trade. Your past
+  confidences are graded against what actually happened (`your_calibration` in
+  `measured_record`, when enough have resolved) -- use it to correct yourself.
+- `p_clear` on a candidate, when present, is a FROZEN fitted prior: the measured
+  probability that a name with those features cleared the round-trip cost at the
+  horizon, fit offline on this system's resolved observations. It is evidence
+  about the base rate, not an instruction; `measured_record` rows with
+  'vs benchmark' are excess returns over the book's benchmark -- weigh those
+  above raw averages, because a rally lifts every pick.
 - An empty list is a valid and often correct answer. Costs are paid on every
   trade; doing nothing is free.
 - Only symbols from `candidates`. Anything else is discarded.
@@ -210,12 +218,13 @@ class TradingAgent:
         # venue's own price source, so venues must never share a decision file.
         # The bare configured name stays Binance's for continuity; Kiwoom gets
         # one per market surface (journal.kiwoom.KR.jsonl / .US.jsonl).
-        journal_path = Path(self.acfg.journal)
-        if broker != "binance":
-            journal_path = journal_path.with_name(
-                f"{journal_path.stem}.{broker}.{self.acfg.market}{journal_path.suffix}"
-            )
+        journal_path = self.cfg.journal_for("BINANCE" if broker == "binance" else self.market)
         self.journal = Journal(str(journal_path))
+        # The frozen fitted prior (fit.model). Read once at start-up, never
+        # refit by the running system: refitting is an outer-loop step.
+        self._prior = ScorerModel.load(self.cfg.fit.model) if self.cfg.fit.enabled else None
+        if self._prior:
+            log.info("%s", self._prior.describe())
         self.telegram = notifier or TelegramNotifier()
         self._last_fingerprint: tuple[str, ...] | None = None
         # Symbols this process has traded today -- Binance's myTrades needs a
@@ -264,6 +273,7 @@ class TradingAgent:
         prices = self.adapter.prices(symbols)
         for c in candidates:
             prices.setdefault(c["symbol"], c.get("price") or 0.0)
+        self._annotate_prior(candidates)
 
         return {
             "snapshot": snapshot,
@@ -273,6 +283,22 @@ class TradingAgent:
             "holdings": holdings,
             "tradable": symbols,
         }
+
+    def _annotate_prior(self, candidates: list[dict]) -> None:
+        """Stamp every candidate with the fitted prior's p_clear, when one exists.
+
+        Done in observe so the JOURNAL carries it too: the prior's own
+        predictions get resolved alongside the picks, which is how a future
+        refit is judged against the one it replaces.
+        """
+        if self._prior is None:
+            return
+        for c in candidates:
+            row = {**c, "book": c.get("book") or str(self.market)}
+            try:
+                c["p_clear"] = round(self._prior.p_clear(row), 3)
+            except (TypeError, ValueError):
+                continue
 
     # -- decide ---------------------------------------------------------------
 
@@ -313,7 +339,12 @@ class TradingAgent:
                 # The system's own measured record (the experience RAG). Renders
                 # only buckets that cleared the sample-size gate; absent entirely
                 # while the store is unfilled -- silence, never fabricated priors.
-                **({"measured_record": record} if (record := experience_block(self.cfg)) else {}),
+                **(
+                    {"measured_record": record}
+                    if (record := experience_block(self.cfg, venue=str(self.market)))
+                    else {}
+                ),
+                **({"fitted_prior": self._prior.describe()} if self._prior else {}),
                 "candidates": observation["candidates"],
                 "cash": {k: v for k, v in snap.cash.items() if not isinstance(v, list | dict)},
                 "holdings": held,
@@ -328,12 +359,12 @@ class TradingAgent:
     def _trade_rules(self) -> dict:
         return build_trade_rules(self.cfg, str(self.market), self.ledger)
 
-    def decide(self, observation: dict) -> tuple[list[TradeIntent], str, str | None]:
+    def decide(self, observation: dict) -> tuple[list[TradeIntent], str, str | None, float | None]:
         tiers = self.acfg.tiers
         allowed = set(observation["tradable"])
         prices = {c["symbol"]: c["price"] for c in observation["candidates"] if c.get("price")}
         raw = self.llm.ask(self._prompt(observation), system=_SYSTEM, tier=tiers.decide)
-        intents, commentary, best = self._parse(raw, allowed, prices)
+        intents, commentary, best, best_conf = self._parse(raw, allowed, prices)
 
         # Escalate rather than act on a low-confidence view.
         if intents and min(i.confidence for i in intents) < tiers.confidence_floor:
@@ -341,21 +372,27 @@ class TradingAgent:
             raw = self.llm.ask(
                 self._prompt(observation), system=_SYSTEM, tier=tiers.escalate_on_low_confidence
             )
-            intents, commentary, best = self._parse(raw, allowed, prices)
-        return intents, commentary, best
+            intents, commentary, best, best_conf = self._parse(raw, allowed, prices)
+        return intents, commentary, best, best_conf
 
     def _parse(
         self, raw: str, allowed: set[str], prices: dict[str, float]
-    ) -> tuple[list[TradeIntent], str, str | None]:
+    ) -> tuple[list[TradeIntent], str, str | None, float | None]:
+        """Model reply -> (intents, commentary, virtual pick, its stated confidence).
+
+        The confidence travels with the pick so the scorer can grade the
+        model's calibration: a stated 0.55 that reaches its target 30% of the
+        time is a measured fact the prompt feeds back.
+        """
         match = _JSON.search(raw or "")
         if not match:
             log.warning("decide: no JSON in model reply")
-            return [], "", None
+            return [], "", None, None
         try:
             payload = json.loads(match.group(0))
         except json.JSONDecodeError as exc:
             log.warning("decide: bad JSON (%s)", exc)
-            return [], "", None
+            return [], "", None, None
 
         intents = []
         for item in payload.get("intents", []):
@@ -392,14 +429,19 @@ class TradingAgent:
         # The virtual pick: the model's top-ranked candidate, present on declines
         # too. Same anti-hallucination rule as intents — off the menu, discarded.
         best = None
+        best_conf = None
         best_raw = payload.get("best_candidate")
         if isinstance(best_raw, dict):
             candidate = str(best_raw.get("symbol", ""))
             if candidate in allowed:
                 best = candidate
+                try:
+                    best_conf = float(best_raw.get("confidence"))
+                except (TypeError, ValueError):
+                    best_conf = None
             elif candidate:
                 log.warning("decide: dropping best_candidate %s that was not offered", candidate)
-        return intents, str(payload.get("commentary", ""))[:1000], best
+        return intents, str(payload.get("commentary", ""))[:1000], best, best_conf
 
     # -- one cycle ------------------------------------------------------------
 
@@ -550,6 +592,10 @@ class TradingAgent:
         ecfg = self.cfg.explore
         if not ecfg.enabled or free_slots <= 0:
             return 0
+        if getattr(self.executor, "dry_run", False):
+            return 0  # a random entry that stops at the wire fills nothing, measures nothing
+        if ecfg.markets and str(self.market) not in ecfg.markets:
+            return 0
         screen = getattr(self.adapter, "screen", None)
         if screen is None or not hasattr(screen, "tradable_pool"):
             return 0  # exploration needs a venue that exposes its tradable pool
@@ -675,21 +721,27 @@ class TradingAgent:
         # entry arms: the cycle reported "no free slots" forever.
         managed = self._managed_count(observation["holdings"])
         free_slots = self.sizer.slots_free(managed)
-        if not free_slots:
+        # MEASUREMENT IS DECOUPLED FROM EXECUTION. A full book withholds
+        # execution, not the question: the model is still asked, its virtual
+        # pick and the shadow pick are still journalled, and the paired
+        # model-vs-random corpus keeps growing at decision rate. Skipping the
+        # decide call here stalled the gate's slowest criterion for the whole
+        # first epoch day (62 "no free slots" cycles, zero pairs).
+        if not free_slots and not self.acfg.decide_when_full:
             self.journal.write("cycle_skipped", reason="no free slots")
             return result
 
         # Exploration arm BEFORE the model guards: a random entry costs no
         # tokens, so it must still run on the cycles the model skips (budget
         # spent, unchanged candidates) -- those are exactly its cheapest cycles.
-        explored = self.run_explore(observation, free_slots)
+        explored = self.run_explore(observation, free_slots) if free_slots else 0
         result.sent += explored
         if explored:
             # The random entry consumed cash and a slot; the model must not size
             # against the stale snapshot.
             observation["snapshot"] = self.state.reconcile()
             free_slots -= explored
-            if not free_slots:
+            if not free_slots and not self.acfg.decide_when_full:
                 self.journal.write("cycle_skipped", reason="no free slots after explore")
                 return result
 
@@ -709,7 +761,7 @@ class TradingAgent:
         self._last_fingerprint = fingerprint
 
         try:
-            intents, commentary, best = self.decide(observation)
+            intents, commentary, best, best_conf = self.decide(observation)
         except Exception as exc:
             log.exception("decide failed")
             result.errors.append(f"decide: {type(exc).__name__}: {exc}")
@@ -731,7 +783,15 @@ class TradingAgent:
         intents = sized
 
         result.intents, result.commentary = len(intents), commentary
-        verdicts = self.gate.evaluate_all(intents)
+        if free_slots:
+            verdicts = self.gate.evaluate_all(intents)
+        else:
+            # Measurement only: the picks are journalled (and scored) but
+            # nothing is gated or sent -- the book has no room.
+            verdicts = [
+                Verdict(approved=False, intent=i, reasons=["no free slots (measurement only)"])
+                for i in intents
+            ]
         # The virtual pick: the model's top-ranked candidate on EVERY decision,
         # declines included. Never traded; resolved like the shadow. Without it
         # the model-vs-random corpus grows only on the rare cycles the model
@@ -744,10 +804,13 @@ class TradingAgent:
         # random pick from the same shortlist is the model's paired control.
         self.journal.write(
             "decision",
+            market=str(self.market),
             commentary=commentary,
             candidates=observation["candidates"],
             shadow_random=self._shadow_pick(observation),
             virtual_pick=virtual,
+            virtual_confidence=best_conf,
+            free_slots=free_slots,
             verdicts=[
                 {"intent": asdict(v.intent), "approved": v.approved, "reasons": v.reasons}
                 for v in verdicts

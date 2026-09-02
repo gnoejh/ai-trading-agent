@@ -371,9 +371,47 @@ class UniverseConfig(BaseModel):
         return m
 
 
+class RankerColumn(BaseModel):
+    """One ranked list inside a multi-column ranking response.
+
+    Kiwoom's 외국인기관매매상위 (ka90009) answers with FOUR rankings per row:
+    foreigner net-sell, foreigner net-buy, institution net-sell, institution
+    net-buy, each a (code, name, amount) triple. A column names the fields of
+    one of those lists so the screen can read it as its own ranking.
+    """
+
+    code: str
+    name: str = ""
+    amount: str = ""
+
+
 class Ranker(BaseModel):
     api_id: str
     params: dict[str, str] = Field(default_factory=dict)
+    # Empty = the conventional single list (stk_cd / cur_prc / flu_rt per row).
+    columns: list[RankerColumn] = Field(default_factory=list)
+
+
+class FlowFeature(BaseModel):
+    """Per-candidate investor net-flow read (KR: 종목별투자자기관별합계, ka10061).
+
+    Produces the same unit-free net-buy share the archive backfill measured an
+    edge on: (foreigner + institution) / (|individual| + |foreigner| +
+    |institution|) over `lookback_days`, in [-1, 1].
+    """
+
+    api_id: str
+    params: dict[str, str] = Field(default_factory=dict)
+    lookback_days: int = 7  # calendar days back from today for the start date
+    start_field: str = "strt_dt"
+    end_field: str = "end_dt"
+    fields: dict[str, str] = Field(
+        default_factory=lambda: {
+            "individual": "ind_invsr",
+            "foreigner": "frgnr_invsr",
+            "institution": "orgn",
+        }
+    )
 
 
 class ScreenMarket(BaseModel):
@@ -382,6 +420,14 @@ class ScreenMarket(BaseModel):
     max_change_pct: float = 0.0
     # Per market so a venue can set a floor in its own currency.
     min_price: float = 0.0
+    # flow | model | rank | change. Empty = the global screen.rank_by. `flow`
+    # orders candidates by the venue's measured flow signal; `model` by the
+    # frozen fitted prior (fit.model); `rank` keeps the broker ranking order.
+    rank_by: str = ""
+    # Liquidity-only ranking(s) that define the exploration arm's TRADABLE POOL
+    # on this venue -- no strategy bounds; the random arm samples from here.
+    pool_rankers: list[Ranker] = Field(default_factory=list)
+    flow: FlowFeature | None = None
 
 
 class ScreenConfig(BaseModel):
@@ -414,6 +460,10 @@ class ScreenConfig(BaseModel):
     flow_interval: str = "1d"
     flow_lookback: int = 5
     flow_pool_per_book: int = 30
+    # What orders the "move" ranking: `flow` (the measured signal), `model`
+    # (the frozen fitted prior in fit.model, falling back to flow when no
+    # artifact exists) or `change` (price momentum -- measured to carry no edge).
+    rank_by: str = "flow"
     KR: ScreenMarket | None = None
     US: ScreenMarket | None = None
     BINANCE: ScreenMarket | None = None
@@ -431,6 +481,15 @@ class AgentConfig(BaseModel):
     dry_run: bool = True
     loop_interval_s: float = 900.0
     skip_decide_if_unchanged: bool = True
+    # MEASUREMENT IS DECOUPLED FROM EXECUTION: with every slot full the model is
+    # still asked, its virtual pick and the shadow pick are still journalled,
+    # and only execution is withheld. Before this a full book skipped the
+    # decide call outright and model-vs-random stopped accumulating exactly
+    # when the book was busiest (62 skipped cycles on the first epoch day).
+    decide_when_full: bool = True
+    # Kiwoom quotes cost one call per symbol; the screen and the observe step
+    # ask for the same names seconds apart, so a quote is reused this long.
+    quote_cache_s: float = 60.0
     journal: str = "data/journal.jsonl"
     universe: UniverseConfig = Field(default_factory=UniverseConfig)
     screen: ScreenConfig = Field(default_factory=ScreenConfig)
@@ -520,6 +579,10 @@ class ExploreConfig(BaseModel):
     max_positions: int = 4  # cap on concurrently open random-arm entries
     entries_per_cycle: int = 1  # entries attempted per cycle once the pct roll passes
     seed: int = 0  # 0 = OS entropy; set for a reproducible sequence
+    # Venues the random arm runs on (BINANCE / KR / US); empty = every venue
+    # whose executor is live. A dry-run venue never explores: a random entry
+    # that stops at the wire fills nothing and measures nothing.
+    markets: list[str] = Field(default_factory=list)
 
 
 class ScoreConfig(BaseModel):
@@ -545,6 +608,31 @@ class ScoreConfig(BaseModel):
     # downloader owns the single Kiwoom OAuth token — never call Kiwoom APIs
     # for history; read these parquet files instead.
     kiwoom_archive: str = "W:/ai-trading-history/data_store"
+    # Bar intervals tried, in order, when resolving a KR/US observation from
+    # the archive: the hourly file when it already covers the window, else the
+    # daily one (the downloader refreshes 1d nightly and 1h with a lag).
+    archive_intervals: list[str] = Field(default_factory=lambda: ["1h", "1d"])
+    # Venues whose decision journals the scorer reads. The store is POOLED
+    # across sleeves: every observation carries its venue, buckets render per
+    # venue AND pooled, and the prompt for a venue sees both.
+    venues: list[str] = Field(default_factory=lambda: ["BINANCE", "KR", "US"])
+    # A window is complete when a bar exists past its end, or once this much
+    # wall-clock has elapsed after it (no such bar -> resolved on what exists).
+    resolve_grace_minutes: int = 180
+    # Excess return: every resolution also measures the book's benchmark over
+    # the SAME window (methodology trap #3 -- a long-only rule in a rally looks
+    # brilliant and still loses to doing nothing). Book -> benchmark symbol.
+    benchmarks: dict[str, str] = Field(default_factory=dict)
+    # Calibration bands over the model's stated confidence (upper edges; the
+    # last band is open). Measures whether a 0.50 call clears its target half
+    # the time -- the confidence floor is the decision boundary, so it must
+    # be a measured quantity, not an assumed one.
+    confidence_bands: list[float] = Field(default_factory=lambda: [0.45, 0.55, 0.65])
+    # Paired model-vs-shadow: bootstrap CI on the mean difference. Seeded so
+    # the same store renders the same interval every time.
+    bootstrap_samples: int = 2000
+    bootstrap_seed: int = 20260903
+    ci_level: float = 0.95
 
 
 class PromotionConfig(BaseModel):
@@ -561,6 +649,57 @@ class PromotionConfig(BaseModel):
     # past regime changes (a sprint, a reset) so the verdict reflects the
     # configuration that would actually trade on mainnet.
     since: str = ""
+    # "Model beats its shadow" is judged on the paired bootstrap interval, not
+    # the point estimate: the interval's lower bound must clear zero. A point
+    # comparison at n=30 is a coin flip dressed as a verdict.
+    require_ci: bool = True
+
+
+class FitConfig(BaseModel):
+    """The frozen fitted prior — a logistic model over observation features.
+
+    Bucket means condition on one feature at a time; a fitted model uses them
+    jointly and gives every candidate a calibrated probability of clearing the
+    hurdle at the horizon. It is fit OFFLINE (`python -m trading.agent.fit`),
+    written as a JSON artifact and never touched by the running system: an
+    outer-loop gradient step, committed with its fit report, exactly like a
+    config change. Inference is a dot product in pure Python.
+    """
+
+    enabled: bool = True
+    model: str = "data/scorer_model.json"
+    # Observation sources the fit learns from. Model picks are excluded: they
+    # are selected by the thing being measured, and their shadow twin already
+    # samples the same menu without that bias.
+    sources: list[str] = Field(
+        default_factory=lambda: [
+            "backtest",
+            "backtest_kr",
+            "backtest_us",
+            "universe",
+            "random",
+            "shadow",
+        ]
+    )
+    label: str = "cleared_hurdle"  # cleared_hurdle | cleared_target
+    l2: float = 1.0  # ridge penalty on standardised features
+    iterations: int = 25  # Newton steps; converges in ~8 on this feature count
+    holdout_fraction: float = 0.2  # LAST fraction by time -- never a random split
+    min_rows: int = 500
+
+
+class ExitEvalConfig(BaseModel):
+    """Offline counterfactual evaluation of the exit contract.
+
+    The learning loop learns entries; exits are fixed by the hurdle formula and
+    they set the per-trip P&L. Every closed trade's price path is replayed
+    under a grid of holds and stops with the SAME policy arithmetic, so the
+    outer loop can take an evidence-driven step on `exits` at zero cost.
+    """
+
+    holds_minutes: list[int] = Field(default_factory=lambda: [1440, 2880, 4320, 5760])
+    stops_pct: list[float] = Field(default_factory=lambda: [0.04, 0.08, 0.12])
+    output: str = "data/exit_eval.json"
 
 
 class AppConfig(BaseModel):
@@ -579,6 +718,20 @@ class AppConfig(BaseModel):
     explore: ExploreConfig = Field(default_factory=ExploreConfig)
     score: ScoreConfig = Field(default_factory=ScoreConfig)
     promotion: PromotionConfig = Field(default_factory=PromotionConfig)
+    fit: FitConfig = Field(default_factory=FitConfig)
+    exit_eval: ExitEvalConfig = Field(default_factory=ExitEvalConfig)
+
+    def journal_for(self, venue: str) -> Path:
+        """The decision journal of one venue.
+
+        ONE definition, shared by the loop that writes and the scorer that
+        reads: the bare configured name is Binance's, Kiwoom surfaces get
+        `journal.kiwoom.KR.jsonl` / `.US.jsonl`.
+        """
+        base = Path(self.agent.journal)
+        if str(venue).upper() == "BINANCE":
+            return base
+        return base.with_name(f"{base.stem}.kiwoom.{str(venue).upper()}{base.suffix}")
 
 
 def load_config(path: str | Path = CONFIG_PATH) -> AppConfig:

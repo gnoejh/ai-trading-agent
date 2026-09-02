@@ -306,7 +306,14 @@ def test_scorer_resolves_after_horizon_and_gates_the_block(cfg, tmp_path):
         "taker_share": None,
     }
     (tmp_path / "observations.jsonl").write_text(json.dumps(obs) + "\n", encoding="utf-8")
-    bars = [[0, "100", "120", "90", "110", "0"]]
+    t0 = int(dt.datetime.fromisoformat(opened).timestamp() * 1000)
+    hour = 3_600_000
+    # Bars inside the window plus one PAST it: that trailing bar is what proves
+    # the window complete, so the resolution never grades a half-fetched path.
+    bars = [[t0 + hour, "100", "120", "90", "110", "0"]] + [
+        [t0 + (i + 2) * hour, "110", "112", "108", "110", "0"]
+        for i in range(cfg.score.horizon_minutes // 60)
+    ]
     scorer = make_scorer(cfg, bars=bars, pool=[])
     stats = scorer.run_once()
     assert stats["resolved"] == 1
@@ -422,12 +429,13 @@ def test_parse_extracts_best_candidate_from_the_menu(cfg):
         '{"intents": [], "best_candidate": {"symbol": "BBBUSDT", "confidence": 0.4},'
         ' "commentary": "declining"}'
     )
-    intents, commentary, best = TradingAgent._parse(stub, raw, {"AAAUSDT", "BBBUSDT"}, {})
+    intents, _commentary, best, conf = TradingAgent._parse(stub, raw, {"AAAUSDT", "BBBUSDT"}, {})
     assert intents == [] and best == "BBBUSDT"
+    assert conf == 0.4, "the stated confidence travels with the pick (calibration)"
 
     hallucinated = raw.replace("BBBUSDT", "EVILUSDT")
-    _, _, best = TradingAgent._parse(stub, hallucinated, {"AAAUSDT", "BBBUSDT"}, {})
-    assert best is None, "an unoffered best_candidate must be dropped"
+    _, _, best, conf = TradingAgent._parse(stub, hallucinated, {"AAAUSDT", "BBBUSDT"}, {})
+    assert best is None and conf is None, "an unoffered best_candidate must be dropped"
 
 
 def test_scorer_opens_the_virtual_pick_on_a_decline(cfg, tmp_path):

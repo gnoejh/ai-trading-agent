@@ -296,8 +296,9 @@ class CostLedger:
                 price = float(rec.get("price") or 0)
                 if not symbol or qty <= 0 or price <= 0:
                     continue
+                ts = str(rec.get("ts", ""))
                 if str(rec.get("side", "")).upper().endswith("BUY"):
-                    lots.setdefault(symbol, []).append([qty, price])
+                    lots.setdefault(symbol, []).append([qty, price, ts])
                     continue
                 remaining = qty
                 while remaining > 0 and lots.get(symbol):
@@ -312,13 +313,18 @@ class CostLedger:
                             "exit_price": price,
                             "pnl_quote": take * (price - lot[1]),
                             "return_pct": (price / lot[1] - 1) * 100,
+                            # Timestamps let the exit evaluator replay the
+                            # trip's own price path under other contracts.
+                            "entry_ts": lot[2],
+                            "exit_ts": ts,
                         }
                     )
                     lot[0] -= take
                     remaining -= take
                     if lot[0] <= 0:
                         lots[symbol].pop(0)
-        return closed, {s: ls for s, ls in lots.items() if ls}
+        # Open lots keep the [qty, price] shape their readers unpack.
+        return closed, {s: [lot[:2] for lot in ls] for s, ls in lots.items() if ls}
 
     def closed_trades(self, *, since: str = "", markets: set[str] | None = None) -> list[dict]:
         """Closed FIFO round trips, mark-to-mainnet. See `_walk_trades`."""

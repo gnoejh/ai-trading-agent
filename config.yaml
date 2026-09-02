@@ -298,6 +298,11 @@ explore:
   max_positions: 12              # concurrently open random-arm entries (within sizing's 15)
   entries_per_cycle: 1
   seed: 20260830                 # reproducible sequence; 0 = OS entropy
+  # 2026-09-03: the random arm runs on the KR PAPER account too. The model
+  # declined all 23 KR cycles on paper day 1, so without it the paper account
+  # would never produce a closed trip or a random baseline. US is dry-run
+  # (measurement-only) and never explores; a dry-run venue is skipped in code.
+  markets: [BINANCE, KR]
 
 score:
   # The offline scorer -- the RAG build step. Joins journaled decisions and
@@ -317,6 +322,23 @@ score:
   # kind of false signal the scorer exists to prevent.
   trade_since: "2026-08-30"
   trade_markets: [CRYPTO, BSTOCKS, BINANCE]
+  # POOLED ACROSS SLEEVES (2026-09-03): every venue's journal is read, each
+  # observation carries its venue, buckets render pooled AND per venue.
+  venues: [BINANCE, KR, US]
+  archive_intervals: ["1h", "1d"]
+  resolve_grace_minutes: 180
+  # Excess return over the book's benchmark across the identical window --
+  # methodology trap #3 (no benchmark) had crept back into the RAG: live
+  # universe buckets read -2.7% against +1.2% in the backtest, which is the
+  # regime, not the signal. Binance benchmarks are mainnet symbols (SPYB and
+  # QQQB are the tokenised index ETFs); KR/US are archive symbols.
+  benchmarks: {CRYPTO: BTCUSDT, BSTOCKS: SPYBUSDT, KR: "069500", US: SPY}
+  # Calibration bands over the model's stated confidence (upper edges). The
+  # 0.45 floor is the decision boundary, so its band is measured directly.
+  confidence_bands: [0.45, 0.55, 0.65]
+  bootstrap_samples: 2000
+  bootstrap_seed: 20260903
+  ci_level: 0.95
 
 promotion:
   # THE POINT OF THE REPOSITORY: promote to mainnet when measured profit is
@@ -331,6 +353,35 @@ promotion:
   # 2026-09-02: the fill sprint ended the evening of 09-01; the verdict clock
   # starts the next UTC day, skipping the transitional evening.
   since: "2026-09-02"
+  # The shadow criterion is judged on the paired bootstrap interval: its lower
+  # bound must clear zero. A positive point estimate at n=30 straddling zero
+  # is luck not yet ruled out, and mainnet is real money.
+  require_ci: true
+
+fit:
+  # The FROZEN fitted prior: a logistic model over observation features
+  # (log turnover, change, |change|, flow share, book), fit OFFLINE on the
+  # resolved store and written as a JSON artifact with its own holdout
+  # report. The running system only reads it (candidates carry `p_clear`;
+  # `screen.rank_by: model` orders by it). Refit deliberately:
+  #   uv run python -m trading.agent.fit
+  # and commit the artifact with its report -- an outer-loop gradient step.
+  enabled: true
+  model: data/scorer_model.json
+  sources: [backtest, backtest_kr, backtest_us, universe, random, shadow]
+  label: cleared_hurdle
+  l2: 1.0
+  iterations: 25
+  holdout_fraction: 0.2         # the LAST fifth by time, never a random split
+  min_rows: 500
+
+exit_eval:
+  # Counterfactual exit grid replayed over every closed trade's own price
+  # path with the live ExitPolicy arithmetic:
+  #   uv run python -m trading.agent.exit_eval
+  holds_minutes: [1440, 2880, 4320, 5760]
+  stops_pct: [0.04, 0.08, 0.12]
+  output: data/exit_eval.json
 
 rungs:
   # Ladder in and out instead of committing everything at one price. Fees are
@@ -431,6 +482,16 @@ agent:
   # Skip the model entirely when the screen output has not materially changed --
   # re-deciding on an identical candidate set buys nothing and costs tokens.
   skip_decide_if_unchanged: true
+  # MEASUREMENT DECOUPLED FROM EXECUTION (2026-09-03): a full book still asks
+  # the model and journals the virtual + shadow picks; only execution is
+  # withheld. The first epoch day skipped 62 cycles as "no free slots" and
+  # produced zero model-vs-random pairs -- the gate's slowest criterion
+  # stalled exactly while the book was busiest. Costs one decide per cycle
+  # (~25 KRW), inside the daily budget.
+  decide_when_full: true
+  # Kiwoom quotes are one call per symbol; the screen and the observe step
+  # want the same names within seconds, so a quote is reused this long.
+  quote_cache_s: 60
   journal: data/journal.jsonl     # append-only per broker; non-binance gets journal.<broker>.jsonl
 
   # The universe is the whole market, fetched from the broker -- never a
@@ -503,14 +564,43 @@ agent:
     flow_interval: 1d
     flow_lookback: 5
     flow_pool_per_book: 30
+    # flow | model | change. `model` orders the move ranking by the frozen
+    # fitted prior (fit.model) and falls back to flow when no artifact exists.
+    # Stays on flow until a fit report shows the prior beats the flow rank
+    # out of sample -- switching the ranker is an outer-loop step.
+    rank_by: flow
     BINANCE:
       min_price: 0                # any price; quantisation handles sub-cent coins
     KR:
       min_price: 1000             # KRW
+      # 2026-09-03: RANK ON THE SIGNAL THAT WAS MEASURED. Paper day 1 served
+      # 23 menus of +18..24% intraday movers (전일대비등락률상위) and the model
+      # refused every one -- correctly: momentum measured no edge anywhere.
+      # The archive backfill found the KR edge in 외국인/기관 net buying
+      # (+2.01% vs +0.64% over 3 trading days, n=334/tertile, ~5x the hurdle).
+      # So: turnover ranking for liquidity, the foreigner/institution net-buy
+      # rankings for flow, a 10% change cap, and the candidates ordered by
+      # each name's own net-buy share over the last week (ka10061).
+      rank_by: flow
+      max_change_pct: 0.10
       rankers:
         - {api_id: ka10032, params: {mrkt_tp: "000", mang_stk_incls: "0", stex_tp: "1"}}  # 거래대금상위
-        # 전일대비등락률상위: 상승률순, 우선주+관리주 제외, 1억원 이상 거래대금만.
-        - {api_id: ka10027, params: {mrkt_tp: "000", sort_tp: "1", trde_qty_cnd: "0100", stk_cnd: "4", crd_cnd: "0", updown_incls: "0", pric_cnd: "0", trde_prica_cnd: "10", stex_tp: "1"}}
+        # 외국인기관매매상위: four rankings per row; the two NET-BUY columns are
+        # read as rankings of their own (amounts in 천만 KRW).
+        - api_id: ka90009
+          params: {mrkt_tp: "000", amt_qty_tp: "1", qry_dt_tp: "0", stex_tp: "1"}
+          columns:
+            - {code: for_netprps_stk_cd,  name: for_netprps_stk_nm,  amount: for_netprps_amt}
+            - {code: orgn_netprps_stk_cd, name: orgn_netprps_stk_nm, amount: orgn_netprps_amt}
+      # The random arm's pool: turnover-ranked names, no strategy bounds.
+      pool_rankers:
+        - {api_id: ka10032, params: {mrkt_tp: "000", mang_stk_incls: "0", stex_tp: "1"}}
+      # Per-candidate net-buy share, same construction as the backfill feature:
+      # (foreigner + institution) / (|individual| + |foreigner| + |institution|).
+      flow:
+        api_id: ka10061             # 종목별투자자기관별합계요청
+        params: {amt_qty_tp: "1", trde_tp: "0", unit_tp: "1000"}
+        lookback_days: 7
     US:
       min_price: 1                # USD
       min_change_pct: 0.02

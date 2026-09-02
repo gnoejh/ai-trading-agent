@@ -1,0 +1,122 @@
+{
+ "features": [
+  "log_volume",
+  "change",
+  "abs_change",
+  "flow",
+  "flow_missing",
+  "book_CRYPTO",
+  "book_BSTOCKS",
+  "book_KR",
+  "book_US"
+ ],
+ "weights": [
+  -0.056706,
+  -0.052983,
+  0.030948,
+  0.001089,
+  0.172463,
+  -0.018458,
+  -0.183411,
+  0.142004,
+  0.059865
+ ],
+ "bias": -0.238469,
+ "means": [
+  22.945555,
+  0.380059,
+  2.769495,
+  0.004797,
+  0.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0
+ ],
+ "stds": [
+  2.392827,
+  4.406801,
+  3.448771,
+  0.066772,
+  1.0,
+  1.0,
+  1.0,
+  1.0,
+  1.0
+ ],
+ "meta": {
+  "fitted_at": "2026-09-02T17:18:13.116501+00:00",
+  "label": "cleared_hurdle",
+  "sources": [
+   "backtest",
+   "backtest_kr",
+   "backtest_us",
+   "random",
+   "universe"
+  ],
+  "n_train": 33793,
+  "n_holdout": 8449,
+  "base_rate": 0.5084,
+  "l2": 1.0,
+  "holdout_auc": 0.575,
+  "holdout_log_loss": 0.6888,
+  "holdout_base_rate": 0.4596,
+  "holdout_calibration": [
+   {
+    "n": 844,
+    "predicted": 0.4505,
+    "observed": 0.4289
+   },
+   {
+    "n": 844,
+    "predicted": 0.474,
+    "observed": 0.3602
+   },
+   {
+    "n": 844,
+    "predicted": 0.4854,
+    "observed": 0.3815
+   },
+   {
+    "n": 844,
+    "predicted": 0.4932,
+    "observed": 0.3945
+   },
+   {
+    "n": 844,
+    "predicted": 0.4988,
+    "observed": 0.4455
+   },
+   {
+    "n": 844,
+    "predicted": 0.5029,
+    "observed": 0.4585
+   },
+   {
+    "n": 844,
+    "predicted": 0.5063,
+    "observed": 0.4704
+   },
+   {
+    "n": 844,
+    "predicted": 0.5101,
+    "observed": 0.5107
+   },
+   {
+    "n": 844,
+    "predicted": 0.5171,
+    "observed": 0.5628
+   },
+   {
+    "n": 844,
+    "predicted": 0.5444,
+    "observed": 0.5841
+   },
+   {
+    "n": 9,
+    "predicted": 0.6796,
+    "observed": 0.3333
+   }
+  ]
+ }
+}

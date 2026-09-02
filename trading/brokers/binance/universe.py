@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 
+from trading.agent.fit import ScorerModel
 from trading.brokers.binance.client import BinanceClient
 from trading.brokers.binance.symbols import SymbolBook, SymbolRules
 from trading.config import AppConfig, config
@@ -89,6 +90,31 @@ class BinanceScreen:
         self.client = client
         self.universe = universe
         self.scfg = self.cfg.agent.screen
+        self._prior: ScorerModel | None = None
+        self._prior_loaded = False
+
+    def rank_by(self) -> str:
+        market = self.scfg.BINANCE
+        return (market.rank_by if market else "") or self.scfg.rank_by
+
+    def prior(self) -> ScorerModel | None:
+        """The frozen fitted prior, loaded once; None when no artifact exists."""
+        if not self._prior_loaded:
+            self._prior_loaded = True
+            if self.cfg.fit.enabled:
+                self._prior = ScorerModel.load(self.cfg.fit.model)
+        return self._prior
+
+    def _rank_move(self, pool: list[dict]) -> list[dict]:
+        """The "move" ranking: by the frozen fitted prior when configured and
+        present, else by taker-buy share (flow), else by price change."""
+        rank_by = self.rank_by()
+        prior = self.prior() if rank_by == "model" else None
+        if prior is not None:
+            return sorted(pool, key=lambda e: -prior.p_clear(e))
+        if self.scfg.use_flow and rank_by != "change":
+            return sorted(pool, key=lambda e: -(e.get("taker_buy_share") or 0))
+        return sorted(pool, key=lambda e: -abs(e["change_pct"]))
 
     def _flow(self, symbols: list[str]) -> dict[str, float]:
         """Average taker-buy share over the last N bars, per symbol.
@@ -211,12 +237,9 @@ class BinanceScreen:
                 pool = [e for e in pool if e.get("taker_buy_share") is not None]
             slots = self.scfg.book_slots.get(book, self.scfg.candidates)
             by_volume = sorted(pool, key=lambda e: -e["quote_volume"])
-            # Rank by BUY PRESSURE, not by price change -- the measured signal.
-            by_move = (
-                sorted(pool, key=lambda e: -(e.get("taker_buy_share") or 0))
-                if self.scfg.use_flow
-                else sorted(pool, key=lambda e: -abs(e["change_pct"]))
-            )
+            # Rank by BUY PRESSURE, not by price change -- the measured signal;
+            # or by the frozen fitted prior, which weighs every feature jointly.
+            by_move = self._rank_move(pool)
 
             # Union of ranked lists, same shape as the Kiwoom screen: appearing in
             # both is the strongest signal. Ranked WITHIN the book, so a thin venue

@@ -44,16 +44,36 @@ def evaluate(cfg: AppConfig | None = None) -> dict:
     avg_net_pct = sum(net_pcts) / n if n else 0.0
 
     pairs = {"n": 0, "model_avg_pct": None, "shadow_avg_pct": None}
+    by_venue: dict = {}
     exp_path = Path(cfg.score.experience)
     if exp_path.exists():
         try:
-            pairs = json.loads(exp_path.read_text(encoding="utf-8")).get("model_vs_shadow", pairs)
+            store = json.loads(exp_path.read_text(encoding="utf-8"))
+            pairs = store.get("model_vs_shadow", pairs)
+            by_venue = store.get("model_vs_shadow_by_venue", {}) or {}
         except (OSError, ValueError):
             pass
     pair_n = int(pairs.get("n") or 0)
     model_avg = pairs.get("model_avg_pct")
     shadow_avg = pairs.get("shadow_avg_pct")
     edge = (model_avg - shadow_avg) if (model_avg is not None and shadow_avg is not None) else None
+    ci_low, ci_high = pairs.get("ci_low"), pairs.get("ci_high")
+    # The verdict is on the INTERVAL: a positive point estimate whose interval
+    # straddles zero is luck not yet ruled out. n=30 pairs at a point
+    # comparison would promote a coin flip about half the time.
+    beats = edge is not None and edge > 0
+    if p.require_ci:
+        beats = beats and ci_low is not None and ci_low > 0
+    if edge is not None:
+        edge_detail = f"model {model_avg:+.2f}% vs random {shadow_avg:+.2f}% (edge {edge:+.2f}%"
+        if ci_low is not None:
+            edge_detail += (
+                f", {pairs.get('ci_level', 0.95):.0%} CI {ci_low:+.2f}..{ci_high:+.2f}"
+                f", wins {pairs.get('model_wins', 0)}/{pair_n}"
+            )
+        edge_detail += ")"
+    else:
+        edge_detail = "no resolved pairs yet"
 
     checks = [
         {
@@ -77,16 +97,17 @@ def evaluate(cfg: AppConfig | None = None) -> dict:
             "detail": f"n={pair_n}",
         },
         {
-            "name": "model beats its shadow",
-            "ok": edge is not None and edge > 0,
-            "detail": (
-                f"model {model_avg:+.2f}% vs random {shadow_avg:+.2f}% (edge {edge:+.2f}%)"
-                if edge is not None
-                else "no resolved pairs yet"
-            ),
+            "name": "model beats its shadow" + (" (CI lower bound > 0)" if p.require_ci else ""),
+            "ok": beats,
+            "detail": edge_detail,
         },
     ]
-    return {"ready": all(c["ok"] for c in checks), "checks": checks, "since": since}
+    return {
+        "ready": all(c["ok"] for c in checks),
+        "checks": checks,
+        "since": since,
+        "by_venue": by_venue,
+    }
 
 
 def render(cfg: AppConfig | None = None) -> str:
@@ -97,6 +118,16 @@ def render(cfg: AppConfig | None = None) -> str:
     for c in result["checks"]:
         mark = "✅" if c["ok"] else "▫️"
         lines.append(f"  {mark} {c['name']} — {c['detail']}")
+    # The pooled pairing decides; the per-venue split shows which sleeve
+    # earned it (a KR edge is not evidence for Binance mainnet by itself).
+    for venue, pv in sorted((result.get("by_venue") or {}).items()):
+        if not pv.get("n"):
+            continue
+        line = f"     ↳ {venue}: n={pv['n']} model {pv['model_avg_pct']:+.2f}%"
+        line += f" vs random {pv['shadow_avg_pct']:+.2f}%"
+        if pv.get("ci_low") is not None:
+            line += f" (CI {pv['ci_low']:+.2f}..{pv['ci_high']:+.2f})"
+        lines.append(line)
     # Backtest evidence is a PRIOR, never a criterion: it is survivorship-biased
     # and cost-free, so it informs the reading but cannot open the gate.
     replay_path = Path(cfg.score.replay_summary)
