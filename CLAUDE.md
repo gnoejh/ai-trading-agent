@@ -17,6 +17,21 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 
 ## Development log (newest first)
 
+- **2026-09-02** — **API budget 2,000 → 6,000 KRW/day; owner deposited $4,820 to mainnet.**
+  The budget day is UTC (`CostLedger.day()`), and the US session occupies its last 6.5 hours
+  (22:30–05:00 KST = 13:30–20:00 UTC) — so US measurement always eats leftovers after Binance
+  (24/7) and KR (opens 10 min after the reset) have spent all day. Observed live: Sept 1 UTC
+  spend hit 2,006 KRW at 19:09 UTC and the remaining US cycles starved ("daily API budget
+  exhausted") — a silent sampling bias that would make the US corpus grow far slower than KR,
+  not an outage (exits kept running, by design). Owner: DeepSeek is cheap, the budget must be
+  enough → 6,000 covers ~150 cycles/day across all three venues at the measured ~25 KRW/cycle
+  with ~60% headroom, and stays a real brake against a runaway loop. Service restarted via
+  `data/RESTART`. Separately the owner deposited **$4,820 into the Binance MAINNET account** —
+  it landed as fiat asset `USD`, NOT USDT (mainnet reads USD 4,820 + USDT 2,617); the agent
+  spends only quote-asset USDT, so converting is an owner action in the Binance app. Recorded
+  as a ledger `cash_flow` (+6,651,600 KRW), excluded from every P&L figure. Day 1 of the new
+  measurement regime: 28 sprint positions unwinding under the 72h/8%-stop contract (5 stop-outs
+  overnight), gate at n=0 since `promotion.since: 2026-09-02`, first countable trips ~Sep 4–5.
 - **2026-09-01 (night, +2)** — **KIWOOM KR PAPER TRADING IS ON.** The owner reissued 모의투자
   keys at the portal (account 81336915, tied to the 상시모의투자 account, valid to 2026-12-01)
   and dropped them in `.env`. Verified end-to-end through the real client against

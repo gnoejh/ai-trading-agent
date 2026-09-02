@@ -222,7 +222,7 @@ data/HALT
 
 # Runtime state — machine-generated, churns every cycle, and the broker is the
 # source of truth for anything that matters. Kept local.
-data/journal.jsonl
+data/journal*.jsonl
 data/observations.jsonl
 data/experience.json
 
