@@ -184,11 +184,15 @@ accounting:
   # produced the decision. The ledger records every LLM call and every fill so the
   # break-even point is measured, not assumed.
   ledger: data/ledger.jsonl
-  # Hard daily ceiling on API spend. Measured cost is ~47 KRW per decision cycle
-  # (deepseek-reasoner + a qwen3-max escalation, ~27k tokens). Against 4.8M equity
-  # a 60s loop would cost ~36,000 KRW/day = 15.7%/month before any trade — so the
-  # budget is enforced, not advisory: the agent stops deciding when it is spent.
-  max_api_krw_per_day: 2000
+  # Hard daily ceiling on API spend. Measured cost is ~25 KRW per decision cycle
+  # on deepseek-v4-flash; three venues (Binance 24/7 + KR + US measurement) run
+  # ~150 cycles/day ≈ 3,700 KRW. The budget day is UTC, and the US session sits in
+  # its last 6.5 hours — at 2,000 the US venue starved on leftovers (2026-09-02),
+  # so the ceiling is sized to cover ALL venues with ~60% headroom (owner,
+  # 2026-09-02: DeepSeek is cheap, the budget must be enough). It stays enforced,
+  # not advisory — a runaway 60s loop would still cost ~36,000 KRW/day, and the
+  # agent stops deciding when the budget is spent.
+  max_api_krw_per_day: 6000
   # Default when a ledger row's market has no entry below. Matches the worse
   # Binance book so an unknown market can never understate its hurdle.
   fees:
