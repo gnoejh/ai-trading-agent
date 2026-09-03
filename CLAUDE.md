@@ -17,6 +17,19 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 
 ## Development log (newest first)
 
+- **2026-09-04 (later)** — **"Proceed" on the three noted items; two acted on, one retracted,
+  the exits contract deliberately unchanged.** (a) Kiwoom `min_call_interval_s` 0.25 → 0.5:
+  771 HTTP 429 retries in one paper day, each a 1s backoff, costs more than pacing. (b) The
+  exit grid gets a **finished-only view** (`n_finished`, `avg_net_pct_finished`,
+  `finished_hold_minutes`): a trip whose price record ends before the hold was marked at its
+  last close and counted like an outcome, so long-hold cells were snapshots of open positions —
+  the Sep 2 run read 72h/8% at −0.56% (worst), the Sep 4 rerun +0.44% (best) after a rally,
+  with 47–61 open trips in those cells and only 2 trips finished at the grid's 96h. **No exits
+  change is supported by that grid yet**; decide from the finished columns once they are in the
+  hundreds. (c) Retracted: the virtual pick repeating (ROBOUSDT/TUSDT) does NOT throttle
+  paired samples — `_open_pick` keys observations by `source:symbol:ts`, so every decision
+  opens one; pairs are simply inside the 72h horizon (56 model + 56 shadow opened since Sep 2,
+  first resolutions ~Sep 5). 246 tests.
 - **2026-09-04** — **Two seam defects from the day-2 performance check** (owner: "fix").
   Gate reading: n=0 countable trips (all 16 open Binance positions were entered Sep 1, before
   `promotion.since`, and the full book has admitted no entry since — first countable trips
@@ -228,7 +241,7 @@ that was mostly committed cash, and the daily-loss cap reads the same number.
 
 ```
 uv sync                                   # create/refresh .venv from uv.lock
-uv run pytest                             # 245 tests, no network (httpx MockTransport)
+uv run pytest                             # 246 tests, no network (httpx MockTransport)
 uv run python scripts/wire_test.py        # dry run; --live sends ONE ~$6 order
 uv run pytest tests/test_risk_gate.py -k concentration
 uv run ruff check . --fix && uv run ruff format .

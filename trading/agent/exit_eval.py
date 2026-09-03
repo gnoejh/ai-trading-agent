@@ -139,6 +139,12 @@ class ExitEvaluator:
                     {
                         "net_pct": (sim["exit_price"] / t["entry_price"] - 1) * 100 - hurdle,
                         "reason": sim["reason"],
+                        # The price record reaches the grid's longest hold. A trip
+                        # that does not is marked mid-flight at its last close,
+                        # and a cell's average over such trips is a snapshot, not
+                        # an outcome -- the finished-only view excludes them from
+                        # EVERY cell so the cells stay comparable.
+                        "finished": bool(window.complete),
                     }
                 )
 
@@ -147,12 +153,17 @@ class ExitEvaluator:
             reasons = {}
             for r in rows:
                 reasons[r["reason"]] = reasons.get(r["reason"], 0) + 1
+            done = [r["net_pct"] for r in rows if r.get("finished")]
             return {
                 "n": len(nets),
                 "avg_net_pct": round(sum(nets) / len(nets), 3) if nets else None,
                 "median_net_pct": round(statistics.median(nets), 3) if nets else None,
                 "win_rate": round(sum(1 for v in nets if v > 0) / len(nets), 3) if nets else None,
                 "exits": reasons,
+                # Trips whose price record covers the longest hold in the grid.
+                "n_finished": len(done),
+                "avg_net_pct_finished": round(sum(done) / len(done), 3) if done else None,
+                "median_net_pct_finished": round(statistics.median(done), 3) if done else None,
             }
 
         grid = [
@@ -163,6 +174,8 @@ class ExitEvaluator:
             "since": since,
             "replayed": replayed,
             "skipped": skipped,
+            # "finished" = the price record covers this many minutes past entry.
+            "finished_hold_minutes": max_hold,
             "actual": {
                 "n": len(actual),
                 "avg_net_pct": round(sum(actual) / len(actual), 3) if actual else None,
@@ -193,14 +206,20 @@ def render(result: dict) -> str:
             f"actual contract: avg {result['actual']['avg_net_pct']}% net, "
             f"median {result['actual']['median_net_pct']}% (n={result['actual']['n']})"
         ),
-        f"{'hold':>8} {'stop':>6} {'n':>5} {'avg net%':>9} {'median%':>8} {'win':>5}  exits",
+        (
+            f"{'hold':>8} {'stop':>6} {'n':>5} {'avg net%':>9} {'median%':>8} {'win':>5} "
+            f"{'n_fin':>5} {'avg fin%':>9}  exits"
+        ),
     ]
+
+    def cell(v, width):
+        return f"{v if v is not None else '-':>{width}}"
+
     for g in result["grid"]:
         lines.append(
             f"{g['hold_minutes']:>8} {g['stop_pct']:>6.2%} {g['n']:>5} "
-            f"{g['avg_net_pct'] if g['avg_net_pct'] is not None else '-':>9} "
-            f"{g['median_net_pct'] if g['median_net_pct'] is not None else '-':>8} "
-            f"{g['win_rate'] if g['win_rate'] is not None else '-':>5}  {g['exits']}"
+            f"{cell(g['avg_net_pct'], 9)} {cell(g['median_net_pct'], 8)} {cell(g['win_rate'], 5)} "
+            f"{cell(g.get('n_finished'), 5)} {cell(g.get('avg_net_pct_finished'), 9)}  {g['exits']}"
         )
     return "\n".join(lines)
 

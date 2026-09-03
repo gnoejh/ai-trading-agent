@@ -10,7 +10,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from trading.accounting.costs import CostLedger
-from trading.agent.exit_eval import ExitEvaluator, policy_for, simulate
+from trading.agent.exit_eval import ExitEvaluator, policy_for, render, simulate
 from trading.agent.prices import Bar, Window
 from trading.config import load_config
 
@@ -124,3 +124,63 @@ def test_grid_replays_ledger_trips_from_the_venue_price_record(cfg, tmp_path):
     assert grid[(1440, 0.12)]["exits"] == {"time": 1}
     assert grid[(4320, 0.12)]["exits"] == {"target": 1}
     assert json.loads((tmp_path / "exit_eval.json").read_text(encoding="utf-8"))["replayed"] == 1
+
+
+def test_finished_only_view_excludes_trips_the_record_does_not_cover(cfg, tmp_path):
+    # Two trips: one with a price record past the grid's longest hold, one
+    # whose record ends after 30h. Every cell counts both (the short one is
+    # marked at its last close) but the finished view counts only the first.
+    opened = dt.datetime(2026, 8, 20, 9, 0, tzinfo=dt.UTC)
+    rows = []
+    for symbol in ("005930", "000660"):
+        rows.append(
+            {
+                "ts": opened.isoformat(),
+                "kind": "trade",
+                "symbol": symbol,
+                "side": "BUY",
+                "quantity": 10,
+                "price": 100.0,
+                "market": "KR",
+            }
+        )
+        rows.append(
+            {
+                "ts": (opened + dt.timedelta(hours=20)).isoformat(),
+                "kind": "trade",
+                "symbol": symbol,
+                "side": "SELL",
+                "quantity": 10,
+                "price": 101.0,
+                "market": "KR",
+            }
+        )
+    with open(cfg.accounting.ledger, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(json.dumps(r) for r in rows) + "\n")
+    t0 = int(opened.timestamp() * 1000)
+    for symbol, n_bars in (("005930", 100), ("000660", 30)):
+        closes = [100 + 0.1 * i for i in range(n_bars)]
+        path = tmp_path / f"archive/klines/kiwoom_kr/1h/{symbol}.parquet"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pq.write_table(
+            pa.table(
+                {
+                    "open_time": [t0 + (i + 1) * HOUR_MS for i in range(n_bars)],
+                    "open": closes,
+                    "high": [c * 1.001 for c in closes],
+                    "low": [c * 0.999 for c in closes],
+                    "close": closes,
+                    "volume": [1.0] * n_bars,
+                }
+            ),
+            path,
+        )
+    result = ExitEvaluator(cfg, client=None).run()
+    assert result["replayed"] == 2
+    for g in result["grid"]:
+        assert g["n"] == 2
+        assert g["n_finished"] == 1
+        assert g["avg_net_pct_finished"] is not None
+    long_cell = next(g for g in result["grid"] if g["hold_minutes"] == 4320)
+    assert long_cell["exits"].get("open") == 1, "the short record is marked mid-flight"
+    assert "n_fin" in render(result)

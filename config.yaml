@@ -21,7 +21,10 @@ broker:
     use_testnet: true          # KR trades PAPER on mockapi.kiwoom.com (모의투자 keys in .env)
     timezone: Asia/Seoul
     timeout_s: 10.0
-    min_call_interval_s: 0.25  # Kiwoom 429s when quoted back-to-back
+    # 0.5, not 0.25: at 0.25 the per-candidate flow read (ka10061) drew 771
+    # HTTP 429 retries in one paper day (2026-09-03), each a 1s backoff -- slower
+    # than pacing the calls in the first place. Costs ~7s more per KR screen.
+    min_call_interval_s: 0.5
     max_retries_429: 3
     # Non-zero return codes that mean "query matched nothing", not "call
     # failed" (ust21050 -> 20). Reads only; never orders.
