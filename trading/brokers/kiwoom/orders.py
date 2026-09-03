@@ -53,7 +53,7 @@ class OrderExecutor:
         required = set(spec.required_body())
         body = {
             "stk_cd": intent.symbol,
-            "ord_qty": str(intent.quantity),
+            "ord_qty": self._qty_str(intent.quantity),
             "trde_tp": TRADE_TYPE_LIMIT if intent.limit_price is not None else TRADE_TYPE_MARKET,
         }
         # KR orders take 국내거래소구분; US orders take 거래소구분 with the listing's
@@ -69,6 +69,23 @@ class OrderExecutor:
         if intent.limit_price is not None:
             body["ord_uv"] = str(int(intent.limit_price))
         return body
+
+    @staticmethod
+    def _qty_str(quantity: float) -> str:
+        """Kiwoom takes whole shares only, as an integer string.
+
+        Exit quantities are floats since the 2026-08-31 float-exit fix (the
+        supervisor adopts a broker balance of 41 as 41.0), and `str(41.0)` is
+        "41.0" -- which Kiwoom rejects with 1517 "정수만 입력가능". On 2026-09-03
+        that refused all 29 KR paper stop-loss sells while the buys, sized as
+        ints, went through: twelve positions with no working stop. A fractional
+        quantity is refused loudly rather than truncated -- rounding a sell down
+        would leave a remainder the plan believes is gone.
+        """
+        whole = round(quantity)
+        if abs(quantity - whole) > 1e-9 or whole <= 0:
+            raise ValueError(f"Kiwoom orders take whole shares; got quantity {quantity!r}")
+        return str(int(whole))
 
     def us_exchange_of(self, symbol: str) -> str:
         """The listing's own exchange (NY/ND/NA), which US orders require."""

@@ -17,6 +17,22 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 
 ## Development log (newest first)
 
+- **2026-09-04** — **Two seam defects from the day-2 performance check** (owner: "fix").
+  Gate reading: n=0 countable trips (all 16 open Binance positions were entered Sep 1, before
+  `promotion.since`, and the full book has admitted no entry since — first countable trips
+  ~Sep 7–8), pairs n=2, exit grid unchanged. (1) **Every KR paper stop-loss sell was rejected**
+  — 29 of 29 on Sep 3, Kiwoom 1517 "ord_qty 정수만 입력가능": exit quantities are floats since
+  the 08-31 float-exit fix and the order body sent `str(41.0)`; buys, sized as ints, passed, so
+  twelve paper positions (~200M KRW) sat with no working stop and Telegram showed only the buys.
+  `OrderExecutor._qty_str` sends whole shares and refuses a fractional quantity loudly. Same
+  class as the 2026-08-12 defects: correct component, wrong argument type. (2) **The reasoner
+  fallback was not a fallback**: `fallback_tier: fast` equals the decide tier, which `ask`
+  refuses to retry, so 3 of 44 decide calls died with ~120k chars of reasoning against the 32k
+  cap. New tier `fast_nothink` (same model, `thinking: disabled` — verified live, zero
+  reasoning tokens) is the fallback; `TierConfig.thinking` carries the flag to `extra_body`.
+  Noted, not changed: 771 Kiwoom 429 retries/day on the per-candidate flow read; the virtual
+  pick repeats (ROBOUSDT 13×, TUSDT 11× of 41) so paired observations grow slowly by
+  de-overlap. 245 tests.
 - **2026-09-03** — **Seven learning-loop fixes, one commit** (owner: "fix the above seven
   items", after the day-1 reading below). Each answers a defect measured on the first epoch
   day. (1) **Measurement decoupled from execution** (`agent.decide_when_full`): a full book
@@ -212,7 +228,7 @@ that was mostly committed cash, and the daily-loss cap reads the same number.
 
 ```
 uv sync                                   # create/refresh .venv from uv.lock
-uv run pytest                             # 236 tests, no network (httpx MockTransport)
+uv run pytest                             # 245 tests, no network (httpx MockTransport)
 uv run python scripts/wire_test.py        # dry run; --live sends ONE ~$6 order
 uv run pytest tests/test_risk_gate.py -k concentration
 uv run ruff check . --fix && uv run ruff format .

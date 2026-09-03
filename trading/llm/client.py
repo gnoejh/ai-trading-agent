@@ -59,18 +59,25 @@ class LLMClient:
     ):
         """One chat completion at the named tier. Returns the raw message object."""
         t: TierConfig = self.cfg.tier(tier)
-        kwargs = {
-            "model": t.model,
-            "messages": messages,
-            "temperature": t.temperature,
-            "max_tokens": t.max_tokens,
-            **overrides,
-        }
+        kwargs = {**self._kwargs(t, messages), **overrides}
         if tools:
             kwargs["tools"] = tools
         resp = self._client_for(t.provider).chat.completions.create(**kwargs)
         self._record(resp, t, tier or self.cfg.default_tier)
         return resp.choices[0].message
+
+    @staticmethod
+    def _kwargs(t: TierConfig, messages: list[dict]) -> dict:
+        """The request a tier's config describes, `thinking` included."""
+        kwargs = {
+            "model": t.model,
+            "messages": messages,
+            "temperature": t.temperature,
+            "max_tokens": t.max_tokens,
+        }
+        if (extra := t.extra_body()) is not None:
+            kwargs["extra_body"] = extra
+        return kwargs
 
     @staticmethod
     def _truncated(message, choice) -> str | None:
@@ -121,13 +128,9 @@ class LLMClient:
         messages = ([{"role": "system", "content": system}] if system else []) + [
             {"role": "user", "content": prompt}
         ]
-        resp = self._client_for(self.cfg.tier(tier).provider)  # noqa: F841 - warms the client
         primary = self.cfg.tier(tier)
         raw = self._client_for(primary.provider).chat.completions.create(
-            model=primary.model,
-            messages=messages,
-            temperature=primary.temperature,
-            max_tokens=primary.max_tokens,
+            **self._kwargs(primary, messages)
         )
         self._record(raw, primary, tier or self.cfg.default_tier)
         choice = raw.choices[0]
@@ -141,12 +144,7 @@ class LLMClient:
             raise LLMNoAnswer(f"{tier}: {problem}")
         log.warning("retrying on %s", fallback)
         fb = self.cfg.tier(fallback)
-        raw2 = self._client_for(fb.provider).chat.completions.create(
-            model=fb.model,
-            messages=messages,
-            temperature=fb.temperature,
-            max_tokens=fb.max_tokens,
-        )
+        raw2 = self._client_for(fb.provider).chat.completions.create(**self._kwargs(fb, messages))
         self._record(raw2, fb, fallback)
         c2 = raw2.choices[0]
         if (p2 := self._truncated(c2.message, c2)) is not None:

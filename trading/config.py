@@ -124,6 +124,13 @@ class TierConfig(BaseModel):
     model: str
     temperature: float = 0.0
     max_tokens: int = 2048
+    # DeepSeek V4 reasons by default; "disabled" sends `thinking: {type: disabled}`
+    # so the reply carries content only. The fallback tier needs this: the failure
+    # it recovers from is reasoning eating the whole token budget.
+    thinking: str | None = None
+
+    def extra_body(self) -> dict | None:
+        return {"thinking": {"type": self.thinking}} if self.thinking else None
 
 
 class ProviderConfig(BaseModel):

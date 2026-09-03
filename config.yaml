@@ -147,7 +147,13 @@ llm:
   # content (29,751 reasoning chars against an 8,192 cap, observed 2026-08-10).
   # 36% of decisions came back blank and were journalled as considered no-trades.
   # Fall back to a non-reasoning model rather than let silence look like a choice.
-  fallback_tier: fast
+  # `fast` itself was the fallback until 2026-09-04, i.e. NO fallback: `ask`
+  # refuses to retry on the tier that just failed, and three of 44 decide calls
+  # on 2026-09-03 died with ~120k chars of reasoning against the 32k cap
+  # (finish=length, empty content). The fallback is the same model with
+  # thinking OFF -- verified live: `thinking: {type: disabled}` returns content
+  # with zero reasoning tokens.
+  fallback_tier: fast_nothink
   # V4 model ids since 2026-08-30: the docs stopped listing deepseek-chat /
   # deepseek-reasoner, and an undocumented alias bills at an undocumented rate.
   # Both V4 models support reasoning, so max_tokens stays generous everywhere --
@@ -161,6 +167,15 @@ llm:
       # reasoning into an 8,192 cap -- empty content, finish=length, no decision
       # (observed 2026-08-31, the same trap the old reasoner tier fell into).
       max_tokens: 32768
+    fast_nothink:
+      # The fallback for an empty reasoner reply: same model, thinking disabled,
+      # so the whole budget is content. Never the decide tier -- its answers
+      # skip the reasoning the measurement is about.
+      provider: deepseek
+      model: deepseek-v4-flash
+      temperature: 0.0
+      max_tokens: 8192
+      thinking: disabled
     deep:
       provider: deepseek
       model: deepseek-v4-pro
