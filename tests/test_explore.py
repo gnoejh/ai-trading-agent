@@ -42,6 +42,10 @@ def cfg(tmp_path):
     c.score.min_bucket_n = 10
     c.explore.enabled = True
     c.explore.entry_pct = 1.0  # always attempt: the roll is not under test
+    # These tests pin explore MECHANICS against hand-tuned values, so they run
+    # the allocator's off switch. Its own ramp is tested in test_allocator.py,
+    # and the seam between them at the end of this file.
+    c.allocator.enabled = False
     c.explore.max_positions = 4
     c.explore.entries_per_cycle = 1
     c.explore.seed = 7
@@ -469,3 +473,60 @@ def test_cycle_journals_the_virtual_pick():
     assert "virtual_pick" in inspect.getsource(TradingAgent.run_cycle), (
         "the decision record must carry the model's virtual pick"
     )
+
+
+# -- the allocator seam -----------------------------------------------------
+#
+# The four defects that ever reached production were correct components that
+# nothing called, or called with the wrong argument. The allocator is exactly
+# that shape of risk: it computes a share, and the share means nothing unless
+# `run_explore` actually reads it. These pin the wiring.
+
+
+def test_run_explore_reads_the_allocator_not_the_static_config(cfg):
+    """The caps in force are the ALLOCATOR's, not `explore.*` in the YAML.
+
+    Ramping the share is inert unless this seam holds.
+    """
+    from trading.agent.allocator import Allocation
+
+    cfg.allocator.enabled = True
+    cfg.explore.entry_pct = 1.0  # the stale config would always fire
+    agent = make_agent(cfg)
+    agent.allocator._current = Allocation(
+        model_share=1.0, explore_entry_pct=0.0, explore_max_positions=99
+    )
+    assert agent.run_explore(observation(), free_slots=5) == 0
+    assert agent.executor.executed == []
+
+
+def test_allocator_slot_cap_reserves_the_book_for_the_model(cfg):
+    """Capping what the DICE may hold is what hands slots to the model.
+
+    Ramping entry_pct alone would leave the random arm free to accumulate its
+    old share and starve the model exactly as it did all epoch.
+    """
+    from trading.agent.allocator import Allocation
+
+    cfg.allocator.enabled = True
+    agent = make_agent(cfg)
+    agent.allocator._current = Allocation(
+        model_share=0.85, explore_entry_pct=1.0, explore_max_positions=1
+    )
+    agent._random_positions = {"AAAUSDT"}
+    held = {"AAAUSDT": {"cost_basis": 1.0, "quantity": 1.0}}
+    assert agent.run_explore(observation(holdings=held), free_slots=5) == 0
+
+
+def test_random_positions_survive_a_restart(cfg):
+    """Without this the model's slot reserve is un-enforced on every bounce.
+
+    An in-memory set was harmless while the cap was a static 12-of-15; it is a
+    defect now that the cap is the reserve.
+    """
+    agent = make_agent(cfg)
+    agent.run_explore(observation(), free_slots=5)
+    bought = set(agent._random_positions)
+    assert bought, "the arm should have entered"
+    # A fresh process over the same journal must recover what the dice own.
+    assert make_agent(cfg)._random_positions == bought

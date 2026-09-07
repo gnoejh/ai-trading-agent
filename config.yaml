@@ -307,13 +307,19 @@ explore:
   # the model arm cannot: random entries sample the TRADABLE universe
   # (liquidity, lot rules and the stablecoin exclusion still apply; the
   # screen's momentum/flow bounds deliberately do NOT, or the screen's own
-  # thresholds could never be falsified). Costs no model tokens. Decay
-  # entry_pct toward floor_pct by hand as the corpus fills -- never to zero,
-  # or model-vs-chance stops being measurable.
+  # thresholds could never be falsified). Costs no model tokens.
+  #
+  # 2026-09-07: entry_pct and max_positions below are NO LONGER what runs.
+  # The `allocator` block above computes both every hour from the measured
+  # record (owner: the model's portion must rise automatically as profit
+  # gains, up to 85%). These values are the fallback the allocator hands back
+  # when `allocator.enabled: false` -- keep them as the hand-tuned escape
+  # hatch. The old "decay entry_pct by hand" instruction is retired: it was
+  # never once carried out between 08-30 and 09-07.
   enabled: true
-  entry_pct: 0.5                 # measurement regime; decay toward floor_pct as the corpus fills
-  floor_pct: 0.15                # documented decay floor (manual)
-  max_positions: 12              # concurrently open random-arm entries (within sizing's 15)
+  entry_pct: 0.5                 # FALLBACK only (allocator.enabled: false)
+  floor_pct: 0.15                # historical decay floor; now allocator.max_share 0.85 = 1 - this
+  max_positions: 12              # FALLBACK only; the allocator computes slots x (1 - model_share)
   entries_per_cycle: 1
   seed: 20260830                 # reproducible sequence; 0 = OS entropy
   # 2026-09-03: the random arm runs on the KR PAPER account too. The model
@@ -321,6 +327,41 @@ explore:
   # would never produce a closed trip or a random baseline. US is dry-run
   # (measurement-only) and never explores; a dry-run venue is skipped in code.
   markets: [BINANCE, KR]
+
+allocator:
+  # THE MODEL'S SHARE OF THE BOOK, EARNED AUTOMATICALLY (owner, 2026-09-07):
+  # "the model's portion is supposed to increase as profit gains, up to 85%;
+  # the mechanism must be automatic." This replaces the hand decay of
+  # explore.entry_pct that the comment above has asked for since 08-30.
+  #
+  # ONE number drives both exploration knobs, so they can never disagree:
+  #     explore.entry_pct     = 1 - model_share
+  #     explore.max_positions = sizing.max_positions x (1 - model_share)
+  # At base_share 0.50 that reproduces entry_pct 0.5; at max_share 0.85 it
+  # lands exactly on the documented floor_pct 0.15. The endpoints did not
+  # move -- only who moves the dial.
+  #
+  # The system is the learner, not the model (context RL: frozen weights, a
+  # growing measured record). So `confidence` counts what the CONTEXT knows --
+  # closed trips, shadow pairs, and RAG buckets past score.min_bucket_n --
+  # and the weakest of the three governs.
+  #
+  # Asymmetric on purpose: going UP needs realised profit AND a demonstrated
+  # edge over chance (min of the two), because this repo already measured that
+  # profit alone proves nothing in a rising market (see Research findings --
+  # a long-only rule in a +96% window lost to buy-and-hold). Coming DOWN needs
+  # only realised loss, which requires no significance test to act on.
+  enabled: true
+  base_share: 0.50              # in force until evidence arrives (= today's entry_pct 0.5)
+  max_share: 0.85               # the owner's target; 1 - this is the PERMANENT epsilon floor
+  min_share: 0.15               # a losing model still keeps a seat to learn from
+  target_net_pct: 0.50          # avg net %/trip after hurdle scoring profit 1.0
+  target_edge_pct: 2.00         # model-vs-shadow edge (CI LOWER bound) scoring 1.0
+  min_ready_buckets: 30         # RAG buckets past score.min_bucket_n for a full context score
+  max_step: 0.05                # a good week may nudge the book, never take it
+  interval_minutes: 60          # recompute cadence inside the live loop
+  min_explore_positions: 1      # the dice always keep at least one slot
+  state: data/allocation.json   # persisted share, so a restart resumes the ramp
 
 score:
   # The offline scorer -- the RAG build step. Joins journaled decisions and

@@ -592,6 +592,36 @@ class ExploreConfig(BaseModel):
     markets: list[str] = Field(default_factory=list)
 
 
+class AllocatorConfig(BaseModel):
+    """The model's share of the book, earned automatically (owner, 2026-09-07).
+
+    ONE number, `model_share`, ramps from `base_share` to `max_share` as the
+    measured record grows, and BOTH exploration knobs are derived from it:
+    `entry_pct = 1 - share` and `max_positions = slots x (1 - share)`. At
+    `base_share` 0.50 that reproduces the historical hand-tuned `entry_pct`,
+    and at `max_share` 0.85 it lands on the `floor_pct` 0.15 the config has
+    always documented as the manual decay target — so automating the schedule
+    moved the mechanism, not the endpoints.
+
+    `max_share` below 1.0 is what keeps the random arm alive forever: the
+    control group that makes the model permanently verifiable is enforced here
+    in code, no longer only in a comment.
+    """
+
+    enabled: bool = True
+    base_share: float = 0.50  # the share in force before any evidence arrives
+    max_share: float = 0.85  # ceiling; 1 - this is the permanent epsilon floor
+    min_share: float = 0.15  # floor; a losing model still keeps a seat to learn from
+    # Scores reach 1.0 at these levels. The ramp is linear up to them.
+    target_net_pct: float = 0.50  # avg net %/trip after hurdle that earns full profit score
+    target_edge_pct: float = 2.00  # model-vs-shadow edge (CI LOWER bound) that earns full score
+    min_ready_buckets: int = 30  # RAG buckets past score.min_bucket_n for a full context score
+    max_step: float = 0.05  # most the share may move in one update
+    interval_minutes: int = 60  # recompute cadence inside the live loop
+    min_explore_positions: int = 1  # the dice always keep at least this many slots
+    state: str = "data/allocation.json"  # persisted share, so a restart resumes the ramp
+
+
 class ScoreConfig(BaseModel):
     """Offline outcome scoring that fills `experience` — the RAG build step."""
 
@@ -724,6 +754,7 @@ class AppConfig(BaseModel):
     agent: AgentConfig = Field(default_factory=AgentConfig)
     explore: ExploreConfig = Field(default_factory=ExploreConfig)
     score: ScoreConfig = Field(default_factory=ScoreConfig)
+    allocator: AllocatorConfig = Field(default_factory=AllocatorConfig)
     promotion: PromotionConfig = Field(default_factory=PromotionConfig)
     fit: FitConfig = Field(default_factory=FitConfig)
     exit_eval: ExitEvalConfig = Field(default_factory=ExitEvalConfig)

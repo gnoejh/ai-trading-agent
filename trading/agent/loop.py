@@ -24,6 +24,7 @@ from dataclasses import asdict, dataclass
 from zoneinfo import ZoneInfo
 
 from trading.accounting.costs import CostLedger
+from trading.agent.allocator import Allocator
 from trading.agent.fit import ScorerModel
 from trading.agent.journal import Journal
 from trading.agent.scorer import ExperienceScorer, experience_block
@@ -233,9 +234,15 @@ class TradingAgent:
         # Exploration arm: one seeded stream drives both the shadow pick and the
         # random entries, so a fixed seed reproduces the whole sequence.
         self._rng = random.Random(self.cfg.explore.seed or None)
-        # Random-arm entries opened by THIS process. Lost on restart, which only
-        # loosens the explore cap for one session -- the journal keeps the truth.
-        self._random_positions: set[str] = set()
+        # Random-arm entries. RESTORED FROM THE JOURNAL on startup: while the
+        # explore cap was a static 12-of-15 an in-memory set merely "loosened
+        # the cap for one session", but the allocator now RESERVES slots for the
+        # model by lowering that cap, so a set that empties on restart would
+        # silently un-enforce the reserve every time the service bounced.
+        self._random_positions: set[str] = self._restore_random_positions()
+        # The capital allocator: the model's share of the book, recomputed on
+        # its own interval from the same metrics the mainnet gate reads.
+        self.allocator = Allocator(self.cfg, journal=self.journal)
         self.scorer: ExperienceScorer | None = None
         if self.broker == "binance" and self.cfg.score.enabled:
             self.scorer = ExperienceScorer(
@@ -569,6 +576,40 @@ class TradingAgent:
     def _managed_count(holdings: dict) -> int:
         return len(TradingAgent._managed_symbols(holdings))
 
+    def _restore_random_positions(self) -> set[str]:
+        """Which open symbols the RANDOM arm bought, recovered from the journal.
+
+        The journal is the audit record of who proposed each entry, and it is
+        the only place that survives a restart. Reading it back is what makes
+        the allocator's slot reserve durable: without it, every service bounce
+        handed the random arm a full cap again. The set is always intersected
+        with MANAGED holdings at use time, so stale symbols cost nothing.
+        """
+        symbols: set[str] = set()
+        try:
+            path = self.journal.path
+            if not path.exists():
+                return symbols
+            with path.open(encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line.startswith("{") or '"explore"' not in line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except ValueError:
+                        continue
+                    if rec.get("kind") != "explore" or not rec.get("sent"):
+                        continue
+                    sym = (rec.get("entry") or {}).get("symbol")
+                    if sym:
+                        symbols.add(str(sym))
+        except OSError:
+            return symbols
+        if symbols:
+            log.info("explore: recovered %d random-arm symbols from the journal", len(symbols))
+        return symbols
+
     def _shadow_pick(self, observation: dict) -> str | None:
         """A random symbol from the same shortlist the model saw. Journal-only.
 
@@ -602,14 +643,21 @@ class TradingAgent:
         # MANAGED positions only: filtering on raw balances excluded every
         # seeded symbol and left the random arm sampling only recent listings.
         held = self._managed_symbols(observation["holdings"])
+        # THE ALLOCATOR SETS BOTH KNOBS. `max_positions` is the model's slot
+        # RESERVE seen from the other side: capping what the dice may hold is
+        # what actually hands the book to the model. Ramping entry_pct alone
+        # would leave the random arm free to accumulate its old 12-of-15 share
+        # and starve the model of slots exactly as it did all epoch (281 of 298
+        # decisions saw free_slots=0).
+        alloc = self.allocator.current
         batch = min(
             free_slots,
             max(ecfg.entries_per_cycle, 1),
-            max(ecfg.max_positions - len(self._random_positions & held), 0),
+            max(alloc.explore_max_positions - len(self._random_positions & held), 0),
         )
         if batch <= 0:
             return 0
-        if self._rng.random() >= ecfg.entry_pct:
+        if self._rng.random() >= alloc.explore_entry_pct:
             return 0
 
         try:
@@ -708,6 +756,13 @@ class TradingAgent:
         # every entry guard below, because measuring is not risk.
         if self.scorer:
             self.scorer.maybe_run()
+
+        # The capital allocator, on its own interval and AFTER the scorer, so a
+        # freshly rebuilt experience store is what the share is measured
+        # against. Like scoring, this is measurement, not risk: it runs
+        # regardless of the halt below, but it can only ever move the split
+        # between the two ENTRY arms -- never a limit, never an exit.
+        self.allocator.maybe_run()
 
         # The kill switch stops NEW risk only; exits above have already run.
         if self.gate.halted:

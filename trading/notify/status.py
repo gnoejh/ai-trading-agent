@@ -249,4 +249,12 @@ class BinanceStatusReporter:
             lines.append("")
             lines.append(render_gate(self.cfg))
 
+            # The inner loop's counterpart: how much of the book the model has
+            # EARNED so far. The gate says when we may leave the testnet; this
+            # says what the model is trusted with while we wait.
+            from trading.agent.allocator import render as render_allocation
+
+            lines.append("")
+            lines.append(render_allocation(self.cfg))
+
         return "\n".join(lines)

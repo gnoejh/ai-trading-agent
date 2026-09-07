@@ -17,6 +17,47 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 
 ## Development log (newest first)
 
+- **2026-09-07** — **The model's share of the book is now EARNED AUTOMATICALLY**
+  (owner: "the model's portion is supposed to increase as profit gains, up to 85%; the
+  mechanism must be automatic... the system is a learning system as a whole, context-RL,
+  where model is fixed but RAG contains data"). New `trading/agent/allocator.py`
+  (`uv run python -m trading.agent.allocator`, rendered in `/status`). **The status check that
+  prompted it**: since `promotion.since`, the model had opened **1 position against the random
+  arm's 23** — a ~4% share, not the ~50% `explore.entry_pct` implied. Three causes, measured
+  from the journal: **281 of 298 decisions saw `free_slots=0`** (the random arm was permitted
+  12 of 15 concurrent slots and runs BEFORE the model, so it had first refusal on every slot);
+  the model cleared its 0.45 confidence floor on only 20 of 297 decisions (mean confidence
+  0.380, max 0.570); and `min_reward_risk: 2.0` against an 8% stop demands a **+17.8% target in
+  72h**, which the model declines cycle after cycle in so many words. **Slots, not frequency,
+  were the binding constraint** — so the allocator sets BOTH knobs from ONE number:
+  `entry_pct = 1 - model_share` and `explore.max_positions = slots x (1 - model_share)`. At
+  `base_share` 0.50 that reproduces the old `entry_pct: 0.5`; at `max_share` 0.85 it lands
+  exactly on the `floor_pct: 0.15` the config had documented as the manual decay target since
+  08-30 — a decay **never once performed by hand** in eight days, which is why it had to become
+  code. The driver is asymmetric on purpose: **up** needs realised profit AND a demonstrated
+  edge (`min(profit_score, edge_score)`, the edge read from the bootstrap CI's LOWER bound),
+  because this repo already measured that profit alone proves nothing in a rising market;
+  **down** needs only realised loss, which requires no significance test. Both scale by
+  `confidence` = the weakest of trips / shadow pairs / **RAG buckets past `min_bucket_n`** —
+  the owner's context-RL point encoded literally: the weights are frozen, so capital tracks
+  what the CONTEXT knows. Rate-limited to `max_step` 0.05 per hourly update (50% → 85% takes
+  7h, and falls back symmetrically), persisted to `data/allocation.json` so a restart resumes
+  the ramp. **Safe because the two random mechanisms are independent**: the gate's paired
+  corpus comes from `shadow_random`, journalled per DECISION, not from the random ENTRY arm —
+  so handing slots to the model does not slow the gate's slowest criterion at all. `max_share`
+  below 1.0 enforces the "ε never reaches zero" invariant in code rather than in a comment.
+  Two seam defects found and fixed while wiring it: `_random_positions` was in-memory only, so
+  every service bounce silently un-enforced the new slot reserve (now restored from the
+  journal); and the `enabled: false` off switch was checked in `maybe_run` but NOT in
+  `current`, which is what `run_explore` reads — a disabled allocator would still have
+  overridden the hand-tuned config it exists to defer to. **First live effect**: today's
+  reading holds at base 0.50 (profit scores 1.00, but the edge CI lower bound is −1.66%), yet
+  the explore slot cap tightens 12 → 8, freeing four slots for the model immediately.
+  **Deliberately NOT changed**: `min_reward_risk` and the 0.45 confidence floor — both are
+  exit-contract/prompt decisions the exit grid does not yet support (see 09-04), and
+  calibration currently reads INVERTED (0.00–0.45 → 27%, 0.45–0.55 → 6%, 0.55–0.65 → 0%), so
+  the floor is filtering on a signal that anti-predicts. Those are the next two gradient steps
+  and they need their own evidence. 266 tests.
 - **2026-09-04 (later)** — **"Proceed" on the three noted items; two acted on, one retracted,
   the exits contract deliberately unchanged.** (a) Kiwoom `min_call_interval_s` 0.25 → 0.5:
   771 HTTP 429 retries in one paper day, each a 1s backoff, costs more than pacing. (b) The
@@ -241,7 +282,7 @@ that was mostly committed cash, and the daily-loss cap reads the same number.
 
 ```
 uv sync                                   # create/refresh .venv from uv.lock
-uv run pytest                             # 246 tests, no network (httpx MockTransport)
+uv run pytest                             # 266 tests, no network (httpx MockTransport)
 uv run python scripts/wire_test.py        # dry run; --live sends ONE ~$6 order
 uv run pytest tests/test_risk_gate.py -k concentration
 uv run ruff check . --fix && uv run ruff format .
@@ -255,6 +296,7 @@ uv run python -m trading.agent.scorer --venue KR   # ...and render KR's prompt b
 uv run python -m trading.agent.fit        # refit the frozen prior (writes data/scorer_model.json)
 uv run python -m trading.agent.exit_eval  # exit counterfactual grid over closed trips
 uv run python -m trading.agent.promotion  # the mainnet gate, with the paired CI
+uv run python -m trading.agent.allocator  # the model's earned share of the book
 ```
 
 Tests must stay hermetic: fixtures pin `use_testnet`, `allow_orders` and the risk limits rather than
@@ -450,8 +492,13 @@ live-mainnet era out of testnet statistics — the ledger spans both epochs and 
 exactly the false signal the scorer exists to prevent. `/status` shows the corpus filling
 (*Learning* section: observations opened/resolved, buckets past the gate, model-vs-random).
 
-Still open: the exploration decay schedule (manual by design — lower `explore.entry_pct` toward
-`floor_pct` once the corpus says what the model is worth).
+**The exploration decay is no longer manual (2026-09-07).** `trading/agent/allocator.py` computes
+the model's share of the book every hour from the measured record and derives BOTH exploration
+knobs from it (`entry_pct = 1 - share`, `max_positions = slots x (1 - share)`), ramping 0.50 →
+0.85 as realised profit AND a demonstrated edge arrive, and falling back when they do not. This
+is the outer loop's gradient step taken automatically: the frozen policy earns capital as the
+measured record it reads grows. ε still never reaches zero — `max_share` 0.85 is what enforces
+it. The manual knobs survive as the fallback under `allocator.enabled: false`.
 
 **Since 2026-09-03 the loop also measures itself, not only its picks:**
 

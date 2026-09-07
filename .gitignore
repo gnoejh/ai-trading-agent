@@ -225,6 +225,10 @@ data/HALT
 data/journal*.jsonl
 data/observations.jsonl
 data/experience.json
+# The allocator's persisted share: recomputed hourly from the measured record,
+# so it is state, not an artifact. (Contrast data/scorer_model.json, which IS
+# committed -- a frozen prior changes only by a deliberate refit.)
+data/allocation.json
 
 # Kiwoom-era artifacts, kept on disk after the 2026-09-01 Binance-only refactor
 # but out of git. The token caches are LIVE CREDENTIALS — never commit them.

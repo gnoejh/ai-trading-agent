@@ -45,6 +45,7 @@ def evaluate(cfg: AppConfig | None = None) -> dict:
 
     pairs = {"n": 0, "model_avg_pct": None, "shadow_avg_pct": None}
     by_venue: dict = {}
+    store: dict = {}
     exp_path = Path(cfg.score.experience)
     if exp_path.exists():
         try:
@@ -102,11 +103,35 @@ def evaluate(cfg: AppConfig | None = None) -> dict:
             "detail": edge_detail,
         },
     ]
+    # The measured record, unrendered. The capital allocator
+    # (`trading/agent/allocator.py`) reads exactly these numbers, so the inner
+    # loop's hourly share decision and this outer verdict can never disagree
+    # about what the model has earned. `edge_lower` is the anti-luck figure:
+    # the CI's lower bound where one exists, else the point estimate.
+    buckets = store.get("buckets", []) if isinstance(store, dict) else []
+    ready_buckets = sum(
+        1 for b in buckets if isinstance(b, dict) and int(b.get("n") or 0) >= cfg.score.min_bucket_n
+    )
+    metrics = {
+        "n_trips": n,
+        "gross": gross,
+        "fees": fees,
+        "net": net,
+        "avg_net_pct": avg_net_pct if n else None,
+        "pair_n": pair_n,
+        "model_avg_pct": model_avg,
+        "shadow_avg_pct": shadow_avg,
+        "edge": edge,
+        "edge_lower": ci_low if ci_low is not None else edge,
+        "ready_buckets": ready_buckets,
+        "total_buckets": len(buckets),
+    }
     return {
         "ready": all(c["ok"] for c in checks),
         "checks": checks,
         "since": since,
         "by_venue": by_venue,
+        "metrics": metrics,
     }
 
 
