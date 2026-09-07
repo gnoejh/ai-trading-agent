@@ -450,6 +450,36 @@ verifiable — outlives its first. Two loops: the fast frozen inner policy learn
 and the slow human outer loop taking evidence-driven gradient steps on the config, each committed
 to git with its reasoning. The mainnet gate is the outer loop's convergence test.
 
+**The second framing (named by the owner, 2026-09-07): expanded simulated annealing.** Random
+trading is exploration, model trading is exploitation, and ε is a TEMPERATURE — hot means mostly
+random moves, cold means mostly greedy ones. Since the allocator
+(`trading/agent/allocator.py`) that temperature moves with measured performance: more profit →
+colder → more model; less profit → hotter → more random. Read the allocator as an annealing
+schedule and its shape follows; three departures from the textbook are deliberate and are the
+reason the module is not ten lines:
+
+1. **It anneals on RESULTS, not on a clock.** Classical SA cools as a function of iteration
+   count, indifferent to how it is doing — which is exactly what the old hand-turned
+   `explore.entry_pct` was, and why it sat at 0.5 for eight days without once being decayed.
+   This is the adaptive variant, with reheating: the share falls again when realised P&L turns
+   negative.
+2. **The temperature never reaches zero, by construction** (`max_share: 0.85`). SA cools toward
+   T→0 because its objective is fixed and known, so near the optimum randomness only costs.
+   Here the random arm has a second job SA's randomness does not: it is the CONTROL GROUP that
+   makes the model verifiable at all. Annealing it away would destroy the only measurement that
+   can open the mainnet gate. This system deliberately never fully anneals, because it is not
+   only searching — it is measuring.
+3. **Cooling requires beating the random arm, not merely a higher objective value.** In a rising
+   market the dice make money too, so profit alone says the market rose, not that the model
+   picks well — the +96% window in *Research findings* is the measured version of that mistake.
+   The temperature therefore drops on `min(profit_score, edge_score)` with the edge read from
+   the paired CI's LOWER bound. Asymmetric on purpose: going down needs only realised loss,
+   which requires no significance test.
+
+Markets are also non-stationary where SA's landscape is fixed, which is the deeper reason the
+floor and the reheating both matter: a fully-annealed policy would be stuck exploiting a regime
+that has already ended.
+
 The system learns through a measured-aggregates RAG, never by adapting the model online. Three
 arms produce observations, one scorer grades them, and the decide prompt retrieves only what has
 earned statistical standing:

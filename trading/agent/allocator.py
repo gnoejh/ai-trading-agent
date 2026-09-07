@@ -60,10 +60,13 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from trading.config import AppConfig, config
+
+log = logging.getLogger(__name__)
 
 
 def _clamp(x: float, lo: float, hi: float) -> float:
@@ -307,7 +310,14 @@ class Allocator:
 
         try:
             metrics = evaluate(self.cfg).get("metrics", {})
-        except Exception:  # noqa: BLE001 - measurement must never abort a trading cycle
+        except Exception:
+            # LOUD, not silent. A share that quietly kept its old value because
+            # the metrics never arrived is indistinguishable from one the
+            # evidence actually justified -- the same failure mode as a cycle
+            # reporting "no trade" for an answer it never received.
+            log.exception(
+                "allocator: metrics unavailable; share unchanged at %.2f", self.current.model_share
+            )
             return self.current
 
         previous = self.current.model_share

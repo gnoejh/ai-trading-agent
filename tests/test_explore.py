@@ -40,6 +40,10 @@ def cfg(tmp_path):
     c.score.observations = str(tmp_path / "observations.jsonl")
     c.score.experience = str(tmp_path / "experience.json")
     c.score.min_bucket_n = 10
+    # The allocator persists its share to data/ by default. A test that leaves
+    # this pointing at the real path writes -- and stomps -- the LIVE service's
+    # allocation state. Redirect it like every other data path.
+    c.allocator.state = str(tmp_path / "allocation.json")
     c.explore.enabled = True
     c.explore.entry_pct = 1.0  # always attempt: the roll is not under test
     # These tests pin explore MECHANICS against hand-tuned values, so they run

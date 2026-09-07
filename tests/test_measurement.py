@@ -37,6 +37,10 @@ def cfg(tmp_path):
     c.score.observations = str(tmp_path / "observations.jsonl")
     c.score.experience = str(tmp_path / "experience.json")
     c.fit.model = str(tmp_path / "no_model.json")
+    # The allocator persists its share to data/ by default. A test that leaves
+    # this pointing at the real path writes -- and stomps -- the LIVE service's
+    # allocation state. Redirect it like every other data path.
+    c.allocator.state = str(tmp_path / "allocation.json")
     c.explore.enabled = True
     c.explore.entry_pct = 1.0
     c.explore.seed = 7
