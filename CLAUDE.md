@@ -15,6 +15,22 @@ shadow. The gate measures; the OWNER flips `use_testnet` — after `preflight` a
 of unmanaged balance was exactly that, and exits are now capped at the units this system bought
 (`cost_position`; the balance stays the upper bound).
 
+## Open owner actions (things no code can do)
+
+Deadlines and owner-only moves, kept here because a newest-first log buries them.
+
+- **The mainnet deposit is still inert.** The $4,820 the owner sent on 2026-09-02 landed as
+  fiat `USD`, not USDT, and this agent spends only the quote asset. Converting it is a manual
+  move in the Binance app. Not urgent while the gate is shut — but it is a prerequisite for the
+  day it opens, not something to discover that morning.
+- **The KR paper account expires 2026-12-01.** That is the hard deadline for a KR verdict.
+  KR is currently the worst sleeve by a distance (model −4.21% vs random −2.98%, n=43, and a
+  0.14 clear rate against 0.52 on Binance), so it is the sleeve most likely to need a decision
+  rather than more time.
+- **The screen's `min_change_pct` gate is the open strategy question** — see the 2026-09-09
+  entry. Blocked on evidence, not on opinion: the live sweep and the backfill disagree in sign
+  on the only band the screen admits.
+
 ## Development log (newest first)
 
 - **2026-09-09** — **The book had wedged itself, and the model was being asked the wrong
@@ -52,17 +68,26 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
   testnet's `币安人生USDT` failed `-1022` and its cost basis was unreadable for as long as it
   was held; the 429 path then replayed a stale signature after sleeping, giving `-1021`
   (both observed live). The signature now covers `urlencode`'s own output, that string is sent
-  verbatim, and a rate-limited retry re-signs instead of replaying. **First effect**: the next
-  live decide raised stated confidence to 0.44 (mean was 0.366, epoch max 0.520) and declined
-  on a market judgement — "overextended, taker-buy share below parity" — with no mention of the
-  target or the floor. **Found and NOT acted on, for the owner**: the screen's
-  `min_change_pct: 0.15` confines every menu to the 15–40% band, which the unbiased universe
-  sweep measures as the WORST band it has (n=16, avg **−5.24%**, clear 0.188) against <0% at
-  +3.09%/0.604 and 0..15% at +1.86%/0.482 — the model is handed five names from the one band
-  the record condemns, is told so in its own `measured_record`, and correctly declines. KR/US
-  backtests agree (<0% and 0..15% carry the best clear rates), but BINANCE's own decisive
-  bucket is n=16 — too thin to move a strategy gate on, and this is the owner's gradient step.
-  It is the next one. 270 tests.
+  verbatim, and a rate-limited retry re-signs instead of replaying. **Confirmed live after the
+  restart**: `free_slots` reads 14 (15 minus the entry the random arm made in the same minute),
+  the random arm bought UNIUSDT at +0.77% — its first entry in 31 hours, and from outside the
+  band the screen imposes on the model — and the decide call raised stated confidence to
+  0.43–0.44 (mean was 0.366, epoch max 0.520) while declining on a MARKET judgement
+  ("extended 18-26% with weak taker-buy flow"), with no mention of the target or the floor in
+  any reply since. The contract complaint that ran for 100 consecutive decisions is gone.
+  **Found, and deliberately NOT acted on**: the model is now unblocked mechanically but still
+  starved by the screen — `min_change_pct: 0.15` confines every menu to the 15–40% band, and
+  the record DISAGREES WITH ITSELF about that band. The live universe sweep calls it the worst
+  it has (n=16, avg −5.24%, clear 0.188, against <0% at +3.09%/0.604 and 0..15% at
+  +1.86%/0.482); the 60-day backfill calls it fine (n=48, avg +15.49%, clear 0.500). Two thin
+  samples, opposite signs — no basis for changing what the system buys with real money, however
+  well the story fits. Note the gate is also unsupported in its own right: it is a pure
+  MOMENTUM filter ("20% beat 10% in every backtest window"), and the 2026-08-10 research
+  retired momentum as a signal (−0.06% spread) while keeping flow (+1.05%) — the screen ranks
+  by flow but still gates by the thing that measured nothing. The way to settle it is a longer
+  `backfill.py` run (historical observations resolve immediately, so it costs neither money nor
+  tokens), not a week of waiting and not a guess. That is the next gradient step, and it is the
+  owner's. 270 tests.
 - **2026-09-07** — **The model's share of the book is now EARNED AUTOMATICALLY**
   (owner: "the model's portion is supposed to increase as profit gains, up to 85%; the
   mechanism must be automatic... the system is a learning system as a whole, context-RL,
