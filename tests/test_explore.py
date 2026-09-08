@@ -229,10 +229,41 @@ def test_seed_balances_do_not_consume_position_slots(cfg):
     """Found live 2026-08-30: the slot limit counted the testnet's ~480 seed
     balances as positions (6 - 482 = 0 slots) and silently disabled both entry
     arms. Slots count MANAGED positions -- holdings with a cost basis."""
+    agent = make_agent(cfg)
     seeds = {f"S{i}USDT": {"quantity": 100, "cost_basis": 0} for i in range(482)}
     managed = {"BTCUSDT": {"quantity": 1, "cost_basis": 70000.0}}
-    assert TradingAgent._managed_count({**seeds, **managed}) == 1
-    assert TradingAgent._managed_count(seeds) == 0
+    prices = {s: 1.0 for s in seeds} | {"BTCUSDT": 70000.0}
+    assert agent._managed_count({**seeds, **managed}, prices) == 1
+    assert agent._managed_count(seeds, prices) == 0
+
+
+def test_dust_remainders_do_not_consume_position_slots(cfg):
+    """Found live 2026-09-09: the book wedged itself one stop-out at a time.
+
+    A stop-out leaves a remainder that KEEPS its cost basis, so it kept
+    counting as a position while the supervisor -- which applies the same
+    `_order_dust` predicate -- refused to adopt it. Eleven remainders worth
+    $2.49 in total held 11 of 15 slots with `{"plans": {}}` on disk, and no
+    exit could ever free them: there is no order small enough. The two
+    definitions of "held" must agree.
+    """
+    agent = make_agent(cfg)
+    holdings = {
+        "PROMUSDT": {"quantity": 0.34, "cost_basis": 6.23},  # $2.02, under minNotional
+        "FILUSDT": {"quantity": 1.8e-12, "cost_basis": 1.0},  # $0.00
+        "BTCUSDT": {"quantity": 1.0, "cost_basis": 70000.0},  # a real position
+    }
+    prices = {"PROMUSDT": 5.95, "FILUSDT": 0.845, "BTCUSDT": 70000.0}
+    assert agent._managed_symbols(holdings, prices) == {"BTCUSDT"}
+
+    # An unknown price is NOT dust: that is the supervisor's own choice at the
+    # adoption seam (exits.py guards on `price > 0`), and if the two disagree
+    # this bug returns inverted -- slots freed for positions that do have stops.
+    assert agent._managed_symbols(holdings, {"BTCUSDT": 70000.0}) == {
+        "PROMUSDT",
+        "FILUSDT",
+        "BTCUSDT",
+    }
 
 
 def test_prompt_survives_482_seed_balances(cfg):
@@ -534,3 +565,31 @@ def test_random_positions_survive_a_restart(cfg):
     assert bought, "the arm should have entered"
     # A fresh process over the same journal must recover what the dice own.
     assert make_agent(cfg)._random_positions == bought
+
+
+def test_trade_rules_describe_the_trail_and_advertise_no_floor(cfg):
+    """Found live 2026-09-09: the model declined 100 decisions in a row.
+
+    `trade_rules` listed stop / target / time and omitted the trailing stop, so
+    the model judged every candidate as a pure "+17.8% before -8%" barrier bet
+    and correctly called that bet bad. The exit grid shows the framing was
+    false: at the live contract 44 resolved trips ended trail 31, time 9,
+    target 3, hard stop 1. It also advertised `confidence_floor`, which is an
+    escalation trigger in code and never a veto -- the model self-censored
+    against a number that gates nothing, on a signal the calibration shows
+    ANTI-predicts (0.00-0.45 -> 27% hit, 0.55-0.65 -> 0%, n=238).
+    """
+    from trading.accounting.costs import CostLedger
+    from trading.agent.loop import build_trade_rules
+
+    rules = build_trade_rules(cfg, "BINANCE", CostLedger(cfg))
+
+    assert "trailing_stop_arms_at_gain_pct" in rules
+    assert rules["trailing_stop_arms_at_gain_pct"] < rules["target_gain_pct"], (
+        "the trail must arm well before the target, or it explains nothing"
+    )
+    assert "trailing" in rules["note"].lower()
+
+    # The floor gates nothing in code, so the prompt must not imply it does.
+    assert "confidence_floor" not in rules
+    assert "floor" not in rules["note"].lower()

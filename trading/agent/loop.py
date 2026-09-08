@@ -59,13 +59,20 @@ mechanically and you have no further say. Concretely, your pick will be:
   - bought with the configured budget for one position, laddered over several price levels
   - CLOSED AT A LOSS if it falls to the stop
   - CLOSED IN PROFIT if it reaches the target
+  - PROTECTED BY A TRAILING STOP once it is far enough ahead: the stop then
+    ratchets UP only, and closing there is the NORMAL profitable ending
   - CLOSED REGARDLESS once the maximum hold time elapses
   - charged the round-trip cost shown, which it must clear before earning anything
 
 So the only question you are actually answering is:
 
-  "Which of these, if any, is most likely to reach the target BEFORE hitting the
-   stop, within the hold window?"
+  "Which of these, if any, is most likely to RUN UP — far enough to arm the
+   trailing stop — before it falls to the stop, within the hold window?"
+
+That is deliberately NOT "can it reach the target". Measured over this system's
+own closed positions, the target ends about 7% of them and the hard stop about
+2%; the trailing stop ends about 70%. Judging candidates as a target-or-stop
+barrier bet therefore rejects almost everything for the wrong reason.
 
 The exact levels are given in `trade_rules`. Judge every candidate against them.
 A name that is moving but cannot plausibly travel that far that fast is a bad
@@ -84,12 +91,16 @@ Reply with JSON only:
   on the rare cycles you trade. Declining to trade while still naming your best
   candidate is the expected common case.
 
-- `confidence` is your estimate of the probability that the trade reaches target
-  before stop. 0.5 means a coin flip. Be honest: below the floor in `trade_rules`
-  the decision is escalated to a stronger model rather than acted on, so
-  overstating it removes a safety net rather than helping the trade. Your past
-  confidences are graded against what actually happened (`your_calibration` in
-  `measured_record`, when enough have resolved) -- use it to correct yourself.
+- `confidence` is your estimate of the probability that the position ends in
+  profit after costs -- by the trailing stop, the target, or the time stop,
+  whichever comes. 0.5 means a coin flip. It is NOT a threshold you must clear
+  to act: a low confidence routes the decision to a stronger model for a second
+  opinion, it does not veto the trade, so there is no floor to talk yourself
+  over or under. Be honest in both directions -- overstating it removes a safety
+  net, and understating it is not caution, it just hands the slot to a random
+  pick. Your past confidences are graded against what actually happened
+  (`your_calibration` in `measured_record`, when enough have resolved) -- use it
+  to correct yourself.
 - `p_clear` on a candidate, when present, is a FROZEN fitted prior: the measured
   probability that a name with those features cleared the round-trip cost at the
   horizon, fit offline on this system's resolved observations. It is evidence
@@ -125,6 +136,17 @@ def build_trade_rules(cfg: AppConfig, market: str, ledger: CostLedger) -> dict:
     # trade demands near-certainty for a bet that pays above 36% -- which is
     # why the trader kept declining candidates it plainly liked.
     breakeven_wr = risk_pct / (target_pct + risk_pct) if (target_pct + risk_pct) else 0.5
+    # THE TRAIL IS PART OF THE CONTRACT, and until 2026-09-09 it was the part
+    # nobody told the model about. The rules listed stop / target / time only,
+    # so the model judged every candidate as a pure "+17.8% before -8%" barrier
+    # bet -- and declined 100 decisions running, in so many words, because that
+    # bet is genuinely bad. The exit grid says the barrier framing is simply
+    # false: at the live contract 44 resolved trips ended trail 31, time 9,
+    # target 3, hard stop 1. The position is normally closed by a RATCHETED
+    # stop after a run, not at either barrier, and the cell is +2.1% net
+    # because of it. A model asked to predict a 7% event answers 0.37 and is
+    # right to; it just was not the event that pays.
+    trail_arm_pct = breakeven_pct + ecfg.trail_arm_hurdle_multiple * hurdle
     return {
         "round_trip_cost_pct": round(hurdle * 100, 3),
         "breakeven_win_rate_pct": round(breakeven_wr * 100, 1),
@@ -133,13 +155,20 @@ def build_trade_rules(cfg: AppConfig, market: str, ledger: CostLedger) -> dict:
         "stop_loss_pct": round(stop_pct * 100, 2),
         "reward_risk": round((target_pct - breakeven_pct) / risk_pct, 2),
         "max_hold_minutes": ecfg.max_hold_minutes,
-        "confidence_floor": cfg.agent.tiers.confidence_floor,
+        "trailing_stop_arms_at_gain_pct": round(trail_arm_pct * 100, 2),
+        "trailing_stop_gives_back_pct_of_run": round(ecfg.trail_give_back * 100, 0),
         "note": (
-            f"A pick must gain {target_pct * 100:.1f}% before losing "
-            f"{stop_pct * 100:.1f}%, within {ecfg.max_hold_minutes:.0f} minutes. "
-            f"Below {breakeven_pct * 100:.2f}% it loses money even if it rises. "
-            f"This payoff is PROFITABLE above a {breakeven_wr * 100:.0f}% hit rate -- "
-            f"you do not need to be confident of winning, only better than that."
+            f"You are NOT betting on a {target_pct * 100:.1f}% barrier. Once the "
+            f"position gains {trail_arm_pct * 100:.2f}% a trailing stop arms and "
+            f"then ratchets UP only, surrendering {ecfg.trail_give_back:.0%} of the "
+            f"run; measured over this system's own closed trips, that trailing "
+            f"exit ends about 70% of positions, the {ecfg.max_hold_minutes:.0f}-minute "
+            f"time stop about 20%, the {target_pct * 100:.1f}% target about 7%, and "
+            f"the {stop_pct * 100:.1f}% stop about 2%. So the question is NOT "
+            f"'can it reach {target_pct * 100:.1f}%' -- it is 'is it more likely to "
+            f"RUN UP than to fall {stop_pct * 100:.1f}% first'. A name that rises "
+            f"{trail_arm_pct * 100:.2f}% and then rolls over still pays; below "
+            f"{breakeven_pct * 100:.2f}% it loses money even if it rises."
         ),
     }
 
@@ -373,7 +402,13 @@ class TradingAgent:
         raw = self.llm.ask(self._prompt(observation), system=_SYSTEM, tier=tiers.decide)
         intents, commentary, best, best_conf = self._parse(raw, allowed, prices)
 
-        # Escalate rather than act on a low-confidence view.
+        # Escalate rather than act on a low-confidence view. NOTE this is a
+        # second opinion, never a veto -- the floor has never rejected a trade
+        # in code. It was `trade_rules` that advertised it as a hard threshold,
+        # and the model duly self-censored against it: 100 consecutive
+        # decisions declined with "does not clear the 0.45 confidence floor",
+        # mean stated confidence 0.366. Since 2026-09-09 the prompt no longer
+        # carries the number, so the floor does here exactly what it says.
         if intents and min(i.confidence for i in intents) < tiers.confidence_floor:
             log.info("low confidence, escalating to %s", tiers.escalate_on_low_confidence)
             raw = self.llm.ask(
@@ -559,9 +594,8 @@ class TradingAgent:
                 self.journal.write("exit_order_failed", signal=str(sig), error=str(exc))
         return sent
 
-    @staticmethod
-    def _managed_symbols(holdings: dict) -> set[str]:
-        """Symbols this system (or its owner) actually paid for.
+    def _managed_symbols(self, holdings: dict, prices: dict | None = None) -> set[str]:
+        """Symbols this system (or its owner) actually paid for AND can still exit.
 
         A balance with no cost basis is not a position in any sense that should
         gate a pick: the supervisor refuses to manage it and no exit will ever
@@ -569,12 +603,36 @@ class TradingAgent:
         symbol — the shadow pick was always None and the random arm sampled
         only coins too new to be seeded (observed 2026-08-31: 48 decisions,
         zero paired comparisons, and explore stuck on the same four listings).
-        """
-        return {s for s, h in holdings.items() if float(h.get("cost_basis") or 0) > 0}
 
-    @staticmethod
-    def _managed_count(holdings: dict) -> int:
-        return len(TradingAgent._managed_symbols(holdings))
+        Cost basis alone is not enough, though, and the missing half wedged the
+        book on 2026-09-09: a stop-out leaves a remainder that KEEPS its cost
+        basis, so it kept counting as a position while the supervisor — which
+        applies `_order_dust` — refused to adopt it. Eleven such remainders
+        worth $2.49 in total held 11 of 15 slots, `exit_policy_BINANCE.json`
+        was `{"plans": {}}`, and nothing could ever free them: no exit exists
+        for a holding too small to form an order. It only ever got worse, one
+        slot per stop-out (PROMUSDT 0.34 had sat there since 08-31 — the very
+        example named in `_order_dust`'s docstring).
+
+        So "managed" is now exactly what the supervisor manages: paid for, and
+        large enough to exit. An unknown price is NOT read as dust — that is
+        the supervisor's own choice at the adoption seam, and the two
+        definitions have to agree or this bug simply comes back inverted.
+        """
+        prices = prices or {}
+        managed = set()
+        for symbol, row in holdings.items():
+            if float(row.get("cost_basis") or 0) <= 0:
+                continue
+            qty = float(row.get("quantity") or 0)
+            price = float(prices.get(symbol) or 0)
+            if price > 0 and self._order_dust(symbol, qty, price):
+                continue
+            managed.add(symbol)
+        return managed
+
+    def _managed_count(self, holdings: dict, prices: dict | None = None) -> int:
+        return len(self._managed_symbols(holdings, prices))
 
     def _restore_random_positions(self) -> set[str]:
         """Which open symbols the RANDOM arm bought, recovered from the journal.
@@ -616,7 +674,7 @@ class TradingAgent:
         Never traded — it exists so every model decision has a paired chance
         baseline resolved over the identical menu and horizon.
         """
-        held = self._managed_symbols(observation["holdings"])
+        held = self._managed_symbols(observation["holdings"], observation["prices"])
         symbols = [c["symbol"] for c in observation["candidates"] if c["symbol"] not in held]
         return self._rng.choice(symbols) if symbols else None
 
@@ -642,7 +700,7 @@ class TradingAgent:
             return 0  # exploration needs a venue that exposes its tradable pool
         # MANAGED positions only: filtering on raw balances excluded every
         # seeded symbol and left the random arm sampling only recent listings.
-        held = self._managed_symbols(observation["holdings"])
+        held = self._managed_symbols(observation["holdings"], observation["prices"])
         # THE ALLOCATOR SETS BOTH KNOBS. `max_positions` is the model's slot
         # RESERVE seen from the other side: capping what the dice may hold is
         # what actually hands the book to the model. Ramping entry_pct alone
@@ -774,7 +832,7 @@ class TradingAgent:
         # set the exit supervisor manages. Counting raw balances filled every
         # slot with the testnet's ~480 seed holdings and silently disabled both
         # entry arms: the cycle reported "no free slots" forever.
-        managed = self._managed_count(observation["holdings"])
+        managed = self._managed_count(observation["holdings"], observation["prices"])
         free_slots = self.sizer.slots_free(managed)
         # MEASUREMENT IS DECOUPLED FROM EXECUTION. A full book withholds
         # execution, not the question: the model is still asked, its virtual

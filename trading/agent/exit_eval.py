@@ -47,18 +47,26 @@ def _parse_ts(value: str) -> dt.datetime | None:
     return when if when.tzinfo else when.replace(tzinfo=dt.UTC)
 
 
-def policy_for(cfg: AppConfig, market: str, *, stop_pct: float, hold_minutes: float) -> ExitPolicy:
-    """An ExitPolicy for `market` with the stop and hold overridden.
+def policy_for(
+    cfg: AppConfig,
+    market: str,
+    *,
+    stop_pct: float,
+    hold_minutes: float,
+    reward_risk: float | None = None,
+) -> ExitPolicy:
+    """An ExitPolicy for `market` with the stop, hold and reward:risk overridden.
 
-    Built on a config COPY: everything else (target multiple, reward:risk,
-    trail) stays exactly what the live supervisor uses, so the grid varies
-    two knobs and nothing else.
+    Built on a config COPY: everything else (target multiple, trail) stays
+    exactly what the live supervisor uses, so the grid varies these knobs and
+    nothing else.
     """
     mcfg = cfg.model_copy(deep=True)
     base = mcfg.exits.markets.get(market) or MarketExits()
-    mcfg.exits.markets[market] = base.model_copy(
-        update={"stop_loss_pct": stop_pct, "max_hold_minutes": hold_minutes}
-    )
+    update = {"stop_loss_pct": stop_pct, "max_hold_minutes": hold_minutes}
+    if reward_risk is not None:
+        update["min_reward_risk"] = reward_risk
+    mcfg.exits.markets[market] = base.model_copy(update=update)
     return ExitPolicy(mcfg, CostLedger(mcfg), market=market)
 
 
@@ -68,11 +76,18 @@ def simulate(
     """Replay one trip under `policy`. Returns exit price, reason and minutes held."""
     plan = policy.plan_for("replay", entry, 1.0, opened_at=opened.isoformat())
     opened_ms = int(opened.timestamp() * 1000)
+    initial_stop = plan.stop
     last_close = entry
     for bar in window.bars:
         held_min = (bar.t - opened_ms) / 60_000
         if bar.low <= plan.stop:
-            return {"exit_price": plan.stop, "reason": "stop", "minutes": held_min}
+            # A ratcheted stop is a TRAIL exit, not a stop-out: it fires above
+            # where the position started and usually in profit. Collapsing the
+            # two hid where this system's money actually comes from -- the live
+            # 8%/72h cell reads 32 "stop" against 3 "target" and is still
+            # +2.1% net, which is only explicable once they are separated.
+            reason = "trail" if plan.stop > initial_stop else "stop"
+            return {"exit_price": plan.stop, "reason": reason, "minutes": held_min}
         if bar.high >= plan.target:
             return {"exit_price": plan.target, "reason": "target", "minutes": held_min}
         last_close = bar.close
@@ -110,8 +125,11 @@ class ExitEvaluator:
         since = since or self.cfg.promotion.since or self.cfg.score.trade_since
         trades = self.ledger.closed_trades(since=since)
         max_hold = max(self.ecfg.holds_minutes or [self.cfg.exits.max_hold_minutes])
-        cells: dict[tuple[int, float], list[dict]] = {
-            (h, s): [] for h in self.ecfg.holds_minutes for s in self.ecfg.stops_pct
+        # The reward:risk axis defaults to whatever the live contract uses, so a
+        # config without `reward_risks` reproduces the old two-knob grid exactly.
+        rrs = self.ecfg.reward_risks or [self.cfg.exits.min_reward_risk]
+        cells: dict[tuple[int, float, float], list[dict]] = {
+            (h, s, r): [] for h in self.ecfg.holds_minutes for s in self.ecfg.stops_pct for r in rrs
         }
         actual: list[float] = []
         replayed = skipped = 0
@@ -132,8 +150,10 @@ class ExitEvaluator:
             hurdle = self.ledger.breakeven_move_pct(t["market"]) * 100
             actual.append(t["return_pct"] - hurdle)
             replayed += 1
-            for (hold, stop), members in cells.items():
-                policy = policy_for(self.cfg, venue, stop_pct=stop, hold_minutes=hold)
+            for (hold, stop, rr), members in cells.items():
+                policy = policy_for(
+                    self.cfg, venue, stop_pct=stop, hold_minutes=hold, reward_risk=rr
+                )
                 sim = simulate(window, t["entry_price"], opened, policy, hold)
                 members.append(
                     {
@@ -167,7 +187,8 @@ class ExitEvaluator:
             }
 
         grid = [
-            {"hold_minutes": h, "stop_pct": s, **summarise(rows)} for (h, s), rows in cells.items()
+            {"hold_minutes": h, "stop_pct": s, "reward_risk": r, **summarise(rows)}
+            for (h, s, r), rows in cells.items()
         ]
         result = {
             "generated_at": dt.datetime.now(dt.UTC).isoformat(),
@@ -185,6 +206,7 @@ class ExitEvaluator:
                 m: {
                     "stop_pct": self.cfg.exits.for_market(m).stop_loss_pct,
                     "hold_minutes": self.cfg.exits.for_market(m).max_hold_minutes,
+                    "reward_risk": self.cfg.exits.for_market(m).min_reward_risk,
                 }
                 for m in ("BINANCE", "KR", "US")
             },
@@ -207,17 +229,22 @@ def render(result: dict) -> str:
             f"median {result['actual']['median_net_pct']}% (n={result['actual']['n']})"
         ),
         (
-            f"{'hold':>8} {'stop':>6} {'n':>5} {'avg net%':>9} {'median%':>8} {'win':>5} "
-            f"{'n_fin':>5} {'avg fin%':>9}  exits"
+            f"{'hold':>8} {'stop':>6} {'r:r':>5} {'n':>5} {'avg net%':>9} {'median%':>8} "
+            f"{'win':>5} {'n_fin':>5} {'avg fin%':>9}  exits"
         ),
     ]
 
     def cell(v, width):
         return f"{v if v is not None else '-':>{width}}"
 
-    for g in result["grid"]:
+    # Sort so the axes read as axes; the finished column is what decides.
+    for g in sorted(
+        result["grid"],
+        key=lambda g: (g["hold_minutes"], g["stop_pct"], g.get("reward_risk") or 0),
+    ):
         lines.append(
-            f"{g['hold_minutes']:>8} {g['stop_pct']:>6.2%} {g['n']:>5} "
+            f"{g['hold_minutes']:>8} {g['stop_pct']:>6.2%} {cell(g.get('reward_risk'), 5)} "
+            f"{g['n']:>5} "
             f"{cell(g['avg_net_pct'], 9)} {cell(g['median_net_pct'], 8)} {cell(g['win_rate'], 5)} "
             f"{cell(g.get('n_finished'), 5)} {cell(g.get('avg_net_pct_finished'), 9)}  {g['exits']}"
         )

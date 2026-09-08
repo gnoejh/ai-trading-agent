@@ -27,6 +27,7 @@ import hmac
 import logging
 import time
 from dataclasses import dataclass
+from urllib.parse import urlencode
 
 import httpx
 
@@ -105,7 +106,19 @@ class BinanceClient:
             log.warning("clock drift vs Binance: %+d ms (corrected)", self._time_offset_ms)
         return self._time_offset_ms
 
-    def _sign(self, params: dict) -> dict:
+    def _sign(self, params: dict) -> str:
+        """Return the exact query string to transmit, signature appended.
+
+        The signature must cover the bytes Binance actually receives. Building
+        the signed string by hand (`f"{k}={v}"`) while handing the dict to the
+        HTTP client left the client to percent-encode it, so the two differed
+        for any value outside the unreserved set — every signed call naming the
+        testnet's `币安人生USDT` failed `-1022 Signature for this request is not
+        valid`, and its cost basis was unreadable for as long as it was held.
+        Signing `urlencode`'s own output and sending that string verbatim makes
+        the two identical by construction. ASCII symbols encode to themselves,
+        so nothing else on the wire changes.
+        """
         key, secret = self.secrets.credentials(testnet=self.bcfg.use_testnet)
         if not key or not secret:
             mode = "testnet" if self.bcfg.use_testnet else "mainnet"
@@ -113,9 +126,9 @@ class BinanceClient:
         params = dict(params)
         params["timestamp"] = int(time.time() * 1000) + self._time_offset_ms
         params.setdefault("recvWindow", self.bcfg.recv_window_ms)
-        query = "&".join(f"{k}={v}" for k, v in params.items())
-        params["signature"] = hmac.new(secret.encode(), query.encode(), hashlib.sha256).hexdigest()
-        return params
+        query = urlencode(params)
+        signature = hmac.new(secret.encode(), query.encode(), hashlib.sha256).hexdigest()
+        return f"{query}&signature={signature}"
 
     def _throttle(self) -> None:
         gap = self.bcfg.min_call_interval_s
@@ -139,14 +152,28 @@ class BinanceClient:
 
         key, _ = self.secrets.credentials(testnet=self.bcfg.use_testnet)
         headers = {"X-MBX-APIKEY": key} if ep.signed else {}
-        if ep.signed:
+        base_url = (self.trade_url if ep.signed else self.data_url) + ep.path
+
+        def build() -> tuple:
+            """(url, params) for one attempt. Signed calls re-sign every time.
+
+            A signature covers its own timestamp, so a signed request may not be
+            replayed after a wait: the 429 path slept `Retry-After` seconds and
+            resent the original query, which then fell outside `recvWindow` --
+            observed live as `-1021` immediately after "rate limited, sleeping
+            5s". Rebuilding here makes the retry a fresh request, not a replay.
+            """
+            if not ep.signed:
+                return base_url, params
             if self._time_offset_ms == 0:
                 self.sync_time()
-            params = self._sign(params)
+            # The signed query travels as raw bytes: letting the client re-encode
+            # it would break the signature it was computed over. See `_sign`.
+            return httpx.URL(base_url).copy_with(query=self._sign(params).encode()), None
 
-        url = (self.trade_url if ep.signed else self.data_url) + ep.path
+        url, sent = build()
         self._throttle()
-        r = self._http.request(ep.method, url, params=params, headers=headers)
+        r = self._http.request(ep.method, url, params=sent, headers=headers)
         self._last_call = time.monotonic()
 
         if r.status_code == 429 or r.status_code == 418:
@@ -154,8 +181,9 @@ class BinanceClient:
             retry_after = int(r.headers.get("Retry-After", self.bcfg.retry_backoff_s))
             log.warning("%s: rate limited, sleeping %ss", name, retry_after)
             time.sleep(retry_after)
+            url, sent = build()
             self._throttle()
-            r = self._http.request(ep.method, url, params=params, headers=headers)
+            r = self._http.request(ep.method, url, params=sent, headers=headers)
 
         if r.status_code >= 400:
             try:

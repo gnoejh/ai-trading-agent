@@ -736,6 +736,11 @@ class ExitEvalConfig(BaseModel):
 
     holds_minutes: list[int] = Field(default_factory=lambda: [1440, 2880, 4320, 5760])
     stops_pct: list[float] = Field(default_factory=lambda: [0.04, 0.08, 0.12])
+    # The TARGET dimension, added 2026-09-09. The grid varied stop and hold and
+    # therefore could not speak to `min_reward_risk` at all -- which was the one
+    # knob the model named, every cycle, as its reason for declining. A grid
+    # that cannot measure the contested knob cannot settle the argument.
+    reward_risks: list[float] = Field(default_factory=lambda: [0.75, 1.0, 1.5, 2.0])
     output: str = "data/exit_eval.json"
 
 

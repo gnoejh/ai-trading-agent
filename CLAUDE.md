@@ -17,6 +17,52 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 
 ## Development log (newest first)
 
+- **2026-09-09** — **The book had wedged itself, and the model was being asked the wrong
+  question.** Progress check found the gate at 2 of 4 (net P&L +6,589 quote, +2.836%/trip;
+  pairs 2 → **314** in five days — the virtual pick did exactly its job), but **zero model
+  entries in 100 decisions** since the allocator landed. Four fixes, each measured first.
+  (1) **Dust held 11 of 15 slots.** Every "managed position" was a stop-out remainder worth
+  $2.49 in total (PROMUSDT 0.34, AMZNBUSDT 4.4e-16). `_managed_symbols` counted
+  `cost_basis > 0`; the supervisor's `_order_dust` correctly refused to adopt them, so
+  `exit_policy_BINANCE.json` was `{"plans": {}}`. The two definitions of "held" disagreed and
+  the slot side lost — monotone, one slot per stop-out, unfreeable because no order is small
+  enough. Same class as the 08-30 seed-balance bug that `cost_basis > 0` was itself the fix
+  for; dust keeps a cost basis, so it leaked back in. "Managed" is now what the supervisor
+  manages: paid for AND large enough to exit, with an unknown price deliberately NOT read as
+  dust so the two seams agree. Live effect: **4 → 15 free slots**. (2) **The prompt described a
+  contract that does not exist.** `trade_rules` listed stop / target / time and never mentioned
+  the TRAIL, so the model judged every candidate as a "+17.8% before −8%" barrier bet and
+  declined 100 cycles running, in so many words. The exit grid — extended here with a
+  `reward_risks` axis, because a grid varying only stop and hold could never speak to the one
+  knob the model kept citing — says the barrier framing is simply false. Trail exits are now
+  counted separately from stop-outs, and at the live contract 44 resolved trips end
+  **trail 31, time 9, target 3, hard stop 1**. The trail arms at a **1.8%** gain, not 17.8%:
+  the model was estimating a 7% event (its 0.37 was well calibrated — for the wrong event) when
+  the real question is "does it run up at all". `trade_rules` now carries the trail and the
+  measured exit mix. **`min_reward_risk` deliberately NOT changed**: the new axis says 2.0 is
+  the best cell at the live 8%/72h (+2.15% finished vs +1.77% at 0.75) — lowering it fires the
+  target more often for less money. The knob the model blamed was not the defect; the
+  description of it was. (3) **The 0.45 confidence floor left the prompt.** In code it only ever
+  triggered escalation — it has never rejected a trade — but `trade_rules` advertised it as a
+  threshold and the model dutifully self-censored against it, on a signal the calibration now
+  shows ANTI-predicts across n=238 (0.00–0.45 → 27% hit / +0.60%; 0.45–0.55 → 4% / −0.58%;
+  0.55–0.65 → 0% / −3.11%). Escalation is unchanged; the number is simply no longer advertised
+  as a gate. (4) **Signed calls broke on non-ASCII symbols.** `_sign` signed a hand-joined
+  `k=v` string while httpx transmitted a percent-encoded one, so every signed call naming the
+  testnet's `币安人生USDT` failed `-1022` and its cost basis was unreadable for as long as it
+  was held; the 429 path then replayed a stale signature after sleeping, giving `-1021`
+  (both observed live). The signature now covers `urlencode`'s own output, that string is sent
+  verbatim, and a rate-limited retry re-signs instead of replaying. **First effect**: the next
+  live decide raised stated confidence to 0.44 (mean was 0.366, epoch max 0.520) and declined
+  on a market judgement — "overextended, taker-buy share below parity" — with no mention of the
+  target or the floor. **Found and NOT acted on, for the owner**: the screen's
+  `min_change_pct: 0.15` confines every menu to the 15–40% band, which the unbiased universe
+  sweep measures as the WORST band it has (n=16, avg **−5.24%**, clear 0.188) against <0% at
+  +3.09%/0.604 and 0..15% at +1.86%/0.482 — the model is handed five names from the one band
+  the record condemns, is told so in its own `measured_record`, and correctly declines. KR/US
+  backtests agree (<0% and 0..15% carry the best clear rates), but BINANCE's own decisive
+  bucket is n=16 — too thin to move a strategy gate on, and this is the owner's gradient step.
+  It is the next one. 270 tests.
 - **2026-09-07** — **The model's share of the book is now EARNED AUTOMATICALLY**
   (owner: "the model's portion is supposed to increase as profit gains, up to 85%; the
   mechanism must be automatic... the system is a learning system as a whole, context-RL,
@@ -282,7 +328,7 @@ that was mostly committed cash, and the daily-loss cap reads the same number.
 
 ```
 uv sync                                   # create/refresh .venv from uv.lock
-uv run pytest                             # 266 tests, no network (httpx MockTransport)
+uv run pytest                             # 270 tests, no network (httpx MockTransport)
 uv run python scripts/wire_test.py        # dry run; --live sends ONE ~$6 order
 uv run pytest tests/test_risk_gate.py -k concentration
 uv run ruff check . --fix && uv run ruff format .

@@ -459,3 +459,48 @@ def test_order_below_min_notional_is_caught_before_the_round_trip(cfg, secrets):
     with pytest.raises(ValueError, match="minNotional"):
         ex.execute(_verdict("BUY", 0.001, price=1.0))  # $0.001 notional
     assert not [c for c in calls if c.url.path == "/api/v3/order"]
+
+
+def test_signature_covers_the_bytes_actually_sent(cfg, secrets):
+    """The signed string must be the transmitted query, byte for byte.
+
+    Signing a hand-joined `k=v` string while handing the dict to httpx let the
+    client percent-encode what the signature did not cover, so every signed
+    call naming a non-ASCII symbol failed -1022 (live: the testnet's
+    `币安人生USDT`, whose cost basis was unreadable for as long as it was held).
+    """
+    import hashlib
+    import hmac
+    from urllib.parse import parse_qsl
+
+    c, calls = make(cfg, secrets, ok({"rows": []}))
+    c.call("my_trades", {"symbol": "币安人生USDT"})
+
+    raw = calls[-1].url.query.decode()  # exactly what went on the wire
+    body, _, signature = raw.rpartition("&signature=")
+    expected = hmac.new(b"test-secret", body.encode(), hashlib.sha256).hexdigest()
+    assert signature == expected
+    # ...and the receiver still decodes the symbol it was asked for.
+    assert dict(parse_qsl(raw))["symbol"] == "币安人生USDT"
+
+
+def test_rate_limited_signed_call_is_resigned_not_replayed(cfg, secrets):
+    """A signature covers its own timestamp, so a retry after a sleep must re-sign.
+
+    The 429 path used to resend the original query; after `Retry-After` seconds
+    it fell outside `recvWindow` and Binance answered -1021 (observed live
+    right after "rate limited, sleeping 5s").
+    """
+    cfg.broker.binance.retry_backoff_s = 0
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.query.decode())
+        if len(seen) == 1:
+            return httpx.Response(429, headers={"Retry-After": "0"}, json={})
+        return httpx.Response(200, json={"rows": []})
+
+    c, _ = make(cfg, secrets, handler)
+    c.call("my_trades", {"symbol": "BTCUSDT"})
+    assert len(seen) == 2
+    assert seen[0] != seen[1]  # re-signed, not replayed
