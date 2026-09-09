@@ -27,12 +27,51 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
   KR is currently the worst sleeve by a distance (model −4.21% vs random −2.98%, n=43, and a
   0.14 clear rate against 0.52 on Binance), so it is the sleeve most likely to need a decision
   rather than more time.
-- **The screen's `min_change_pct` gate is the open strategy question** — see the 2026-09-09
-  entry. Blocked on evidence, not on opinion: the live sweep and the backfill disagree in sign
-  on the only band the screen admits.
+- **Watch what the new screen band buys.** Settled and shipped 2026-09-09 (min/max change
+  −0.10/0.15), so the system now buys liquid majors on flow rather than microcap breakouts.
+  The exit contract was tuned on the OLD population and has NOT been re-measured against this
+  one: re-run `uv run python -m trading.agent.exit_eval` once these trips close, and revert
+  with `min_change_pct: 0.15` / `max_change_pct: 0.60` if the fills disappoint.
 
 ## Development log (newest first)
 
+- **2026-09-09 (later)** — **The screen's momentum gate inverted, on a sample large enough to
+  trust.** A 180-day `backfill.py` pass (10,338 observations, 232 symbols) settled the band the
+  earlier entry left open, and it settled it against the first reading: at n=48 the contested
+  15–40% band scored +15.49% avg / clear 0.500 and looked fine; at **n=171** it reads +7.03%
+  avg but **−4.03% median with the worst clear rate of the three** — a lottery, and exactly the
+  trap the 09-03 medians and clear rates were added to catch. Read on robust statistics both
+  sources now agree:
+
+      band       universe clear   backtest clear   backtest median
+      <0%            0.593            0.425            -0.31%
+      0..15%         0.470            0.422            -0.34%
+      15..40%        0.200            0.404            -4.03%
+
+  So `min_change_pct: 0.15` / `max_change_pct: 0.60` becomes **-0.10 / 0.15**: the gate is now
+  permissive over the two bands the record favours and the FLOW ranker — the one signal this
+  repo ever measured an edge on (+1.05% spread, vs momentum's −0.06%) — does the selecting
+  inside them. The old gate was momentum ("20% beat 10% in every backtest window"), i.e. the
+  screen ranked by flow while gating by the thing 2026-08-10 retired as noise. **Live effect,
+  measured**: the menu goes **5 candidates → 25**, extended 18–26% gainers give way to liquid
+  majors (BTC/ETH/SOL/AVAX/XRP), and taker flow reads 0.485–0.596 — mostly ABOVE parity, where
+  every candidate on the old menu sat below it. That was the model's own stated objection,
+  verbatim, in every recent decline. **First decision on the new menu**: confidence **0.48**,
+  the epoch's highest (0.366 mean; the fixes moved it 0.366 → 0.44 → 0.48), still declining but
+  for a THIRD reason — no longer the contract, no longer the menu, but its own
+  `your_calibration` row: "this model's calibrated outcomes in this venue have run below its
+  stated probabilities". That is the context-RL loop working as designed, and it is
+  self-limiting in a way worth remembering: **that calibration was earned in the old regime**,
+  on picks drawn from the band just removed, so the model is discounting itself on evidence
+  from a menu that no longer exists. It clears as new picks resolve at 72h (~09-12); until
+  then, caution from the model is stale evidence, not a signal. Slots read 6 of 15 — the random
+  arm has filled 9 since the dust fix, so closed trips (26/100) will finally move. **Not
+  measured, and the open risk**: the exit contract was tuned on the OLD population, and nothing
+  yet says 8%/72h/trail-at-1.8% is right for liquid majors instead of microcap breakouts —
+  re-run `exit_eval` once these trips close. Revert is one line: `min_change_pct: 0.15` /
+  `max_change_pct: 0.60`, marked in the config. Also fixed a flaky test added the same day: the
+  429 re-sign check compared two query strings, which a millisecond-resolution timestamp can
+  legitimately make identical; it counts signings now. 270 tests.
 - **2026-09-09** — **The book had wedged itself, and the model was being asked the wrong
   question.** Progress check found the gate at 2 of 4 (net P&L +6,589 quote, +2.836%/trip;
   pairs 2 → **314** in five days — the virtual pick did exactly its job), but **zero model
@@ -75,19 +114,11 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
   0.43–0.44 (mean was 0.366, epoch max 0.520) while declining on a MARKET judgement
   ("extended 18-26% with weak taker-buy flow"), with no mention of the target or the floor in
   any reply since. The contract complaint that ran for 100 consecutive decisions is gone.
-  **Found, and deliberately NOT acted on**: the model is now unblocked mechanically but still
-  starved by the screen — `min_change_pct: 0.15` confines every menu to the 15–40% band, and
-  the record DISAGREES WITH ITSELF about that band. The live universe sweep calls it the worst
-  it has (n=16, avg −5.24%, clear 0.188, against <0% at +3.09%/0.604 and 0..15% at
-  +1.86%/0.482); the 60-day backfill calls it fine (n=48, avg +15.49%, clear 0.500). Two thin
-  samples, opposite signs — no basis for changing what the system buys with real money, however
-  well the story fits. Note the gate is also unsupported in its own right: it is a pure
-  MOMENTUM filter ("20% beat 10% in every backtest window"), and the 2026-08-10 research
-  retired momentum as a signal (−0.06% spread) while keeping flow (+1.05%) — the screen ranks
-  by flow but still gates by the thing that measured nothing. The way to settle it is a longer
-  `backfill.py` run (historical observations resolve immediately, so it costs neither money nor
-  tokens), not a week of waiting and not a guess. That is the next gradient step, and it is the
-  owner's. 270 tests.
+  **The model was then still starved by the screen** — `min_change_pct: 0.15` confined every
+  menu to the 15–40% band, and the record first appeared to DISAGREE WITH ITSELF about it: the
+  live universe sweep called it the worst band it has (n=16, −5.24%, clear 0.188) while the
+  60-day backfill called it fine (n=48, +15.49%, clear 0.500). Settled by evidence rather than
+  by waiting — see the next entry. 270 tests.
 - **2026-09-07** — **The model's share of the book is now EARNED AUTOMATICALLY**
   (owner: "the model's portion is supposed to increase as profit gains, up to 85%; the
   mechanism must be automatic... the system is a learning system as a whole, context-RL,
