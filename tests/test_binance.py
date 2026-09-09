@@ -501,6 +501,19 @@ def test_rate_limited_signed_call_is_resigned_not_replayed(cfg, secrets):
         return httpx.Response(200, json={"rows": []})
 
     c, _ = make(cfg, secrets, handler)
+    # Count signings rather than comparing the two query strings: the timestamp
+    # has millisecond resolution, so a fast retry can legitimately reproduce the
+    # same string byte for byte. What must hold is that the retry went through
+    # `_sign` again instead of reusing the first attempt's query.
+    signings = 0
+    original = c._sign
+
+    def counting_sign(params):
+        nonlocal signings
+        signings += 1
+        return original(params)
+
+    c._sign = counting_sign
     c.call("my_trades", {"symbol": "BTCUSDT"})
     assert len(seen) == 2
-    assert seen[0] != seen[1]  # re-signed, not replayed
+    assert signings == 2, "the 429 retry must re-sign, not replay the first query"

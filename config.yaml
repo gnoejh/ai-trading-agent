@@ -594,9 +594,26 @@ agent:
     # Binance lists microcaps whose entire daily turnover is smaller than one
     # full-balance order; entering those moves the price against us.
     min_quote_volume: 500000      # USDT rolling 24h, absolute floor
-    # Only names already moving hard qualify. 20% beat 10% in every backtest window.
-    min_change_pct: 0.15
-    max_change_pct: 0.60          # above this the move is spent, not startingm
+    # 2026-09-09: INVERTED, on the measured record. This gate was pure MOMENTUM
+    # ("20% beat 10% in every backtest window") -- the signal the 2026-08-10
+    # research retired as noise (-0.06% spread) while keeping flow (+1.05%).
+    # It admitted ONLY the 15-40% band, and both sources now condemn that band
+    # once read on ROBUST statistics rather than the mean (n=171 backfill +
+    # n=20 live sweep):
+    #     band      universe clear   backtest clear   backtest median
+    #     <0%           0.593            0.425            -0.31%
+    #     0..15%        0.470            0.422            -0.34%
+    #     15..40%       0.200            0.404            -4.03%
+    # The backtest's apparent +7.03% mean in 15-40% is a lottery: its median is
+    # -4.03% and its clear rate the worst of the three. That is exactly the
+    # trap the 09-03 medians and clear rates were added to catch, and the whole
+    # reason the model declined 100 straight cycles -- it was handed five names
+    # from the one band the record condemns and said so every time.
+    # The gate is now permissive over the two bands the record favours and the
+    # FLOW ranker (the measured edge) does the selecting inside them.
+    # To revert: min 0.15 / max 0.60.
+    min_change_pct: -0.10
+    max_change_pct: 0.15
     # ...and the real floor scales with the order: an entry must stay under
     # 1/200th of the thinnest allowed name's daily turnover. Changing the balance
     # therefore moves the liquidity bar automatically.
