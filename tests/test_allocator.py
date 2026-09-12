@@ -40,13 +40,22 @@ def cfg() -> AppConfig:
 
 
 def _metrics(**over) -> dict:
-    """Fully-earned metrics; override one field per test."""
+    """Fully-earned metrics; override one field per test.
+
+    The profit driver reads the MODEL's own sleeve (`model_*`), never the
+    book's pooled figures — see `test_the_dices_profit_buys_the_model_nothing`.
+    The pooled keys are supplied here deliberately, set to values that would
+    reach the ceiling if anything read them.
+    """
     base = {
-        "n_trips": 200,
+        "model_n_trips": 200,
+        "model_avg_net_pct": 1.0,  # 2x target -> profit score 1.0
         "pair_n": 100,
-        "avg_net_pct": 1.0,  # 2x target -> profit score 1.0
         "edge_lower": 4.0,  # 2x target -> edge score 1.0
         "ready_buckets": 60,
+        # The book's, not the model's. Nothing may read these.
+        "n_trips": 200,
+        "avg_net_pct": 1.0,
     }
     base.update(over)
     return base
@@ -67,7 +76,9 @@ def test_epsilon_never_reaches_zero(cfg):
     Without a live random arm, model-vs-chance stops being measurable — the
     standing invariant, enforced here in code rather than in a comment.
     """
-    a = plan(_metrics(avg_net_pct=1e9, edge_lower=1e9, n_trips=10**9, pair_n=10**9), cfg)
+    a = plan(
+        _metrics(model_avg_net_pct=1e9, edge_lower=1e9, model_n_trips=10**9, pair_n=10**9), cfg
+    )
     assert a.model_share <= cfg.allocator.max_share
     assert a.explore_entry_pct >= 1.0 - cfg.allocator.max_share > 0
     assert a.explore_max_positions >= cfg.allocator.min_explore_positions >= 1
@@ -92,13 +103,13 @@ def test_profit_alone_does_not_buy_the_book(cfg):
 
 def test_edge_alone_does_not_buy_the_book(cfg):
     """Symmetrically: beating chance while making no money earns nothing."""
-    a = plan(_metrics(avg_net_pct=0.0), cfg)
+    a = plan(_metrics(model_avg_net_pct=0.0), cfg)
     assert a.model_share == pytest.approx(cfg.allocator.base_share)
 
 
 def test_thin_evidence_scales_the_ramp(cfg):
     """Confidence gates quality: a lucky handful of trips cannot hand over the book."""
-    a = plan(_metrics(n_trips=10), cfg)  # 10/100 -> confidence 0.10
+    a = plan(_metrics(model_n_trips=10), cfg)  # 10/100 -> confidence 0.10
     assert a.confidence == pytest.approx(0.10)
     assert a.model_share == pytest.approx(0.50 + (0.85 - 0.50) * 0.10)
 
@@ -117,16 +128,54 @@ def test_rag_readiness_is_part_of_the_evidence(cfg):
 
 def test_losing_money_gives_the_book_back(cfg):
     """Downward needs no significance test — only realised loss."""
-    a = plan(_metrics(avg_net_pct=-1.0), cfg)
+    a = plan(_metrics(model_avg_net_pct=-1.0), cfg)
     assert a.penalty == pytest.approx(1.0)
     assert a.model_share < cfg.allocator.base_share
     assert a.model_share >= cfg.allocator.min_share
 
 
+def test_the_dices_profit_buys_the_model_nothing(cfg):
+    """The 2026-09-13 defect, pinned.
+
+    The gate's profit criteria are pooled over every closed trip, so they read
+    green whenever the RANDOM arm is earning. For six days that pooled figure
+    (+0.434%/trip) held the model at half the book while its own trips ran
+    -0.42%/trip and the cooling branch below never fired once. A profitable
+    book must not buy a losing model one basis point of capital.
+    """
+    a = plan(_metrics(model_avg_net_pct=-0.42, model_n_trips=33, avg_net_pct=0.434), cfg)
+    assert a.profit_score == 0.0
+    assert a.model_share < cfg.allocator.base_share
+    assert "giving the book back to the dice" in " ".join(a.reasons)
+
+
+def test_confidence_counts_the_models_own_trips(cfg):
+    """A move driven by the model's P&L is scaled by the model's sample.
+
+    Using the book's trip count to license a decision about the model's picks
+    is the same category error one level down: 83 closed trips are not 83
+    pieces of evidence about the model when it opened 33 of them.
+    """
+    a = plan(_metrics(model_n_trips=33, n_trips=10**6), cfg)
+    assert a.confidence == pytest.approx(0.33, abs=0.01)
+
+
+def test_a_losing_model_cools_further_as_its_sample_grows(cfg):
+    """The response strengthens with evidence rather than fading.
+
+    Confidence scales the penalty, so a model that keeps losing gets colder the
+    longer it does it — and cannot sit at a mild haircut forever.
+    """
+    thin = plan(_metrics(model_avg_net_pct=-0.42, model_n_trips=33), cfg)
+    thick = plan(_metrics(model_avg_net_pct=-0.42, model_n_trips=200), cfg)
+    assert thick.model_share < thin.model_share
+    assert thick.model_share >= cfg.allocator.min_share
+
+
 def test_the_ramp_is_not_a_ratchet(cfg):
     """Unlike a stop, this must fall back when the model stops earning."""
     high = plan(_metrics(), cfg)
-    then = plan(_metrics(avg_net_pct=-1.0), cfg, previous_share=high.model_share)
+    then = plan(_metrics(model_avg_net_pct=-1.0), cfg, previous_share=high.model_share)
     assert then.model_share < high.model_share
 
 

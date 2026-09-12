@@ -118,9 +118,17 @@ def plan(
     a = cfg.allocator
     p = cfg.promotion
 
-    n_trips = int(metrics.get("n_trips") or 0)
+    # THE MODEL'S OWN SLEEVE, NOT THE BOOK'S (2026-09-13). Both the profit
+    # driver and its confidence read the trips the MODEL opened. Reading the
+    # pooled figures let the random arm's profit buy the model capital: on
+    # 2026-09-13 the book ran +0.434%/trip while the model's own trips ran
+    # -0.42%/trip, so this function scored profit 0.87 and held the model at
+    # half the book while the branch built to cool it never fired once. The
+    # owner's instruction was that the model's share rise as profit gains; the
+    # profit that earns it has to be the model's.
+    n_trips = int(metrics.get("model_n_trips") or 0)
     pair_n = int(metrics.get("pair_n") or 0)
-    avg_net_pct = metrics.get("avg_net_pct")
+    avg_net_pct = metrics.get("model_avg_net_pct")
     edge_lower = metrics.get("edge_lower")
     ready_buckets = int(metrics.get("ready_buckets") or 0)
 
@@ -166,14 +174,15 @@ def plan(
     if penalty > 0:
         target = base - (base - a.min_share) * penalty * confidence
         reasons.append(
-            f"avg net {avg_net_pct:+.3f}%/trip is negative → giving the book back to the dice"
+            f"the model's own trips run {avg_net_pct:+.3f}%/trip (n={n_trips})"
+            " → giving the book back to the dice"
         )
     else:
         target = base + (a.max_share - base) * strength
         if strength <= 0:
             if confidence < 1.0:
                 reasons.append(
-                    f"evidence still thin (trips {n_trips}/{p.min_closed_trades}, "
+                    f"evidence still thin (model trips {n_trips}/{p.min_closed_trades}, "
                     f"pairs {pair_n}/{p.min_shadow_pairs}, "
                     f"RAG buckets {ready_buckets}/{a.min_ready_buckets})"
                 )

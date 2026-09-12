@@ -43,6 +43,34 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-13 (later)** — **The allocator was reading the wrong thermometer, and the branch
+  built to cool the model had never once fired.** Owner: "better idea?" — better than making
+  per-sleeve P&L a fifth gate criterion, which would change nothing today because the shadow/CI
+  criterion already blocks. This does change something, hourly: `plan()` took `avg_net_pct`
+  straight from `promotion.evaluate()`, which is **pooled over every closed trip**. So the dice's
+  +1.47%/trip scored `profit 0.87` and held the model at **half the book** while the model's own
+  trips ran **−0.42%/trip** — and [allocator.py:169](trading/agent/allocator.py#L169), the branch
+  whose message reads *"giving the book back to the dice"*, sat unreached for six days. The
+  annealing schedule was pinned at `base_share` because the temperature was measured on the wrong
+  sleeve. Fixed by pointing BOTH the profit driver and its confidence at the model's own arm:
+  `promotion.evaluate` now carries `model_n_trips` / `model_avg_net_pct` from `pnl.evaluate`
+  (single source preserved — the allocator's docstring invariant is that the hourly decision and
+  the outer verdict can never disagree about what the model earned), and `plan()` reads those.
+  **Percentages only**, deliberately: a net-%/trip figure is unit-free and may be pooled across
+  books where money may not, so `pnl.evaluate` grew an `arms` section carrying n and
+  `avg_net_pct` and no currency total at all. Confidence counts the model's trips too (33, not
+  the book's 83) — using the book's sample to license a decision about the model's picks is the
+  same category error one level down. **Live effect, immediate**: `profit 0.87 → 0.00`,
+  `confidence 0.83 → 0.33`, and the share steps **50% → 45%** this hour, converging on ~40% and
+  falling further as the model's sample grows (confidence scales the penalty, so a model that
+  keeps losing gets colder the longer it does it — at n=100 the same −0.42%/trip lands at ~21%).
+  The arm earning +1.47%/trip gets the book back. **Why this does not blind the gate**: the
+  paired corpus that could redeem the model comes from `virtual_pick`, journalled on every decide
+  reply whether or not the model trades — it costs no slot and no dollar, so cooling the model
+  slows its chance of proving itself not at all. That is the same independence argument the
+  allocator already makes about the shadow corpus, and it is the first thing to re-check if
+  either is moved. Three regression tests pin it, the one that matters being
+  `test_the_dices_profit_buys_the_model_nothing`. 283 tests.
 - **2026-09-13** — **The profit was real; it was just not the model's.** A status review asked
   the gate and it read **3 of 5** — trips 83/100, net P&L **+6,195 quote**, **+0.434%/trip**,
   pairs 638 — with the shadow criterion no longer merely unmet but **measurably inverted**:

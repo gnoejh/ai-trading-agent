@@ -112,8 +112,22 @@ def evaluate(cfg: AppConfig | None = None) -> dict:
     ready_buckets = sum(
         1 for b in buckets if isinstance(b, dict) and int(b.get("n") or 0) >= cfg.score.min_bucket_n
     )
+    # The MODEL's own sleeve, not the book's. The two profit figures above are
+    # pooled over every closed trip, so they read green whenever the random arm
+    # is earning — on 2026-09-13 they did, at +0.434%/trip, while the model's
+    # own trips ran -0.42%/trip. The allocator sets the model's share of the
+    # book from these metrics, so handing it the pooled number let the dice's
+    # profit buy the model capital. Percentages only: `avg_net_pct` is
+    # unit-free and may be pooled across books; money may not.
+    from trading.agent.pnl import MODEL
+    from trading.agent.pnl import evaluate as evaluate_pnl
+
+    model_arm = evaluate_pnl(cfg, since=since).get("arms", {}).get(MODEL, {})
+
     metrics = {
         "n_trips": n,
+        "model_n_trips": int(model_arm.get("n") or 0),
+        "model_avg_net_pct": model_arm.get("avg_net_pct"),
         "gross": gross,
         "fees": fees,
         "net": net,
