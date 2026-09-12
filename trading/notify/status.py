@@ -257,4 +257,13 @@ class BinanceStatusReporter:
             lines.append("")
             lines.append(render_allocation(self.cfg))
 
+            # And WHO earned it. The gate's profit criteria are pooled over
+            # every closed trip, so they can read green on money the random
+            # arm made; this is the same P&L split by sleeve so that can never
+            # be read as the model's (owner, 2026-09-13).
+            from trading.agent.pnl import render as render_pnl
+
+            lines.append("")
+            lines.append(render_pnl(self.cfg))
+
         return "\n".join(lines)

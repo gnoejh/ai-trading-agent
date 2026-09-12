@@ -692,6 +692,26 @@ class PromotionConfig(BaseModel):
     require_ci: bool = True
 
 
+class PnlConfig(BaseModel):
+    """Daily realised P&L per sleeve (`trading/agent/pnl.py`).
+
+    Exists because the gate's profit criteria are pooled over every closed
+    trip, so they can read green on money the random arm earned -- they did on
+    2026-09-13. Owner instruction the same day: daily P&L for each sleeve,
+    independently. Nothing here is ever summed across a sleeve.
+    """
+
+    # A closed trip is credited to the journalled entry of the same symbol
+    # nearest in time within this window. The ledger records a fill when the
+    # broker confirms it and the journal records the intent that caused it, so
+    # the two timestamps differ by a round trip to the venue, not by minutes.
+    # Wide enough to absorb a slow fill; far below the gap between two entries
+    # of the same symbol.
+    match_tolerance_s: float = 900.0
+    # Daily rows rendered per sleeve; 0 = every day in the epoch.
+    days: int = 14
+
+
 class FitConfig(BaseModel):
     """The frozen fitted prior — a logistic model over observation features.
 
@@ -761,6 +781,7 @@ class AppConfig(BaseModel):
     score: ScoreConfig = Field(default_factory=ScoreConfig)
     allocator: AllocatorConfig = Field(default_factory=AllocatorConfig)
     promotion: PromotionConfig = Field(default_factory=PromotionConfig)
+    pnl: PnlConfig = Field(default_factory=PnlConfig)
     fit: FitConfig = Field(default_factory=FitConfig)
     exit_eval: ExitEvalConfig = Field(default_factory=ExitEvalConfig)
 

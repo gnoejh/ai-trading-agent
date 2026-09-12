@@ -3,7 +3,7 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 It doubles as the development record: keep the log below current when landing meaningful changes.
 
-## The goal (owner, 2026-09-01)
+## The goal (owner, 2026-09-01; reaffirmed as a prohibition 2026-09-13)
 
 **Switch to Binance mainnet and earn profit there. Promote when measured profit is positive;
 stay on testnet and keep learning otherwise.** Every design decision serves that sentence. It is
@@ -14,6 +14,14 @@ shadow. The gate measures; the OWNER flips `use_testnet` — after `preflight` a
 `wire_test.py --live` (~$6). Anything benign only on testnet is a mainnet bug: the exit over-sell
 of unmanaged balance was exactly that, and exits are now capped at the units this system bought
 (`cost_position`; the balance stays the upper bound).
+
+**Owner, 2026-09-13 — “Until positive profit gains, never switch to mainnet.”** Stated after
+the status review below found the BOOK profitable while the MODEL measured worse than chance.
+This is a standing prohibition, not a restatement: do not propose, recommend or prepare the flip
+while the model's edge is unproven — render the gate reading and stop. Note the gap it closes by
+hand: the gate's two profit criteria are computed over ALL closed round trips with no arm
+attribution, so they can read green on money the RANDOM arm earned (they do today). Only the
+shadow/CI criterion currently separates that from a green gate.
 
 ## Open owner actions (things no code can do)
 
@@ -35,6 +43,46 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-13** — **The profit was real; it was just not the model's.** A status review asked
+  the gate and it read **3 of 5** — trips 83/100, net P&L **+6,195 quote**, **+0.434%/trip**,
+  pairs 638 — with the shadow criterion no longer merely unmet but **measurably inverted**:
+  model −4.46% vs random −2.33%, **95% CI −3.58..−0.57**, so the interval EXCLUDES zero. The
+  model is worse than chance on n=638, and it is not the falling tape doing it: excess return
+  against each book's own benchmark over the identical window is **−4.25% for the model vs
+  −1.29% for its shadow** (n=585), with a worse hurdle clear rate (0.299 vs 0.338), more
+  stop-outs (60% vs 54%) and fewer targets (15% vs 20%). Every axis, same direction.
+  **Owner, reading that: "Until positive profit gains, never switch to mainnet."** Recorded as a
+  standing prohibition in *The goal* above. Then the sharper question — the gate's two profit
+  criteria are pooled over EVERY closed trip with no attribution, so they were green on money
+  the model did not earn. Owner: **"daily PnL for each sleeve independantly."**
+  New `trading/agent/pnl.py` (`uv run python -m trading.agent.pnl`, rendered in `/status` under
+  the gate). A sleeve is a book crossed with the arm that opened the position; attribution is a
+  LOOKUP, not an inference, because both arms announce their entries (`order` rows carry the
+  model's intent, `explore` rows the dice's), matched nearest-in-time within
+  `pnl.match_tolerance_s`. Three decisions worth keeping: events are **not consumed** on match,
+  since FIFO splits one buy across several sells and one order legitimately fathers several
+  trips; an unmatched trip is **`legacy`**, never folded into an arm, so the failure mode is
+  under-claiming; and **nothing is ever summed across a sleeve**, because `pnl_quote` is in the
+  venue's own quote currency and adding CRYPTO (USDT) to KR (KRW) is the 2026-09-01 `/costs`
+  defect all over again. **The first reading, and the point of the exercise** — all 83 trips
+  attributed, the three sleeves summing to exactly the gate's +6,195:
+
+      CRYPTO · model     n=33   net   +351.11 USD   −0.42%/trip
+      CRYPTO · random    n=45   net +5,957.49 USD   +1.47%/trip
+      BSTOCKS · random   n= 5   net   −113.61 USD   −3.21%/trip
+
+  The model took **40% of the trips and earned 5.7% of the money**, and is NEGATIVE per trip
+  while the dice are positive. Note the two figures disagreeing in sign on the model sleeve
+  (+351 total, −0.42%/trip): a few large notionals carry it, which is exactly why the gate keeps
+  both a money criterion and a per-trip criterion — and why neither alone is a verdict.
+  **Deliberately NOT done: this is not yet a gate criterion.** The owner asked for the
+  measurement; turning it into a fifth green/red line is the next gradient step and is the
+  owner's call, not a side effect of building the report. Today it would change nothing anyway —
+  the shadow/CI criterion already blocks. Also re-ran `exit_eval` (the item the 09-09 entry left
+  open): at the live 8%/72h/rr-2.0 the contract reads +0.484% all / **+2.509% finished**, and the
+  best cell is a WIDER stop (48h/12%/rr-2.0, +2.869% finished) — but `n_finished` is 45 in every
+  cell and this repo's own 09-04 rule is to decide from finished columns only in the hundreds,
+  so **exits unchanged**. 280 tests.
 - **2026-09-09 (later)** — **The screen's momentum gate inverted, on a sample large enough to
   trust.** A 180-day `backfill.py` pass (10,338 observations, 232 symbols) settled the band the
   earlier entry left open, and it settled it against the first reading: at n=48 the contested
@@ -399,6 +447,7 @@ uv run python -m trading.agent.fit        # refit the frozen prior (writes data/
 uv run python -m trading.agent.exit_eval  # exit counterfactual grid over closed trips
 uv run python -m trading.agent.promotion  # the mainnet gate, with the paired CI
 uv run python -m trading.agent.allocator  # the model's earned share of the book
+uv run python -m trading.agent.pnl        # daily realised P&L per sleeve (never pooled)
 ```
 
 Tests must stay hermetic: fixtures pin `use_testnet`, `allow_orders` and the risk limits rather than

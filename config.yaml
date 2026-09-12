@@ -417,6 +417,17 @@ promotion:
   # is luck not yet ruled out, and mainnet is real money.
   require_ci: true
 
+# Daily realised P&L per sleeve (`python -m trading.agent.pnl`, rendered in
+# /status under the gate). The gate's profit criteria are pooled over every
+# closed trip and so can read green on money the RANDOM arm earned -- they did
+# on 2026-09-13, when the model sleeve ran -0.42%/trip against random's +1.47%.
+# Owner the same day: daily PnL for each sleeve, independently. Nothing in this
+# report is ever summed across a sleeve -- quote currencies differ between
+# books, and pooling is the defect it exists to remove.
+pnl:
+  match_tolerance_s: 900   # trip entry -> journalled entry, nearest within this
+  days: 14                 # daily rows rendered per sleeve; 0 = the whole epoch
+
 fit:
   # The FROZEN fitted prior: a logistic model over observation features
   # (log turnover, change, |change|, flow share, book), fit OFFLINE on the
