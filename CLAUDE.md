@@ -43,6 +43,32 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-13 (last)** — **The fitted prior was refit and NOT shipped: on recent data it does
+  not beat a constant.** Named the previous entry as the next step if the model's edge stayed
+  negative — the artifact was from 09-03, trained on the pre-inversion population, so a refit
+  looked overdue on its own. `uv run python -m trading.agent.fit --dry-run` on 10,000 more
+  resolved rows (n_train 33,793 → 43,793; `shadow` joins the source list now that those
+  observations resolve) reads **worse**, and worse in the way that matters:
+
+      artifact      holdout base   null log-loss   model log-loss   AUC
+      09-03 (live)      0.4596         0.6899          0.6888       0.575
+      09-13 (refit)     0.4940         0.6931          0.6995       0.562
+
+  The live artifact beats a CONSTANT prediction by 0.0011 of log loss — noise, not a model. The
+  refit **loses to a constant by 0.0064**. Since the holdout is the LAST fifth by time, the refit's
+  holdout is the recent regime, so the sharpest reading is not "the refit is worse" but **on
+  recent data the prior has no edge at all**. Artifact left untouched (`--dry-run` writes
+  nothing); `screen.rank_by` stays on `flow`, which is the one signal this repo ever measured an
+  edge on. **This retracts a recommendation made the same day**: that the frozen prior was the
+  obvious replacement selector because "a ridge logistic over flow and turnover is far likelier
+  to beat random than an LLM judging barrier bets". Measured, it is not — it is near-chance too,
+  so replacing one near-chance selector with another buys nothing. **Checked and found sound, so
+  NOT changed**: `p_clear` reaches the prompt with its own provenance —
+  `ScorerModel.describe()` is in the decide payload ([loop.py:383](trading/agent/loop.py#L383))
+  carrying `holdout AUC`, and the live journal shows the model discounting it correctly and
+  unprompted ("the fitted priors cluster at 0.44-0.50, barely above coin-flip on the 0.6%
+  hurdle"). That is the `min_bucket_n` principle — silence over fabricated priors — already
+  holding on this channel. No code change; recorded so the refit is not proposed a third time.
 - **2026-09-13 (later)** — **The allocator was reading the wrong thermometer, and the branch
   built to cool the model had never once fired.** Owner: "better idea?" — better than making
   per-sleeve P&L a fifth gate criterion, which would change nothing today because the shadow/CI
