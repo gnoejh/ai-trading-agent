@@ -115,9 +115,17 @@ class OrderExecutor:
         return page.body
 
     def cancel(self, order_no: str, symbol: str, quantity: int) -> dict:
-        """Cancel a resting order. Not gated: reducing exposure is always allowed."""
+        """Cancel a resting order. Not gated: reducing exposure is always allowed.
+
+        The venue comes from the same config field the order used. It was the
+        literal "KRX" here while `_body` read config -- harmless only while the
+        two agreed. They stopped agreeing when KR order routing moved to SOR
+        for the 20:00 session (2026-09-15): a KRX-scoped cancel cannot reach an
+        order resting on NXT, and a cancel that silently fails leaves live
+        exposure the supervisor believes it has already pulled.
+        """
         body = {
-            "dmst_stex_tp": "KRX",
+            "dmst_stex_tp": self.exchange,
             "orig_ord_no": order_no,
             "stk_cd": symbol,
             "cncl_qty": str(quantity),

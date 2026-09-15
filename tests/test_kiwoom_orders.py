@@ -47,7 +47,8 @@ def test_float_exit_quantity_is_sent_as_an_integer_string(executor):
     body = executor._body(_exit(41.0))
     assert body["ord_qty"] == "41"
     assert body["trde_tp"] == TRADE_TYPE_MARKET
-    assert body["dmst_stex_tp"] == "KRX"
+    # Routing is config's call (SOR since the 20:00 session), not a literal here.
+    assert body["dmst_stex_tp"] == executor.exchange
 
 
 def test_int_quantity_unchanged(executor):
@@ -58,3 +59,15 @@ def test_int_quantity_unchanged(executor):
 def test_fractional_or_empty_quantity_is_refused_not_truncated(executor, qty):
     with pytest.raises(ValueError, match="whole shares"):
         executor._body(_exit(qty))
+
+
+def test_cancel_routes_to_the_same_venue_the_order_used(executor):
+    """The cancel body read a literal "KRX" while `_body` read config.
+
+    Harmless only while the two agreed. KR order routing moved to SOR for the
+    20:00 session (2026-09-15), and a KRX-scoped cancel cannot reach an order
+    resting on the evening venue -- a cancel that fails silently leaves live
+    exposure the supervisor believes it has already pulled.
+    """
+    body = executor.cancel("0000069", "039030", 41)["body"]
+    assert body["dmst_stex_tp"] == executor.exchange == "SOR"

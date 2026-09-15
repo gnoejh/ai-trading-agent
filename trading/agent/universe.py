@@ -411,7 +411,19 @@ class Screen:
 
         ranked = sorted(scored.values(), key=lambda e: (-len(e["screens"]), e["best_rank"]))
         rank_by = ms.rank_by or self.scfg.rank_by
-        shortlist = ranked[: self.scfg.candidates * 2] if rank_by != "rank" else ranked
+        if rank_by == "sample":
+            # Stride across the WHOLE ranked list rather than skimming its head
+            # (2026-09-16 -- the same correction as the Binance screen, for the
+            # same measurement: a RANDOM draw from this menu returned -1.22% of
+            # excess against +1.76% for a random draw outside it). Sampling
+            # before the flow enrichment is also cheaper, not just wider: flow
+            # costs one ka10061 call per name, and this asks for `candidates`
+            # of them instead of twice that.
+            width = min(len(ranked), self.scfg.candidates)
+            step = (len(ranked) / width) if width else 1
+            shortlist = [ranked[int(i * step)] for i in range(width)]
+        else:
+            shortlist = ranked[: self.scfg.candidates * 2] if rank_by != "rank" else ranked
         if ms.flow is not None:
             for e in shortlist:
                 e["taker_buy_share"] = self._flow_share(e["symbol"])
@@ -446,6 +458,9 @@ class Screen:
             return self._order(rows, "flow")
         if rank_by == "change":
             return sorted(rows, key=lambda e: -abs(_f(e.get("change_pct"))))
+        # "sample" and "rank" both fall through deliberately: the selection has
+        # already happened (a stride, or the rankers' own order), and re-sorting
+        # here would undo it.
         return rows
 
     def tradable_pool(self, order_size: float = 0.0) -> list[dict]:

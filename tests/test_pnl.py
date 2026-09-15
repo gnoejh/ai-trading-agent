@@ -271,3 +271,19 @@ def test_render_survives_an_empty_epoch(cfg):
     _journal(cfg, [])
     out = render(cfg)
     assert "no closed trips" in out
+
+
+def test_the_sleeve_report_reads_its_own_market_list():
+    """KR was invisible for two weeks: `score.trade_markets` is Binance-only
+    because the GATE sums pnl_quote and a KRW trip cannot join a USDT sum. This
+    report never sums across a sleeve, so it may read wider -- and the first
+    wider reading found a profitable paper sleeve nobody was counting
+    (n=85, +7.45M KRW). The list is config's; empty falls back to the gate's.
+    """
+    from trading.config import load_config
+
+    cfg = load_config()
+    assert "KR" in cfg.pnl.markets
+    assert "KR" not in cfg.score.trade_markets, "the gate must stay single-currency"
+    cfg.pnl.markets = []
+    assert set(cfg.pnl.markets or cfg.score.trade_markets) == set(cfg.score.trade_markets)

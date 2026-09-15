@@ -18,7 +18,11 @@ of unmanaged balance was exactly that, and exits are now capped at the units thi
 **Owner, 2026-09-13 — “Until positive profit gains, never switch to mainnet.”** Stated after
 the status review below found the BOOK profitable while the MODEL measured worse than chance.
 This is a standing prohibition, not a restatement: do not propose, recommend or prepare the flip
-while the model's edge is unproven — render the gate reading and stop. Note the gap it closes by
+while the model's edge is unproven — render the gate reading and stop. **The prohibition stands;
+its stated basis does not.** The "model measured worse than chance" reading that prompted it was
+an artifact of overlapping observations (2026-09-16) — the model is *indistinguishable* from
+chance, not inverted. Unproven is still unproven, so nothing about the prohibition changes; but
+do not repeat the inverted claim as fact. Note the gap it closes by
 hand: the gate's two profit criteria are computed over ALL closed round trips with no arm
 attribution, so they can read green on money the RANDOM arm earned (they do today). Only the
 shadow/CI criterion currently separates that from a green gate.
@@ -27,10 +31,29 @@ shadow/CI criterion currently separates that from a green gate.
 
 Deadlines and owner-only moves, kept here because a newest-first log buries them.
 
+- **The screen change needs its first reading (~72h, so from 2026-09-19).** Both venues now
+  run `rank_by: sample` with the change band off. The instrument is the `screen control` line
+  in `/status` and `uv run python -m trading.agent.promotion`: if the menu's excess does not
+  move toward the pool's, revert `rank_by: sample` → `flow` and the change bands, and the
+  2026-09-16 diagnosis was wrong.
+- **The screen was measurably destructive; the correction is shipped, not proven.** A RANDOM draw from
+  the screen's menu loses 3.93% to a random draw outside it on Binance, 2.98% on KR
+  (`screen control` lines in `/status` and `uv run python -m trading.agent.promotion`). Dropping
+  the screen hands every slot to a liquidity-only pool — a real decision, not a bug fix, so it
+  waits for the owner. Cheapest probe if you want evidence before deciding: the `change 5%+`
+  slice is 85 of 127 menu observations at −6.02% median, so capping `max_change_pct` far lower
+  tests the mean-reversion reading without abandoning screening.
 - **The mainnet deposit is still inert.** The $4,820 the owner sent on 2026-09-02 landed as
   fiat `USD`, not USDT, and this agent spends only the quote asset. Converting it is a manual
   move in the Binance app. Not urgent while the gate is shut — but it is a prerequisite for the
   day it opens, not something to discover that morning.
+- **The 20:00 KR session is live in config but unproven on the wire.** The venue routing
+  changed with it (rankers to 통합, orders to SOR) and none of it has run against a real
+  evening tape — it landed at 21:03 KST on 2026-09-15, after the close. Two things to look at
+  on the first evening: does the 15:40–20:00 menu actually differ from the 15:20 one (if the
+  rankers still return a frozen tape, `stex_tp: "3"` is not doing what the workbook says), and
+  the `kt00018` comparison written next to the value in config — a KRX-scoped positions read
+  that hides an NXT fill leaves that position with no stop, quietly.
 - **The KR paper account expires 2026-12-01.** That is the hard deadline for a KR verdict.
   KR is currently the worst sleeve by a distance (model −4.21% vs random −2.98%, n=43, and a
   0.14 clear rate against 0.52 on Binance), so it is the sleeve most likely to need a decision
@@ -43,6 +66,403 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-16 (second opinion)** — **A stronger model, measured rather than assumed.** Owner:
+  "proceed" on the one item the previous entry left undone. `agent.tiers.second_opinion: deep`
+  asks the v4-pro tier the IDENTICAL question on every decision — same prompt, same menu, same
+  instant — and keeps only its `best_candidate`, journalled as `virtual_pick_deep` (+ its
+  confidence and tier) and opened by the scorer as **`arm_llm_deep`**, which the selector
+  leaderboard picks up by prefix like every other arm. Three invariants, each pinned: the traded
+  decision comes from the decide tier ALONE (a deep reply that proposes a BUY changes nothing);
+  the second ask is isolated in its own `try`, so the stronger model's availability, latency or
+  reply can never touch the decision; and an empty tier means one call, not two. Stashed on the
+  agent rather than returned, so the 4-tuple every caller unpacks keeps its shape. **Cost**: one
+  extra call per cycle at ~3× flash's token price — a few thousand KRW/day at most against the
+  6,000 cap; `/costs` is the instrument. **Not retroactive**, unlike the deterministic arms: it
+  needs live decisions, so its first leaderboard row is days away, and it needs `min_shadow_pairs`
+  before it says anything. What it will answer is the question the whole "use a better model"
+  reflex assumes: whether v4-pro's picks beat v4-flash's on the same menus — on this record the
+  flash tier is indistinguishable from chance, so "better" has a measurable meaning here for the
+  first time. Two fixtures pin it off where LLM call counts are asserted (`test_measurement`,
+  and the new file's own `cfg`, following the repo's one-fixture-per-file pattern). 350 tests.
+- **2026-09-16 (model)** — **"Make all three sleeves profitable by models." The model was
+  calibrated all along and was being told it was not — so it declined.** The prompt defines
+  `confidence` as *the probability that the position ends in profit after costs — by the
+  trailing stop, the target, or the time stop*. `_calibration` graded it against
+  **`cleared_target`**: reaching the full +17% target before the stop, an event the same prompt
+  says ends ~7% of positions. And `best_candidate` carried a THIRD definition ("probability that
+  it reaches the target before the stop"). So a calibrated 0.50 stater was told every cycle that
+  it hit ~7% — "overconfident" in every band by construction — and did what a well-behaved model
+  does with that feedback: it declined **~95% of cycles** (67 orders against 472 random-arm
+  attempts), citing its own calibration in so many words. The loop built to correct
+  self-censoring was causing it. Regraded on what the prompt actually asks (`scorer.profitable`:
+  a stop is a loss whatever the horizon says, a target is profit, a time exit is profit iff it
+  cleared the hurdle; the trail is not modelled at resolve time and the docstring says so):
+
+      band          stated    OLD "hit" (target)    NEW hit (profit after costs)
+      0.00-0.45      0.33         15/90  17%            30/90  33%   <- calibrated exactly
+      0.45-0.55      0.49          0/13   0%             4/13  31%
+      0.55-0.65      0.57          1/10  10%             5/10  50%
+
+  The target rate survives as `target_rate` in every row, so the harder event is still visible;
+  it is simply no longer what the model is graded on, because it is not what the model was
+  asked. The prompt now gives ONE definition, and a test pins that the old phrase is gone.
+  **Second trap, the 09-09 one, back**: the model's self-record in the prompt (−2.05% vs
+  benchmark, −2.59% on Binance) is entirely from the screen population retired this morning — a
+  random draw from it lost 2.57% to benchmark — so the model was discounting itself on a menu it
+  no longer chooses from. New `score.model_record_since` (= 2026-09-16): the model's own buckets
+  and calibration render an additional **labelled "since" row** once it has `min_bucket_n`
+  observations on the current menu, and the block's note says which is which. Nothing is
+  hidden; the full-epoch row stays. ~3 days to the first since-row.
+  **What this does mechanically, and why it is the honest path to a profitable model sleeve**:
+  the model's per-trip result is the menu's base rate plus its selection edge minus costs. The
+  menu's base rate was −2.57% (retired this morning; the unscreened pool reads +1.36%); the
+  selection edge is ≈0 (leaderboard); and the model traded ~5% of cycles on a calibration that
+  said it should not. Fix the menu (done), fix the grader (done), scope the self-record (done),
+  and the model trades from a menu whose random draw is positive, at its own base rate — which
+  is what "profitable by model" can mean before any edge exists. **KR** is already there
+  (+0.64%/trip, n=17) and its 0.45–0.55 band read 0/6 under the old grader. **US** cannot
+  realise profit — measurement-only, no paper venue — its virtual verdict is now honestly
+  graded, which is the ceiling. **Not done, deliberately**: a second LLM arm on the `deep` tier
+  as a virtual pick, to measure whether a stronger model selects better at ~$0.80/day extra —
+  it needs a decide-path change and its own day; the three fixes above are the lever with
+  evidence behind it. 345 tests.
+- **2026-09-16 (arms)** — **The LLM is no longer the only selector on trial.** New
+  `score.arms` (`scorer.SELECTORS`): five deterministic selection rules, each a pure function of
+  a decision's journalled MENU, opened at scoring time as their own source (`arm_<name>`) and
+  paired against the SAME shadow on the SAME menus with the SAME de-overlap rule as the model.
+  Because the menu with its features is on every decision record, the arms cost **no slot, no
+  dollar, no decide-path change — and they are RETROACTIVE**: the first leaderboard covered the
+  whole epoch since 09-02 the hour they were added, instead of the two weeks a new live arm
+  would have needed. Rendered in the gate (`ℹ️ selector …`, not a criterion — only the model
+  can open the gate) sorted by the CI's LOWER bound, because a point estimate at n≈100 is luck
+  not yet ruled out and this repo has already promoted one of those. **First reading**:
+
+      selector          indep n   raw n    edge vs shadow   95% CI
+      arm_flow_top          62     860        +2.28%       -2.06..+7.23
+      arm_change_low       109    1042        +0.97%       -1.03..+3.04
+      arm_change_high      134    1042        +0.91%       -1.78..+3.77
+      arm_prior_top         79     817        +0.41%       -3.13..+3.98
+      model                129     892        +0.27%       -2.09..+2.58
+      arm_volume_top        66     985        -3.47%       -6.55..-0.30   <- the one that excludes 0
+
+  **Nothing selects with a demonstrated edge yet** — every upside interval straddles zero, and
+  the sample is 60–130 independent pairs per arm (the de-overlap discards 80–90% of raw rows,
+  which is the correct brutality). The one significant result is NEGATIVE: **the most liquid
+  name on the menu underperforms a random draw from it by 3.47%**. Two readings of that, both
+  stated: it is consistent with the screen finding (the old union scored names UP for being in
+  the volume head), and `volume_top` is BTCUSDT on nearly every Binance menu, so over a window
+  where alts beat BTC it is partly the window's rotation, not a timeless rule. Same beta caveat
+  applies to every arm here: the paired test controls for the MENU, not for the market.
+  Worth noticing without over-reading: `change_low` and `change_high` BOTH sit ~+0.9% — the two
+  extremes of the change distribution beat the middle — which is what a random-walk menu with a
+  trailing exit would produce, and not evidence of a directional signal. `flow_top` has the best
+  point estimate and the widest interval; it is the arm to watch, and the 08-10 decile finding
+  says it is the one most likely to survive. The board tightens with every scorer run, for free.
+  Seams: arm sources are namespaced `arm_` so they stay out of the fit's source list and the
+  model's own bucket; ties break on symbol so a re-run reopens the same id; a typo in
+  `score.arms` fails a test rather than logging and skipping. The gate render initialises
+  `store` on the failure path — a missing `experience.json` raised UnboundLocalError from inside
+  `/status` on a fresh checkout. Two mechanics fixtures pin `arms = []` because they count
+  observations per decision. 339 tests.
+- **2026-09-16 (profit)** — **"Make the trading system profitable by any means." Every honest
+  lever, and the three dishonest ones named and refused.** Refused: lowering the hurdle below
+  measured cost, dropping the CI requirement, counting the dice's profit as the model's — each
+  produces testnet profit that becomes mainnet loss. And no mainnet flip: the owner's rule.
+  **Where the money measurably is**, once looked for: (1) the random CRYPTO arm, +6,518 net,
+  **+1.40%/trip** (n=64); (2) **the KR paper sleeve, which nobody was counting** — `score
+  .trade_markets` is Binance-only because the gate SUMS `pnl_quote` and a KRW trip cannot join a
+  USDT sum, but the sleeve report never sums across a sleeve and had simply never listed KR.
+  First attributed reading: **KR · random n=68, +5.68M KRW, +0.54%/trip; KR · model n=17,
+  +1.77M KRW, +0.64%/trip** — the one venue where the model's traded picks beat the dice per
+  trip, on small n. (3) **4 to 7 of 15 slots sat EMPTY on every recent decision.** The model held
+  32% of the book and did not use it — 67 orders against 472 random-arm attempts — so a third of
+  the book earned nothing while the arm that measures positive was capped at 10 concurrent.
+  **Where it measurably is not**: the model's CRYPTO sleeve (−1.03%/trip, n=51) and BSTOCKS,
+  negative on every instrument this system has (realised −1.76%/trip n=8, menu −2.07% excess
+  n=19, pool −1.21% excess n=42, against CRYPTO's +1.89%).
+  **Six changes, each a config line with its reasoning beside it.** `allocator.base_share`
+  0.50 → **0.25** and `min_share` 0.15 → **0.05**: the prior was a coin flip and the record is
+  not; the model loses nothing measurable because its verdict comes from the virtual pick,
+  which costs no slot and no dollar, and it can still climb to 0.85 the moment it earns it.
+  Live effect: next-hour share 32% → 27%, converging on **~11%** (target = base − (base −
+  min) × penalty × confidence, with confidence now 0.68 on n=68 model trips); random-arm cap
+  10 → **13 concurrent**, which is the empty third of the book put to work. `explore.books:
+  [CRYPTO]` and `book_slots: {CRYPTO: 25, BSTOCKS: 0}`: BSTOCKS paused in both arms until its
+  `screen control` line reads positive — the random arm now draws from 158 names, not 196, and
+  the menu is 25 CRYPTO. `pnl.markets` adds KR (per sleeve, in KRW, never pooled; the gate's
+  own list is untouched and a test pins that it stays single-currency). **US screen**: min_price
+  1 → **5**, change band off, the 등락률상위 ranker dropped — the menu was "thin, low-priced
+  momentum junk" in the model's own words and that ranker was the source. US has no random arm
+  and so no screen control; this is by analogy and the config says so, with the one backtest
+  prior that ever favoured momentum (US 15–40%, +3.93%, n=88) kept in view rather than erased.
+  **What the allocator change also did, noted honestly**: pooling KR into the model's arm
+  average (percentages only, the 09-13 design) moved it from −1.03% to **−0.615%/trip**, which
+  SOFTENS the cut — the model's KR picks are positive and the allocator now sees that. Correct,
+  and the reason the share converges near 11% rather than the 5% floor.
+  **Re-read, not changed**: the exit grid under the new hurdle. n_finished is now 109 (from 45);
+  the live 4320/8%/rr2.0 cell reads +0.181% all / +0.118% finished, 2880/8%/rr2.0 reads +0.232 /
+  +0.157, and every 4% stop cell is strongly negative (57 stop-outs). rr 2.0 wins its row
+  everywhere. Not decisive between 48h and 72h at this n, and the trail-arm point moved with the
+  hurdle (arms at ~+0.9% now, ~+1.5% before) without hurting the grid. Exits stay.
+  **US cannot be made profitable by anything in this repo**: it is measurement-only on mainnet
+  money behind no gate, and 모의투자 is KR-only. Its menu is now worth measuring; that is the
+  ceiling until either the Kiwoom gate opens or a US paper venue exists.
+  New seams pinned: a zero-slot book is skipped rather than divided by (the BSTOCKS pause would
+  have been a ZeroDivisionError on the first cycle); a paused book is absent from the draw, not
+  drawn and refused; `pnl.markets` falls back to the gate's list when empty. 329 tests.
+- **2026-09-16 (last)** — **`cleared_hurdle` now follows config instead of the resolve row.**
+  The last open item from the morning's audit, and the honest headline is that it was a real
+  defect with a small effect. The label is written into each resolve row **at resolve time**, so
+  every row resolved before the 09-15 slippage re-measure was graded against the old 0.500% /
+  0.600% bar — and this label is the **fit target**, the **bucket clear rate**, and part of what
+  the decide prompt reads back. `pnl` and `promotion` already price fees live; `ExperienceScorer
+  ._relabel` applies the same principle one layer down. It is **exact, not estimated**:
+  `forward_return_pct` is on the resolve row and `book` on the open row, and `_aggregate` merges
+  the two before relabelling. `hurdle_pct_at_resolve` keeps the original so the change is
+  provable, and `meta.relabelled_against_current_hurdle` reports the flips.
+  **Measured effect, stated plainly**: **278 flips in 54,414 resolved rows (0.5%)**, and the
+  live arms barely move — 1 of 898 model rows, 9 of 1,042 shadow, 8 of 497 random, 16 of 1,247
+  universe. KR and US flip **zero**, because only the Binance books' fees changed. The reason it
+  is small is arithmetic: a 0.2pp shift in the bar only flips observations whose forward return
+  lands in that 0.2pp band. **The value is that the class of bug is closed**, not that the
+  numbers moved: any future `market_fees` edit now propagates to every label instead of leaving
+  the corpus graded against a bar that no longer exists.
+  **NOT relabelled, and this is a real remaining gap**: `cleared_target` and `outcome` grade the
+  price PATH against the exit contract's levels, and the path is not stored — only its
+  endpoints. Redoing those needs a re-resolve against the price source, a different and far more
+  expensive operation. The staleness is bounded: the hurdle change moved a 100-entry target from
+  117.50 to **116.90**, because `min_reward_risk: 2.0` against the 8% stop dominates the target,
+  not the hurdle. So `your_calibration` still grades against targets up to 0.5% too high.
+  Extracted to its own method specifically so it could be tested — the first two tests written
+  for it asserted on config arithmetic and never touched the code path, which is the kind of
+  test that passes forever and pins nothing. `tests/test_overlap.py` now drives `_relabel`
+  directly, including the boundary (a return EXACTLY at the hurdle has broken even, not won).
+  325 tests. Service restarted 01:10; first screen on the new config read 196 in pool → 25
+  candidates with no errors.
+- **2026-09-16 (later)** — **The screen stopped betting. Both venues.** Owner: "proceed" on the
+  finding that a RANDOM draw from the menu loses 3.93% of excess on Binance and 2.98% on KR to a
+  random draw outside it. Two changes, each reverting to a config line.
+  **(a) The change band is OFF** (`min_change_pct`/`max_change_pct` to 0 on Binance, and the KR
+  `max_change_pct: 0.10` with it). On Binance this is measured: `change 5%+` was 85 of 127 menu
+  observations at −3.29% excess and **−6.02% median**, and no sub-slice of the menu beat the
+  unscreened pool. On KR it is **by analogy only** — the aggregate gap is measured, the per-slice
+  decomposition is not — and the config says so, because an inference recorded as a measurement
+  is how the 09-09 band got shipped in the first place. Note the band was never what it claimed:
+  the filter compares `abs(change_pct)`, so `min_change_pct: -0.10` had been a silent no-op since
+  09-09 and a −14% crash was treated exactly like a +14% pump.
+  **(b) A new ranker, `sample`, which ranks by NOTHING.** Every ranker this repo has tried picks
+  the extreme tail of something, and every tail has now measured worse than the body it came
+  from: momentum had no edge (08-10), the fitted prior lost to a constant (09-13), and flow does
+  not sort *inside* the menu at all — its clear rate FALLS as flow rises (0.36 / 0.29 / 0.23,
+  low to high tertile). `sample` strides across the liquidity-ordered pool so the menu spans the
+  one population here that has ever measured positive. The 08-10 decile finding is **not**
+  retracted: "top vs bottom decile spreads +1.05%" and "the top 18 are the best 18" are
+  different claims, and only the second is what the ranker was doing.
+  **The near-miss worth recording**: switching the ranker alone changed **6 of 25 names**. The
+  Binance menu is the UNION of a volume head and a move ranking, scored up for appearing in
+  both, so the liquidity head wins whatever the move ranker says — the change would have shipped
+  as a no-op dressed as a fix. `sample` now bypasses the union and selects alone. Live effect:
+  median menu turnover $37.9M → $20.8M, thinnest name $1.30M → $0.56M, **12 of 25 names
+  different**, still spanning up to BTC at $1.38B. Every name still clears
+  `min_volume_multiple_of_order`, so the thinnest can still absorb the order. On KR the stride
+  runs BEFORE the flow enrichment, so it is also cheaper than what it replaces — one ka10061
+  call per candidate instead of two.
+  **What this is not**: a claim that `sample` is good, only that it stops making a bet the
+  record condemns. The screen control (`/status`, `promotion`) is the instrument that will say
+  whether it worked, and it needs ~72h of resolutions to speak. If the menu's excess does not
+  move toward the pool's, revert both lines and the diagnosis was wrong.
+  `tests/test_screen_sample.py` pins the part that matters — that the menu actually changes and
+  is not the liquidity head under another name. 320 tests.
+- **2026-09-16** — **Three smoking guns. The gate's blocking criterion was an artifact, and
+  the screen is the largest measured effect in the system.** Owner: "1. Ridiculous that random
+  is profitable, 2. model lose random, something is wrong, 3. learning loop is totally broken.
+  Find smoking guns and correct problems not only Binance but also Kiwoom." All three suspicions
+  were correct, and they are the same defect family: **nothing was a controlled comparison.**
+
+  **(1) OVERLAPPING OBSERVATIONS — this inverted the verdict.** The live arms re-measure a
+  symbol that is still in flight. The model named HEMIUSDT on **117 of 615** Binance decisions
+  (19%); each opened its own observation with its own 72h horizon, so ONE price path was scored
+  117 times and counted as 117 independent trials. The shadow, drawing uniformly from a 25-name
+  menu, spread over **254 distinct symbols against the model's 126** — so the inflation was
+  **asymmetric**, and the arm that concentrates was punished for concentrating. The bootstrap
+  was then handed a sample size that did not exist and returned a tight, confident, wrong
+  interval. De-overlapped (one observation per symbol per horizon):
+
+      venue      raw n   raw model   raw shadow   raw edge  |  indep n   model   shadow    edge
+      BINANCE      615      -5.28%       -2.62%     -2.66%  |      68   -2.16%  -3.13%   +0.97%
+      US           159      -1.23%       -0.19%     -1.04%  |      38   -0.83%  -1.00%   +0.17%
+      KR            96      -1.35%       -1.39%     +0.03%  |      38   -1.89%  -1.43%   -0.45%
+
+  The gate now reads **n=129, model −1.45% vs random −1.73%, edge +0.27%, CI −2.09..+2.58**.
+  **This RETRACTS the 2026-09-13 finding** that the model is "worse than chance on n=638, CI
+  excludes zero" and everything built on it: the model is **indistinguishable from chance**, not
+  inverted, and the corpus is ~129 independent pairs, not 881. This is **methodology trap #2
+  from *Research findings*** — the one that produced "+7.4% per trade" and vanished on
+  non-overlapping entries — living inside the gate's own blocking criterion for two weeks, on a
+  repo that had already paid for the lesson once. `backfill.py` avoids it by construction and
+  the `universe` pass opens one observation per symbol at a time; the live picks had no guard,
+  and the 2026-09-04 entry explicitly *retracted* the concern ("every decision opens one"),
+  reading a correct statement about journalling as a statement about independence. Fixed in
+  `scorer.independent()`, applied to buckets and calibration, with a **pair-level** rule inside
+  `_pairs` (a pair survives only if BOTH sides are independent — de-overlapping each arm alone
+  would drop one side of a decision and silently shrink the comparison). `n_raw` and
+  `meta.overlapping_dropped` are reported so the shrinkage is auditable, never silent.
+  **Retroactive by design**: the fix is at aggregation, not at open time, so the journal stays a
+  complete record and the correction applies to the whole existing corpus immediately.
+
+  **(2) WHY RANDOM IS PROFITABLE: it does not use the screen.** The random arm draws from
+  `tradable_pool()` — the tradable universe with strategy filters removed — while the model and
+  its shadow are both drawn from `candidates()`, the screen's menu. So the model-vs-shadow test
+  could never see the screen: both arms sit inside it. Adding the control group one level up
+  (`_screen_control`, rendered in the gate as a non-criterion), identical window, same
+  resolution machinery, de-overlapped, excess vs each book's own benchmark:
+
+      BINANCE   menu (a RANDOM draw from the screen)  -2.57%  n=136   clear 0.29
+                pool (drawn outside the screen)       +1.36%  n=244   clear 0.52
+                universe (broad tradable sample)      +0.96%  n=1088  clear 0.44
+      KR        menu                                  -1.22%  n= 56   clear 0.34
+                pool                                  +1.76%  n= 41   clear 0.51
+
+  **The screen costs 3.93% on Binance and 2.98% on KR** — an order of magnitude more than any
+  model-vs-shadow edge ever measured here, and the answer to "ridiculous that random is
+  profitable": the dice are not lucky, they are simply not screened. `shadow` is the honest
+  probe because no model touches it. **Same defect on both venues**, which is what the owner
+  asked to check. Decomposing the Binance menu: it is not bStocks (CRYPTO −2.85%, BSTOCKS
+  −2.07%, both bad); **flow does not sort inside the menu** (low −3.99% / mid −1.82% / high
+  −2.74%, with the clear rate FALLING as flow rises, 0.36 → 0.29 → 0.23); and the damage
+  concentrates in what already ran — `change 5%+` is **85 of 127 menu observations** at −3.29%
+  excess and **−6.02% median**. The screen buys what moved and holds it into mean reversion.
+  Also found while reading it: `candidates()` filters on **`abs(change_pct)`**, so
+  `min_change_pct: -0.10` is a **silent no-op** (an absolute value is never below a negative
+  bound) and the effective band is |change| ≤ 15% — a −14% crash and a +14% pump are treated
+  identically, which is not what the 09-09 entry's signed band describes.
+
+  **(3) THE LEARNING LOOP WAS QUOTING INFLATED EVIDENCE BACK TO ITSELF.** Buckets, clear rates
+  and `your_calibration` all read the same overlapping rows, so the `measured_record` in the
+  decide prompt carried n's that were 3-6x the real sample — the model was being shown its own
+  repetitions as independent confirmation. All now de-overlapped at the source.
+  **NOT fixed, and stated so it is not mistaken for fixed**: `cleared_hurdle` and `hurdle_pct`
+  are baked into each resolve row **at resolve time**, so the existing corpus is still labelled
+  against the old 0.500% hurdle — yesterday's slippage correction re-prices `pnl` and
+  `promotion` (which compute fees live) but does **not** relabel history. Yesterday's entry said
+  those "recompute from config"; for the resolve rows that is **wrong**. Relabelling needs a
+  re-resolve pass, which is its own change.
+
+  **Deliberately NOT changed: the screen itself.** The evidence says it is destructive and the
+  fix is not obvious — dropping it entirely hands every slot to a liquidity-only pool, which is
+  a strategy decision with real money behind it, and the owner's call. It is now permanently on
+  trial instead of invisible, which is the actual repair: the system measured the model against
+  its control for two weeks while the population handed to both was never on trial at all.
+  `tests/test_overlap.py` pins the asymmetry directly (a concentrated and a spread arm with the
+  same per-symbol outcomes must compare equal). 314 tests.
+- **2026-09-15 (last)** — **The hurdle was wrong by an order of magnitude, and it had been
+  teaching the learning loop that trades were losses.** Owner: "proceed" on the fee wall, after
+  the API reconciliation showed trading fees at 114x the API spend and 89% of the model sleeve's
+  gross. The suspect was the SLIPPAGE half of the hurdle: `commission x 2 + slippage x 2` reads
+  0.500% on CRYPTO, of which only 0.200% is real commission — the other **60% was a 15 bps/side
+  assumption set for the microcap-breakout population the screen stopped buying on 2026-09-09**.
+  New `trading/accounting/slippage.py` (`uv run python -m trading.accounting.slippage`) walks a
+  simulated market order through the **mainnet** order book (`depth` is unsigned, so it reads
+  the mainnet data plane even on testnet — measuring this against bot-seeded testnet fills would
+  answer a different question, the same reason the plane split exists). Round-trip medians at
+  today's ~$105 order:
+
+      population              CRYPTO    BSTOCKS    config charged
+      model's menu            1.00 bps   1.71 bps   30 / 40 bps
+      random arm's pool       4.58 bps   7.23 bps   30 / 40 bps
+
+  **Overstated 30x on the menu and 6.5x on the pool.** Set to **5 bps CRYPTO / 6 bps BSTOCKS** —
+  ~2x the RANDOM POOL median, deliberately not the measured value and deliberately not the
+  menu's: the pool is what the random arm draws from and it opens most of the entries, and a
+  static book snapshot cannot see latency, adverse selection, or the book moving between
+  decision and fill. The margin is the same policy the LLM pricing follows — overstate, never
+  flatter — and a test pins that the shipped number stays ABOVE the measured cost, because the
+  failure mode of getting this wrong in the other direction is reporting profit the account did
+  not earn. CRYPTO's hurdle goes **0.500% → 0.300%**, BSTOCKS **0.600% → 0.320%**.
+  **This re-prices the ENTIRE record, not just future trades** — `pnl` and `promotion` both
+  compute fees live from config — and the gate moved the same evening:
+
+      fees over the epoch   1,601.89 → 958.92 quote   (−643)
+      net P&L               +6,066.66 → +6,719.03
+      avg net per trip      +0.063% → +0.274%          (4.3x)
+      CRYPTO · model        +45.02 → +196.54 net, −1.26%/trip → −1.06%/trip
+      CRYPTO · random       +6,140 → +6,603 net, +1.41%/trip → +1.61%/trip
+
+  **What it does NOT do, stated plainly: it does not make the model profitable.** −1.06%/trip is
+  still negative, the allocator still reads `strength 0.00` and still hands the book to the dice,
+  and the gate's blocking criterion is untouched — the shadow comparison is raw returns, so the
+  CI still excludes zero (BINANCE −4.84% vs −2.90%, CI −3.37..−0.41). That is the right outcome:
+  a cost correction must not be able to open the gate. **The larger effect is on the LEARNING
+  loop, not the P&L report**: `cleared_hurdle` is the fit label and the calibration target, so
+  for the whole epoch every bucket clear rate, every `your_calibration` row and the frozen
+  prior's own label were computed against a bar twice reality. Those recompute from config and
+  are now measured against the real one. Exits move only slightly (net break-even 100.50 → 100.30
+  on a 100 entry, target 117.50 → 116.90) because `min_reward_risk: 2.0` against the 8% stop
+  dominates the target, not the hurdle. **Deliberately NOT changed**: KR/US slippage (5 bps,
+  Kiwoom, not measured by this probe — it prices Binance books only), and `commission_rate`,
+  which at 0.1%/side is the standard Binance spot rate and would only fall with a BNB fee
+  discount this account has not been verified to hold. Two more tests hardcoded live rates and
+  failed on a CORRECT edit (`test_book_hurdles_differ`, and the LLM pricing pair earlier today);
+  they read config now and pin the STRUCTURE and ORDERING instead. 308 tests.
+- **2026-09-15 (later)** — **The API bill was reconciled against the real console, and it is
+  not where the money goes.** Owner pasted the DeepSeek billing page while asking why this is
+  taking so long and "wasting funds in real accounts". The paste reconciles to this system
+  almost exactly — console **1,434 requests / 23,715,456 tokens** against this ledger's
+  **1,422 / 23,525,361** for 2026-08-30 onward (0.99× on both), which identifies that CNY
+  100.03 block as the agent's ENTIRE epoch rather than one day. So **real API spend is ¥100
+  ≈ $14 total, ~$0.80/day** — and the ledger read ¥175.15, **overstating 1.75×**, which is the
+  documented policy (peak cache-miss) working rather than a defect. **Scale, which is the
+  point**: trading fees over the same window are **1,602 quote against ~$14 of API — 114×** —
+  and they eat **89% of the model sleeve's gross** (+423.83 gross, −378.81 fees, +45.02 net).
+  API spend is 0.4% of the gate's P&L figure. Any further work on cost accounting is
+  bookkeeping; the fee wall is the money. **Fixed anyway, because stale is wrong**: Flash
+  repriced at 12:00 Beijing on **2026-09-10** (USD list: cache hit $0.003, cache MISS $0.15,
+  output $0.60 per 1M off-peak, peak double) and `llm.pricing` sat at the old 3.00/9.00 CNY for
+  five days. Now **2.05 / 8.18** — peak cache-miss as policy requires, derived from the USD
+  notice at DeepSeek's ~6.82 internal ratio (NOT market FX), which re-prices the epoch at
+  CNY 150 against the real 100: still conservative, by 1.50× instead of 1.75×. V4 Pro billing
+  is explicitly unchanged in the same notice and stays at 9.00/27.00. **Deliberately NOT
+  plumbed**: cache-HIT tokens, billed here as misses at 50× the rate, are most of the residual
+  gap — the prompt is largely static so DeepSeek caches it — but the client reads
+  `prompt_tokens`, not `prompt_cache_hit_tokens`, and adding that refines a $14 line item.
+  Two cost tests hardcoded the live rate and failed on a CORRECT price edit; they read the rate
+  from config now and pin the CONVERSION (CNY list ÷ usd_cny, never market FX), which is what
+  they were always about. 299 tests.
+- **2026-09-15** — **The KR day now runs to 20:00, and the clock was the easy half.**
+  Owner: "Korean stock markets are extended until 8:00pm. Kiwoom must be adjusted." The
+  extension is NOT a longer KRX day — KRX still ends at 15:30 — so the evening window exists
+  only on the alternative venue (NXT), and a config that moved `close` alone would have opened
+  a session this system could neither see nor reach. Read from the parsed spec workbook, the
+  venue parameter has **two incompatible enums** and the config was on the wrong side of one:
+  the RANKERS (`ka10032`, `ka90009`) spell it `1:KRX, 2:NXT, 3:통합` while the account calls
+  (`ka10075`, `ka10076`) spell it `0:통합, 1:KRX, 2:NXT`. The account calls already sent `"0"`
+  (통합, correct); all three rankers sent `"1"` — **KRX only**, which after 15:30 ranks a
+  closed tape, so every evening cycle would have screened a frozen 15:30 snapshot and called
+  it the day's flow. Now `"3"`. Order routing (`kt10000/1/2/3`, which take `KRX|NXT|SOR`) moves
+  `KRX → SOR`: a KRX-routed order simply cannot fill in the evening, and pinning to NXT instead
+  would mis-route the 09:00–15:20 session — SOR is the only value correct at every hour of the
+  new day. `OrderExecutor.cancel` was sending a **hardcoded** `"KRX"` while `_body` read config
+  (invariant #2, and harmless only while the two agreed); it reads `self.exchange` now, because
+  a cancel that cannot reach the resting order fails silently and leaves live exposure the
+  supervisor believes it has already pulled. **The clock itself gained a break**: `open`/`close`
+  have always bounded CONTINUOUS trading rather than the posted day (that is why KR sat at 15:20
+  against a 15:30 KRX close — 15:20–15:30 is the closing auction), and the new day has an
+  auction plus a venue changeover in the middle of it, which one open/close pair cannot express.
+  `Session.breaks` subtracts windows and can only ever subtract — a test pins that a malformed
+  break cannot ADD hours. KR reads `09:00–15:20, 15:40–20:00`. **Budget checked, not assumed**:
+  at the 900s interval KR goes ~25 → ~42 cycles/day, three venues ~146 → ~165, ~4,100 KRW
+  against the 6,000 ceiling — still ~30% headroom, no change needed, stale comment corrected.
+  **Deliberately NOT changed, and the one open risk**: `kt00018`/`kt00004` (positions,
+  evaluation) take `KRX` or `NXT` and offer **no 통합 value**. If that field filters holdings
+  rather than selecting the valuation venue, an evening fill would be invisible to the snapshot
+  the exit supervisor reads — a position with no stop, the 2026-08-12 failure class, and it
+  would fail QUIETLY. NXT would be strictly worse (it marks the whole book at the thinner
+  venue's prices), so it stays on KRX with the check written next to the value: after the first
+  SOR fill outside 09:00–15:20, call `kt00018` under both and compare the symbol lists. Not
+  verifiable tonight — the change landed at 21:03 KST, past the new close, and a hand-issued
+  paper token revokes the running service's. Sessions had **no test coverage at all** before
+  this; `tests/test_sessions.py` pins the two-session day, the weekend, the always-open
+  short-circuit, and both routing values. 299 tests.
 - **2026-09-13 (last)** — **The fitted prior was refit and NOT shipped: on recent data it does
   not beat a constant.** Named the previous entry as the next step if the model's edge stayed
   negative — the artifact was from 09-03, trained on the pre-inversion population, so a refit
@@ -502,6 +922,7 @@ uv run python -m trading.agent.exit_eval  # exit counterfactual grid over closed
 uv run python -m trading.agent.promotion  # the mainnet gate, with the paired CI
 uv run python -m trading.agent.allocator  # the model's earned share of the book
 uv run python -m trading.agent.pnl        # daily realised P&L per sleeve (never pooled)
+uv run python -m trading.accounting.slippage  # re-measure the hurdle's slippage from the mainnet book
 ```
 
 Tests must stay hermetic: fixtures pin `use_testnet`, `allow_orders` and the risk limits rather than

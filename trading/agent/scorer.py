@@ -63,6 +63,47 @@ log = logging.getLogger(__name__)
 # 15..60; bands on both sides of it exist so the screen itself can be judged.
 CHANGE_BANDS = ((None, 0.0), (0.0, 15.0), (15.0, 40.0), (40.0, None))
 LIVE_SOURCES = ("model", "shadow", "random", "universe")
+ARM_PREFIX = "arm_"
+
+
+def _feat(c: dict, key: str) -> float | None:
+    v = c.get(key)
+    try:
+        return None if v is None else float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _pick_by(menu: list[dict], key: str, *, largest: bool) -> str | None:
+    """The symbol with the extreme value of one feature; None if none carry it.
+
+    Ties break on symbol so the pick is deterministic across scorer runs --
+    a re-run must reopen the SAME observation id, not a new one.
+    """
+    rows = []
+    for c in menu:
+        v = _feat(c, key)
+        if v is not None:
+            rows.append((v, str(c.get("symbol"))))
+    if not rows:
+        return None
+    return (max(rows) if largest else min(rows))[1]
+
+
+# Deterministic selector arms: each a pure function of the journalled MENU.
+# They exist so the LLM is not the only selector on trial. Every arm is scored
+# against the same shadow on the same menus, in the same paired test, so the
+# leaderboard they produce is a like-for-like answer to "does ANY selection
+# rule here beat a random draw from the menu". The arms cost nothing: no slot,
+# no dollar, no change to the decide path -- and because the menu is on every
+# decision record, they are RETROACTIVE over the whole journalled epoch.
+SELECTORS: dict[str, object] = {
+    "flow_top": lambda menu: _pick_by(menu, "taker_buy_share", largest=True),
+    "prior_top": lambda menu: _pick_by(menu, "p_clear", largest=True),
+    "volume_top": lambda menu: _pick_by(menu, "quote_volume", largest=True),
+    "change_low": lambda menu: _pick_by(menu, "change_pct", largest=False),
+    "change_high": lambda menu: _pick_by(menu, "change_pct", largest=True),
+}
 
 
 def _band_label(lo, hi) -> str:
@@ -104,6 +145,76 @@ def confidence_band(value: float, edges: list[float]) -> str:
             return f"{lo:.2f}-{hi:.2f}"
         lo = hi
     return f"{lo:.2f}+"
+
+
+def profitable(row: dict) -> bool | None:
+    """Did the position END IN PROFIT AFTER COSTS -- the thing `confidence` is?
+
+    The prompt defines confidence as the probability the position ends in
+    profit by the trailing stop, the target, or the time stop. Grading it
+    against `cleared_target` (the full +17% target before the stop, an event
+    the same prompt says ends ~7% of positions) told a calibrated 0.50 stater
+    every cycle that it hit 7% -- "overconfident" in every band by
+    construction -- and the model did what a well-behaved model does with that
+    feedback: it declined ~95% of cycles. The self-censoring the calibration
+    loop was built to correct, it was causing (found 2026-09-16).
+
+    A stop is a loss whatever the horizon-end return says: the position was
+    closed at the stop and never saw the horizon. A target is profit. A time
+    exit is profit iff the horizon return cleared the hurdle. The trail is not
+    modelled at resolve time (only its endpoints are stored), so this is the
+    hold-to-horizon reading of the prompt's definition, stated as such.
+    """
+    outcome = row.get("outcome")
+    if outcome == "stop":
+        return False
+    if outcome == "target":
+        return True
+    if outcome == "time":
+        return _is_true(row.get("cleared_hurdle"))
+    return None
+
+
+def _parse_ts(value: str) -> dt.datetime | None:
+    """A decision timestamp, or None when it is unusable.
+
+    An unparseable stamp must not silently become "long ago" -- that would let
+    the de-overlap filter wave every malformed row through as independent.
+    """
+    try:
+        return dt.datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def independent(rows: list[dict], horizon: dt.timedelta) -> list[dict]:
+    """Drop observations that re-measure a symbol already in flight.
+
+    A pick held for `horizon` and re-opened an hour later is not a second
+    trial -- it is the SAME price path scored twice. The live arms do this
+    constantly (the model named HEMIUSDT on 117 of 615 Binance decisions), so
+    without this every statistic downstream reports a sample size it does not
+    have, and the arm that concentrates is penalised for concentrating.
+
+    This is methodology trap #2 from *Research findings*, which `backfill.py`
+    already avoids by construction and the `universe` pass avoids by opening one
+    observation per symbol at a time. The live picks had no such guard.
+
+    Oldest-first so the FIRST sighting is the one kept; a row with an unusable
+    timestamp is dropped rather than waved through as independent.
+    """
+    last: dict[str, dt.datetime] = {}
+    keep: list[dict] = []
+    for row in sorted(rows, key=lambda r: str(r.get("ts") or "")):
+        when = _parse_ts(str(row.get("ts") or ""))
+        if when is None:
+            continue
+        symbol = str(row.get("symbol"))
+        if symbol in last and when - last[symbol] < horizon:
+            continue
+        last[symbol] = when
+        keep.append(row)
+    return keep
 
 
 def bootstrap_ci(
@@ -253,6 +364,32 @@ class ExperienceScorer:
             shadow = rec.get("shadow_random")
             if shadow:
                 count += self._open_pick("shadow", shadow, ts, features, opens, resolves, venue)
+            # The second-opinion LLM, scored as its own selector arm.
+            deep_pick = rec.get("virtual_pick_deep")
+            deep_tier = rec.get("second_opinion_tier")
+            if deep_pick and deep_tier:
+                count += self._open_pick(
+                    f"{ARM_PREFIX}llm_{deep_tier}",
+                    deep_pick,
+                    ts,
+                    features,
+                    opens,
+                    resolves,
+                    venue=venue,
+                    confidence=rec.get("virtual_confidence_deep"),
+                )
+            # The selector arms, from the SAME menu the model and shadow saw.
+            menu = rec.get("candidates") or []
+            for name in self.scfg.arms:
+                selector = SELECTORS.get(name)
+                if selector is None:
+                    log.warning("unknown selector arm %r; known: %s", name, sorted(SELECTORS))
+                    continue
+                pick = selector(menu)
+                if pick:
+                    count += self._open_pick(
+                        f"{ARM_PREFIX}{name}", pick, ts, features, opens, resolves, venue
+                    )
         elif rec.get("kind") == "explore" and rec.get("sent"):
             entry = rec.get("entry") or {}
             symbol = entry.get("symbol")
@@ -512,17 +649,55 @@ class ExperienceScorer:
         }
 
     def _pairs(self, model: list[dict], shadow: list[dict]) -> dict:
-        """Paired model-vs-shadow: same decision, same venue, both resolved."""
+        """Paired model-vs-shadow: same decision, same venue, both resolved.
+
+        **Pairs are DE-OVERLAPPED before anything is computed from them**, and
+        that is not a refinement -- it inverts the answer. The model names the
+        same symbol over and over (HEMIUSDT was 117 of 615 Binance decisions,
+        19%), so its picks resolve on 72h windows of ONE price path counted
+        dozens of times, while the shadow drawing uniformly from a 25-name menu
+        spreads over twice as many symbols. Counting every decision as an
+        independent trial therefore does not merely inflate n -- it biases the
+        comparison ASYMMETRICALLY against the concentrated arm, and hands the
+        bootstrap a sample size it does not have, so the interval comes back
+        tight and confident and wrong. Measured 2026-09-16 on the live corpus:
+
+            Binance   raw n=615  model -5.28% vs shadow -2.62%  (edge -2.66%)
+                      indep n=68 model -2.16% vs shadow -3.13%  (edge +0.97%)
+
+        This is methodology trap #2 from *Research findings* -- the one that
+        produced "+7.4% per trade" and vanished on non-overlapping entries --
+        living inside the gate's own blocking criterion for two weeks.
+
+        The rule: walking pairs oldest-first, a pair is kept only if NEITHER
+        side's symbol has been used by a kept pair within `horizon_minutes`.
+        Both sides, because a difference is only as independent as its more
+        dependent half. `n_raw` is reported alongside `n` so the shrinkage is
+        visible rather than silently absorbed.
+        """
 
         def key(r):
             return (str(r.get("venue") or "BINANCE"), r.get("decision_ts"))
 
         m = {key(r): r for r in model}
         s = {key(r): r for r in shadow}
-        pairs = [
-            (float(m[k]["forward_return_pct"]), float(s[k]["forward_return_pct"]))
-            for k in m.keys() & s.keys()
-        ]
+        horizon = dt.timedelta(minutes=self.scfg.horizon_minutes)
+        candidates = sorted(m.keys() & s.keys(), key=lambda k: str(k[1] or ""))
+        pairs: list[tuple[float, float]] = []
+        n_raw = len(candidates)
+        last: dict[tuple[str, str], dt.datetime] = {}
+        for k in candidates:
+            when = _parse_ts(str(k[1] or ""))
+            rows = {"model": m[k], "shadow": s[k]}
+            marks = {side: (side, str(row.get("symbol"))) for side, row in rows.items()}
+            if when is not None and any(
+                mark in last and when - last[mark] < horizon for mark in marks.values()
+            ):
+                continue
+            if when is not None:
+                for mark in marks.values():
+                    last[mark] = when
+            pairs.append((float(m[k]["forward_return_pct"]), float(s[k]["forward_return_pct"])))
         diffs = [a - b for a, b in pairs]
         n = len(pairs)
         ci = bootstrap_ci(
@@ -533,6 +708,7 @@ class ExperienceScorer:
         )
         return {
             "n": n,
+            "n_raw": n_raw,
             "model_avg_pct": round(sum(p[0] for p in pairs) / n, 3) if n else None,
             "shadow_avg_pct": round(sum(p[1] for p in pairs) / n, 3) if n else None,
             "mean_diff_pct": round(sum(diffs) / n, 3) if n else None,
@@ -543,12 +719,70 @@ class ExperienceScorer:
             "ci_level": self.scfg.ci_level,
         }
 
+    def _screen_control(self, rows: list[dict]) -> dict:
+        """Is the SCREEN earning its place? Nothing measured this until now.
+
+        The shadow pick answers "does the model beat chance INSIDE the menu".
+        It cannot answer "is the menu worth having", because both arms are drawn
+        from it -- so a menu that selects losers makes the model and its control
+        lose together and the comparison stays silent about the cause. That is
+        the control group missing one level up, and on the first reading it was
+        the largest effect in the system (2026-09-16, identical window, same
+        resolution machinery, de-overlapped, excess vs each book's benchmark):
+
+            menu   (shadow: a RANDOM draw from the screen's own menu)  -2.72%
+            pool   (the explore arm, drawn outside the screen)         +1.37%
+            universe (broad sample of tradable symbols)                +0.76%
+
+        A random draw from the menu lost ~3.5% to a random draw from outside it,
+        which is an order of magnitude more than any model-vs-shadow edge ever
+        measured here. `shadow` is the honest probe of the menu precisely
+        because no model touches it.
+
+        Reported as a DIAGNOSTIC, never a gate criterion: what to do about a bad
+        screen is a strategy decision, and this only measures that there is one.
+        """
+        groups = {"menu": ("shadow",), "pool": ("random",), "universe": ("universe",)}
+        out: dict[str, dict] = {}
+        for venue in sorted({str(r.get("venue") or "BINANCE") for r in rows}):
+            here = [r for r in rows if str(r.get("venue") or "BINANCE") == venue]
+            cell = {}
+            for label, sources in groups.items():
+                members = [
+                    r
+                    for r in here
+                    if r.get("source") in sources and r.get("excess_return_pct") is not None
+                ]
+                if not members:
+                    continue
+                excess = [float(r["excess_return_pct"]) for r in members]
+                cell[label] = {
+                    "n": len(members),
+                    "avg_excess_pct": round(statistics.fmean(excess), 3),
+                    "median_excess_pct": round(statistics.median(excess), 3),
+                    "clear_rate": round(
+                        sum(1 for r in members if _is_true(r.get("cleared_hurdle"))) / len(members),
+                        3,
+                    ),
+                }
+            if "menu" in cell and "pool" in cell:
+                cell["menu_minus_pool_pct"] = round(
+                    cell["menu"]["avg_excess_pct"] - cell["pool"]["avg_excess_pct"], 3
+                )
+            if cell:
+                out[venue] = cell
+        return out
+
     def _calibration(self, model_rows: list[dict]) -> list[dict]:
-        """Stated confidence vs realised target-before-stop, per band."""
+        """Stated confidence vs realised PROFIT AFTER COSTS, per band.
+
+        `hit` means what the prompt says `confidence` means (see `profitable`).
+        The target-before-stop rate survives as `target_rate` so the harder
+        event is still visible; it is simply no longer what the model is graded
+        on, because it is not what the model was asked.
+        """
         graded = [
-            r
-            for r in model_rows
-            if r.get("confidence") is not None and r.get("cleared_target") is not None
+            r for r in model_rows if r.get("confidence") is not None and profitable(r) is not None
         ]
         by_band: dict[tuple[str, str], list[dict]] = {}
         for r in graded:
@@ -557,7 +791,8 @@ class ExperienceScorer:
             by_band.setdefault((band, str(r.get("venue") or "BINANCE")), []).append(r)
         out = []
         for (band, venue), members in sorted(by_band.items()):
-            hits = sum(1 for r in members if _is_true(r.get("cleared_target")))
+            hits = sum(1 for r in members if profitable(r))
+            targets = sum(1 for r in members if _is_true(r.get("cleared_target")))
             n = len(members)
             out.append(
                 {
@@ -566,6 +801,7 @@ class ExperienceScorer:
                     "n": n,
                     "hits": hits,
                     "hit_rate": round(hits / n, 3),
+                    "target_rate": round(targets / n, 3),
                     "stated": round(sum(float(r["confidence"]) for r in members) / n, 3),
                     "avg_return_pct": round(
                         sum(float(r.get("forward_return_pct", 0)) for r in members) / n, 3
@@ -573,6 +809,39 @@ class ExperienceScorer:
                 }
             )
         return out
+
+    def _relabel(self, rows: list[dict]) -> int:
+        """Relabel `cleared_hurdle` AGAINST THE CURRENT HURDLE. It is written
+        into the resolve row at resolve time, so every row resolved before the
+        2026-09-15 slippage re-measure was graded against the old 0.500% /
+        0.600% bar -- and this label is the fit target, the bucket clear rate
+        and part of what the prompt reads back. `pnl` and `promotion` already
+        price fees live; this is the same principle applied one layer down:
+        the journal is the append-only RECORD, and anything derived from it is
+        derived now, from the config in force now. `forward_return_pct` and
+        the book are both on the row, so the relabel is exact, not estimated.
+
+        NOT relabelled, deliberately: `cleared_target` and `outcome`. Those
+        grade the price PATH against the exit contract's levels, and the path
+        is not stored -- only its endpoints. Redoing them needs a re-resolve
+        against the price source, which is a different (and much more
+        expensive) operation. The staleness is bounded and small: the hurdle
+        change moved a 100-entry target from 117.50 to 116.90, because
+        `min_reward_risk` against the 8% stop dominates the target, not the
+        hurdle. `hurdle_pct_at_resolve` keeps the original for audit.
+        """
+        relabelled = 0
+        for r in rows:
+            if r.get("forward_return_pct") is None:
+                continue
+            hurdle_pct = self.ledger.breakeven_move_pct(str(r.get("book") or "BINANCE")) * 100
+            cleared = float(r["forward_return_pct"]) > hurdle_pct
+            if cleared != _is_true(r.get("cleared_hurdle")):
+                relabelled += 1
+            r["hurdle_pct_at_resolve"] = r.get("hurdle_pct")
+            r["hurdle_pct"] = round(hurdle_pct, 4)
+            r["cleared_hurdle"] = cleared
+        return relabelled
 
     def _aggregate(self, opens: dict, resolves: dict) -> dict:
         rows = []
@@ -582,6 +851,30 @@ class ExperienceScorer:
                 rows.append({**open_rec, **res})
         for r in rows:
             r.setdefault("venue", _venue_of_book(r.get("book") or ""))
+
+        relabelled = self._relabel(rows)
+
+        # De-overlap the LIVE arms before a single statistic is computed from
+        # them. The backtest sources are built non-overlapping by `backfill.py`
+        # and the `universe` pass opens one observation per symbol at a time;
+        # only the model/shadow/random picks re-measure a symbol mid-flight, and
+        # they do it constantly. Buckets, clear rates and calibration all read
+        # these rows, so leaving it to the paired comparison alone would fix the
+        # verdict and leave the PROMPT quoting inflated evidence back to itself.
+        horizon = dt.timedelta(minutes=self.scfg.horizon_minutes)
+        deduped: list[dict] = []
+        overlap_dropped: dict[str, int] = {}
+        by_source_raw: dict[str, list[dict]] = {}
+        for r in rows:
+            by_source_raw.setdefault(r.get("source", "?"), []).append(r)
+        for source, members in by_source_raw.items():
+            if source not in LIVE_SOURCES and not source.startswith(ARM_PREFIX):
+                deduped.extend(members)
+                continue
+            kept = independent(members, horizon)
+            overlap_dropped[source] = len(members) - len(kept)
+            deduped.extend(kept)
+        rows = deduped
 
         buckets = []
         by_source: dict[str, list[dict]] = {}
@@ -637,19 +930,57 @@ class ExperienceScorer:
         if closed:
             buckets.append(self._bucket("closed trades (mark-to-mainnet)", closed))
 
+        # De-overlapped, for the calibration block the prompt reads back.
         model_rows = by_source.get("model", [])
-        shadow_rows = by_source.get("shadow", [])
-        pair_summary = self._pairs(model_rows, shadow_rows)
+        # The model's record ON THE CURRENT MENU, as its own labelled rows. The
+        # full-epoch rows above still render; this adds, never replaces.
+        since = self.scfg.model_record_since
+        recent = [r for r in model_rows if since and str(r.get("ts") or "") >= since]
+        calibration_since: list[dict] = []
+        if recent:
+            buckets.append(self._bucket(f"model picks since {since}", recent))
+            for venue_ in sorted({r.get("venue") for r in recent}):
+                buckets.append(
+                    self._bucket(
+                        f"model picks since {since}:{venue_}",
+                        [r for r in recent if r.get("venue") == venue_],
+                    )
+                )
+            calibration_since = [{**c, "since": since} for c in self._calibration(recent)]
+        # The PAIRED test starts from the RAW rows, not the de-overlapped ones.
+        # De-overlapping each arm on its own drops one side of a decision and
+        # the surviving side then pairs with nothing -- it would silently shrink
+        # the comparison while looking like it had merely deduplicated. `_pairs`
+        # applies its own rule, which keeps a pair only when BOTH sides are
+        # independent, so the pairing is preserved by construction.
+        model_raw = by_source_raw.get("model", [])
+        shadow_raw = by_source_raw.get("shadow", [])
+        pair_summary = self._pairs(model_raw, shadow_raw)
         pairs_by_venue = {}
         for venue in sorted(
-            {r.get("venue") for r in model_rows} | {r.get("venue") for r in shadow_rows}
+            {r.get("venue") for r in model_raw} | {r.get("venue") for r in shadow_raw}
         ):
             pv = self._pairs(
-                [r for r in model_rows if r.get("venue") == venue],
-                [r for r in shadow_rows if r.get("venue") == venue],
+                [r for r in model_raw if r.get("venue") == venue],
+                [r for r in shadow_raw if r.get("venue") == venue],
             )
             if pv["n"]:
                 pairs_by_venue[venue] = pv
+
+        # THE LEADERBOARD. Every selector -- the LLM included, as `model` --
+        # paired against the same shadow with the same de-overlap rule. Sorted
+        # by the CI's LOWER bound, because a point estimate at n~100 is luck
+        # not yet ruled out and this repo has already promoted one of those.
+        leaderboard = []
+        for source, source_rows in sorted(by_source_raw.items()):
+            if source != "model" and not source.startswith(ARM_PREFIX):
+                continue
+            pv = self._pairs(source_rows, shadow_raw)
+            if pv["n"]:
+                leaderboard.append({"selector": source, **pv})
+        leaderboard.sort(
+            key=lambda r: r["ci_low"] if r.get("ci_low") is not None else -1e9, reverse=True
+        )
 
         return {
             "meta": {
@@ -660,12 +991,23 @@ class ExperienceScorer:
                 },
                 "min_bucket_n": self.scfg.min_bucket_n,
                 "resolved_observations": len(rows),
+                # How many live observations were re-measurements of a symbol
+                # already in flight. Large numbers here are not a defect in the
+                # arms -- they are why the statistics must de-overlap.
+                "overlapping_dropped": overlap_dropped,
+                # Rows whose hurdle verdict FLIPPED against the hurdle in force
+                # now. Non-zero means the stored labels were stale, which is
+                # expected after any `market_fees` edit.
+                "relabelled_against_current_hurdle": relabelled,
                 "benchmarks": dict(self.scfg.benchmarks),
             },
             "buckets": buckets,
             "model_vs_shadow": pair_summary,
             "model_vs_shadow_by_venue": pairs_by_venue,
             "calibration": self._calibration(model_rows),
+            "calibration_since": calibration_since,
+            "screen_control": self._screen_control(rows),
+            "leaderboard": leaderboard,
         }
 
 
@@ -716,7 +1058,9 @@ def experience_block(cfg: AppConfig | None = None, venue: str | None = None) -> 
         label = b["label"]
         # "<source> picks:<venue>" is a per-venue split of a live source;
         # "backtest_kr:KR" is a book split and renders as it is.
-        if label.startswith(tuple(f"{src} picks:" for src in LIVE_SOURCES)):
+        if label.startswith(tuple(f"{src} picks:" for src in LIVE_SOURCES)) or (
+            label.startswith("model picks since") and ":" in label
+        ):
             if label.split(":", 1)[1] != venue:
                 continue
             label = f"{label.split(':', 1)[0]} (this venue)"
@@ -728,15 +1072,21 @@ def experience_block(cfg: AppConfig | None = None, venue: str | None = None) -> 
     if venue_pairs.get("n", 0) >= min_n:
         rows["model vs random (paired, this venue)"] = _render_pairs(venue_pairs)
     calibration = {}
-    for c in data.get("calibration", []):
+    for c in list(data.get("calibration", [])) + list(data.get("calibration_since", [])):
         if c.get("n", 0) < min_n:
             continue
         if c.get("venue") and c["venue"] != venue:
             continue
-        label = f"confidence {c['band']}" + (" (this venue)" if c.get("venue") else "")
+        label = f"confidence {c['band']}"
+        if c.get("since"):
+            label += f" since {c['since']}"
+        if c.get("venue"):
+            label += " (this venue)"
         calibration[label] = (
-            f"{c['hits']}/{c['n']} reached target before stop ({c['hit_rate']:.0%}) "
-            f"against a stated {c['stated']:.2f}; avg {c['avg_return_pct']:+.2f}%"
+            f"{c['hits']}/{c['n']} ended in profit after costs ({c['hit_rate']:.0%}) "
+            f"against a stated {c['stated']:.2f}; "
+            f"{c.get('target_rate', 0):.0%} reached the full target; "
+            f"avg {c['avg_return_pct']:+.2f}%"
         )
     if not rows and not calibration:
         return None
@@ -748,6 +1098,12 @@ def experience_block(cfg: AppConfig | None = None, venue: str | None = None) -> 
             "rows span every venue; '(this venue)' rows are this market alone. "
             "'vs benchmark' is the excess over the book's benchmark across the same "
             "window. Small samples are withheld."
+            + (
+                f" The menu's construction changed on {since}: rows marked 'since' are "
+                "your record on the CURRENT menu; unmarked rows include the retired one."
+                if (since := cfg.score.model_record_since)
+                else ""
+            )
         ),
         "record": rows,
     }

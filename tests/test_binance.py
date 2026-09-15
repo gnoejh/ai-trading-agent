@@ -199,9 +199,16 @@ def test_book_hurdles_differ(cfg, tmp_path):
     crypto = ledger.breakeven_move_pct("CRYPTO")
     bstocks = ledger.breakeven_move_pct("BSTOCKS")
     assert crypto != bstocks
-    # Same commission, wider assumed slippage on the thinner bStocks book.
-    assert crypto == pytest.approx(0.001 * 2 + 0.0015 * 2)
-    assert bstocks == pytest.approx(0.001 * 2 + 0.0020 * 2)
+    # Same commission, wider assumed slippage on the thinner bStocks book. The
+    # RATES are config's to set -- the 2026-09-15 mainnet-book re-measure moved
+    # them and a literal here failed the suite for a correct edit. What is
+    # pinned is the STRUCTURE (commission twice plus slippage twice, no sell
+    # tax) and the ORDERING (bStocks is the thinner book, so it costs more).
+    cr, bs = cfg.accounting.fees_for("CRYPTO"), cfg.accounting.fees_for("BSTOCKS")
+    assert crypto == pytest.approx(cr.commission_rate * 2 + cr.slippage_bps / 10_000 * 2)
+    assert bstocks == pytest.approx(bs.commission_rate * 2 + bs.slippage_bps / 10_000 * 2)
+    assert bs.slippage_bps > cr.slippage_bps
+    assert bstocks > crypto
 
 
 def test_no_sell_side_tax_on_binance(cfg, tmp_path):

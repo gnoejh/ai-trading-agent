@@ -181,6 +181,45 @@ def render(cfg: AppConfig | None = None) -> str:
                 )
         except (OSError, ValueError):
             pass
+
+    # The screen's own control group, added 2026-09-16. Not a criterion -- what
+    # to do about a bad menu is a strategy decision -- but rendered HERE because
+    # on the first reading it dwarfed every model-vs-shadow edge ever measured,
+    # and a gate that reports the model's edge while staying silent about the
+    # population the model is handed is answering the smaller question.
+    # `store` must exist on the failure path too: the leaderboard below reads
+    # it, and a missing experience.json (a fresh checkout, every hermetic test)
+    # raised UnboundLocalError from inside the render on 2026-09-16.
+    store: dict = {}
+    try:
+        store = json.loads(Path(cfg.score.experience).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        store = {}
+    control = store.get("screen_control") or {}
+    for venue, cell in sorted(control.items()):
+        if "menu_minus_pool_pct" not in cell:
+            continue
+        menu, pool = cell["menu"], cell["pool"]
+        lines.append(
+            f"  ℹ️ screen control {venue} (not a criterion): a RANDOM draw from the menu "
+            f"{menu['avg_excess_pct']:+.2f}% (n={menu['n']}) vs from outside it "
+            f"{pool['avg_excess_pct']:+.2f}% (n={pool['n']}) — "
+            f"the screen costs {-cell['menu_minus_pool_pct']:+.2f}% vs not screening"
+        )
+
+    # The selector leaderboard (2026-09-16). Not a criterion: the gate asks
+    # whether THE MODEL beats chance, and only the model can open it. But if a
+    # deterministic rule beats chance and the model does not, that is the
+    # single most useful fact the gate can put in front of the owner.
+    for row in (store.get("leaderboard") or [])[:6]:
+        ci = ""
+        if row.get("ci_low") is not None:
+            ci = f", CI {row['ci_low']:+.2f}..{row['ci_high']:+.2f}"
+        lines.append(
+            f"  ℹ️ selector {row['selector']:<16} n={row['n']:<4} "
+            f"edge {row['mean_diff_pct']:+.2f}%{ci}, wins {row['model_wins']}/{row['n']}"
+        )
+
     if result["ready"]:
         lines.append(
             "  🟢 ALL CRITERIA MET — the owner may set `use_testnet: false` "

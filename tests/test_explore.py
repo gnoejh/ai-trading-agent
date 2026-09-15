@@ -39,6 +39,9 @@ def cfg(tmp_path):
     c.score.enabled = False
     c.score.observations = str(tmp_path / "observations.jsonl")
     c.score.experience = str(tmp_path / "experience.json")
+    # These pin model+shadow MECHANICS; the selector arms (2026-09-16) open
+    # extra observations per decision and have their own tests.
+    c.score.arms = []
     c.score.min_bucket_n = 10
     # The allocator persists its share to data/ by default. A test that leaves
     # this pointing at the real path writes -- and stomps -- the LIVE service's
@@ -593,3 +596,52 @@ def test_trade_rules_describe_the_trail_and_advertise_no_floor(cfg):
     # The floor gates nothing in code, so the prompt must not imply it does.
     assert "confidence_floor" not in rules
     assert "floor" not in rules["note"].lower()
+
+
+def test_a_paused_book_is_absent_from_the_random_draw(cfg):
+    """`explore.books` pauses a book that measures negative (BSTOCKS, 2026-09-16).
+
+    The draw stays uniform over what remains -- a paused book is simply not in
+    the pool, rather than being drawn and then refused, which would silently
+    lower the arm's entry rate by that book's share of the universe.
+    """
+    mixed = list(POOL) + [
+        {
+            "symbol": "NVDABUSDT",
+            "book": "BSTOCKS",
+            "price": 3.0,
+            "change_pct": 0.5,
+            "quote_volume": 5e6,
+        },
+        {
+            "symbol": "TSLABUSDT",
+            "book": "BSTOCKS",
+            "price": 4.0,
+            "change_pct": 0.7,
+            "quote_volume": 4e6,
+        },
+    ]
+    cfg.explore.books = ["CRYPTO"]
+    cfg.explore.entries_per_cycle = 5
+    cfg.explore.max_positions = 10
+    agent = make_agent(cfg, adapter=StubAdapter(pool=mixed))
+    sent = agent.run_explore(observation(), free_slots=10)
+    bought = {v.intent.symbol for v in agent.executor.executed}
+    assert sent == 3 and bought == {e["symbol"] for e in POOL}
+
+
+def test_an_empty_books_list_means_every_book(cfg):
+    mixed = list(POOL) + [
+        {
+            "symbol": "NVDABUSDT",
+            "book": "BSTOCKS",
+            "price": 3.0,
+            "change_pct": 0.5,
+            "quote_volume": 5e6,
+        },
+    ]
+    cfg.explore.books = []
+    cfg.explore.entries_per_cycle = 5
+    cfg.explore.max_positions = 10
+    agent = make_agent(cfg, adapter=StubAdapter(pool=mixed))
+    assert agent.run_explore(observation(), free_slots=10) == 4

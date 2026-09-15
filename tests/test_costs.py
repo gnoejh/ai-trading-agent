@@ -48,9 +48,13 @@ def test_round_trip_rate_is_the_hurdle(ledger):
 def test_llm_call_is_priced_from_config(ledger):
     """DeepSeek bills this account in CNY, from a CNY list that is NOT market-FX
     of the USD list -- the ledger must convert the native CNY price itself."""
-    # deepseek-v4-flash: ¥3 in / ¥9 out per 1M (peak cache-miss) -> USD at usd_cny
+    # The RATE is config's to change -- DeepSeek repriced Flash on 2026-09-10 and
+    # a literal here failed the suite for a correct edit. What is pinned is the
+    # CONVERSION: a CNY-listed model divides by usd_cny, and nothing else does.
+    flash = ledger.cfg.llm.pricing["deepseek-v4-flash"]
+    assert flash.currency == "CNY"
     usd = ledger.price_call("deepseek-v4-flash", 1_000_000, 1_000_000)
-    assert usd == pytest.approx((3.00 + 9.00) / 7.15)
+    assert usd == pytest.approx((flash.input + flash.output) / 7.15)
     # Legacy alias stays priced so a tier rollback never bills at zero.
     assert ledger.price_call("deepseek-chat", 1_000_000, 1_000_000) > 0
     # A USD-priced model converts nothing.
@@ -60,7 +64,8 @@ def test_llm_call_is_priced_from_config(ledger):
 def test_cny_priced_call_lands_in_krw_at_the_market_rate(ledger):
     """The user-facing number is KRW; for a CNY bill it must be CNY x (krw/cny),
     not the USD list converted at market FX (~5% apart)."""
-    usd = ledger.price_call("deepseek-v4-flash", 1_000_000, 0)  # ¥3.00
+    listed = ledger.cfg.llm.pricing["deepseek-v4-flash"].input  # CNY per 1M input
+    usd = ledger.price_call("deepseek-v4-flash", 1_000_000, 0)
     ledger.record_llm(
         Usage(
             model="deepseek-v4-flash",
@@ -72,7 +77,7 @@ def test_cny_priced_call_lands_in_krw_at_the_market_rate(ledger):
         )
     )
     krw = ledger.day().api_krw
-    assert krw == pytest.approx(3.00 / 7.15 * 1380.0, rel=1e-3)  # ≈ ¥3 x 193 KRW/CNY
+    assert krw == pytest.approx(listed / 7.15 * 1380.0, rel=1e-3)  # CNY x ~193 KRW/CNY
 
 
 def test_unknown_model_costs_zero_rather_than_guessing(ledger):

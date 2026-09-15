@@ -86,7 +86,8 @@ Reply with JSON only:
 
 - `best_candidate` is ALWAYS required, even when `intents` is empty: the single
   most promising name on the menu right now, with your honest probability that
-  it reaches the target before the stop. It is never traded — it exists so your
+  it ends in profit after costs (the same `confidence` defined below -- one
+  definition, graded one way). It is never traded — it exists so your
   selection skill is measured against a random pick on every decision, not only
   on the rare cycles you trade. Declining to trade while still naming your best
   candidate is the expected common case.
@@ -415,6 +416,22 @@ class TradingAgent:
                 self._prompt(observation), system=_SYSTEM, tier=tiers.escalate_on_low_confidence
             )
             intents, commentary, best, best_conf = self._parse(raw, allowed, prices)
+
+        # The second opinion: a different tier asked the IDENTICAL question, of
+        # which only the virtual pick is kept. Stashed rather than returned so
+        # the decision tuple every caller unpacks keeps its shape. Isolated in
+        # its own try so that nothing about the stronger model's availability,
+        # latency or reply can touch the traded decision above.
+        self._second_opinion = (None, None)
+        if tiers.second_opinion:
+            try:
+                raw2 = self.llm.ask(
+                    self._prompt(observation), system=_SYSTEM, tier=tiers.second_opinion
+                )
+                _, _, best2, conf2 = self._parse(raw2, allowed, prices)
+                self._second_opinion = (best2, conf2)
+            except Exception:  # measurement only: log, never raise
+                log.exception("second opinion (%s) failed", tiers.second_opinion)
         return intents, commentary, best, best_conf
 
     def _parse(
@@ -721,6 +738,10 @@ class TradingAgent:
         try:
             order_size = self.sizer.budget(observation["snapshot"].cash)
             pool = [e for e in screen.tradable_pool(order_size) if e["symbol"] not in held]
+            if ecfg.books:
+                # A paused book is simply absent from the draw; the symbol
+                # count in the pool shrinks, the sampling stays uniform.
+                pool = [e for e in pool if e.get("book") in ecfg.books]
         except Exception as exc:
             log.exception("explore pool failed")
             self.journal.write("explore_failed", error=str(exc))
@@ -923,6 +944,10 @@ class TradingAgent:
             shadow_random=self._shadow_pick(observation),
             virtual_pick=virtual,
             virtual_confidence=best_conf,
+            # The second opinion's pick, scored as its own arm. Absent when off.
+            second_opinion_tier=self.acfg.tiers.second_opinion or None,
+            virtual_pick_deep=getattr(self, "_second_opinion", (None, None))[0],
+            virtual_confidence_deep=getattr(self, "_second_opinion", (None, None))[1],
             free_slots=free_slots,
             verdicts=[
                 {"intent": asdict(v.intent), "approved": v.approved, "reasons": v.reasons}

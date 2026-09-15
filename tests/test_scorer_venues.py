@@ -36,6 +36,9 @@ def cfg(tmp_path):
     c.agent.journal = str(tmp_path / "journal.jsonl")
     c.score.observations = str(tmp_path / "observations.jsonl")
     c.score.experience = str(tmp_path / "experience.json")
+    # These pin model+shadow MECHANICS; the selector arms (2026-09-16) open
+    # extra observations per decision and have their own tests.
+    c.score.arms = []
     c.score.kiwoom_archive = str(tmp_path / "archive")
     c.score.min_bucket_n = 1
     c.score.benchmarks = {"KR": "069500"}

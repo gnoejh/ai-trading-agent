@@ -106,12 +106,32 @@ class BinanceScreen:
         return self._prior
 
     def _rank_move(self, pool: list[dict]) -> list[dict]:
-        """The "move" ranking: by the frozen fitted prior when configured and
-        present, else by taker-buy share (flow), else by price change."""
+        """The "move" ranking: prior, flow, a spread sample, or price change.
+
+        `sample` is the 2026-09-16 answer to a measurement, not a new signal.
+        Every ranker tried here selects the EXTREME TAIL of something — the top
+        of flow, the top of |change|, the top of the fitted prior — and the
+        record says each tail underperforms the pool it was drawn from: a RANDOM
+        draw from the resulting menu lost 3.93% of excess return on Binance and
+        2.98% on KR against a random draw from outside it, while momentum's tail
+        measured no edge (2026-08-10) and the fitted prior lost to a constant
+        (2026-09-13). A stride across the liquidity-ordered pool deliberately
+        ranks by NOTHING: it spans the pool's distribution instead of skimming
+        an edge of it, which is the only population here that has ever measured
+        positive. Deterministic on purpose — no RNG, so the same pool yields the
+        same menu and the shadow stays a fair probe of it.
+        """
         rank_by = self.rank_by()
         prior = self.prior() if rank_by == "model" else None
         if prior is not None:
             return sorted(pool, key=lambda e: -prior.p_clear(e))
+        if rank_by == "sample":
+            by_volume = sorted(pool, key=lambda e: -e["quote_volume"])
+            want = min(len(by_volume), max(self.scfg.candidates, 1) * 4)
+            if want <= 0:
+                return []
+            step = len(by_volume) / want
+            return [by_volume[int(i * step)] for i in range(want)]
         if self.scfg.use_flow and rank_by != "change":
             return sorted(pool, key=lambda e: -(e.get("taker_buy_share") or 0))
         return sorted(pool, key=lambda e: -abs(e["change_pct"]))
@@ -236,6 +256,22 @@ class BinanceScreen:
             if self.scfg.use_flow:
                 pool = [e for e in pool if e.get("taker_buy_share") is not None]
             slots = self.scfg.book_slots.get(book, self.scfg.candidates)
+
+            # `sample` deliberately SKIPS the union below. The union scores a
+            # name up for appearing in both the volume head and the move
+            # ranking, so whatever the move ranker says, the liquidity head wins
+            # -- switching the ranker with the union in place changed 6 of 25
+            # names and would have shipped a no-op dressed as a fix. Spanning
+            # the pool is the whole point of this mode, so it selects alone.
+            # Every name here still cleared `min_volume_multiple_of_order`, so
+            # the thinnest of them can still absorb the order.
+            if self.rank_by() == "sample":
+                spread = sorted(pool, key=lambda e: -e["quote_volume"])
+                if spread and slots > 0:
+                    step = len(spread) / min(len(spread), slots)
+                    selected.extend(spread[int(i * step)] for i in range(min(len(spread), slots)))
+                continue
+
             by_volume = sorted(pool, key=lambda e: -e["quote_volume"])
             # Rank by BUY PRESSURE, not by price change -- the measured signal;
             # or by the frozen fitted prior, which weighs every feature jointly.

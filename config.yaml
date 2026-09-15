@@ -42,8 +42,22 @@ broker:
     markets:
       KR:
         url_prefix: /api/dostk
-        exchange: KRX
+        # Order routing (kt10000/1/2/3 dmst_stex_tp, which takes KRX|NXT|SOR).
+        # SOR, not KRX: after 15:30 a KRX-routed order cannot fill at all, and
+        # pinning the evening to NXT instead would mis-route the 09:00-15:20
+        # session. SOR lets the broker pick the venue that is open and better
+        # priced, which is the only value correct at every hour of the new day.
+        exchange: SOR
         state:
+          # UNVERIFIED AGAINST AN NXT FILL, and the one thing here that could go
+          # quiet rather than loud: kt00018/kt00004 take KRX or NXT and offer no
+          # 통합 value, so if the field FILTERS holdings rather than choosing the
+          # valuation venue, an evening fill would be invisible to the snapshot
+          # the exit supervisor reads -- a position with no stop, which is the
+          # 2026-08-12 failure class. Left on KRX because NXT would be strictly
+          # worse (it marks the whole book at the thinner venue's prices).
+          # Check: after the first SOR fill outside 09:00-15:20, call kt00018
+          # with KRX and again with NXT and compare the symbol lists.
           positions:   {api_id: kt00018, params: {qry_tp: "1", dmst_stex_tp: "KRX"}}
           cash:        {api_id: kt00001, params: {qry_tp: "2"}}
           open_orders: {api_id: ka10075, params: {all_stk_tp: "0", trde_tp: "0", stex_tp: "0"}}
@@ -86,6 +100,11 @@ broker:
       ticker_24hr:   {path: /api/v3/ticker/24hr}
       price:         {path: /api/v3/ticker/price}
       klines:        {path: /api/v3/klines}
+      # Order-book depth. Unsigned, so it reads the MAINNET data plane even
+      # on testnet -- which is the point: the slippage assumption in the
+      # hurdle is about mainnet execution, and the testnet's bot-seeded
+      # book would answer a different question. See accounting/slippage.py.
+      depth:         {path: /api/v3/depth}
       account:       {path: /api/v3/account,    signed: true}
       open_orders:   {path: /api/v3/openOrders, signed: true}
       my_trades:     {path: /api/v3/myTrades,   signed: true}
@@ -131,7 +150,22 @@ llm:
   # 14:00-18:00 Beijing time) is 50% off and cache hits bill ~3% of the miss
   # rate, so real spend runs BELOW what the ledger reports.
   pricing:
-    deepseek-v4-flash: {input: 3.00, output: 9.00,  currency: CNY}
+    # Flash REPRICED 12:00 Beijing 2026-09-10 and this stayed at the old 3.00 /
+    # 9.00 for five days. New USD list: cache hit $0.003, cache MISS $0.15,
+    # output $0.60 per 1M off-peak, PEAK double. Policy is unchanged -- bill
+    # peak cache-miss so the ledger overstates spend rather than flattering it
+    # -- so peak $0.30 / $1.20 converted at DeepSeek's ~6.82 internal CNY ratio
+    # (NOT market FX; see the note above). DERIVED from the USD notice, not read
+    # off the CNY page: worth one look when someone is in the console.
+    # Reconciled against the real bill 2026-09-15: the console's 1,434 requests
+    # / 23,715,456 tokens match this ledger's 1,422 / 23,525,361 to 0.99x, and
+    # its CNY 100.03 against the ledger's CNY 175.15 -- overstating 1.75x, which
+    # is the policy working. Most of the residual is cache HITS billed here as
+    # misses at 50x the rate; the prompt is largely static, so DeepSeek caches
+    # it. Not plumbed (the client reads prompt_tokens, not
+    # prompt_cache_hit_tokens) because it would refine a ~$14 line item.
+    deepseek-v4-flash: {input: 2.05, output: 8.18,  currency: CNY}
+    # V4 Pro billing explicitly unchanged in the same 2026-09-10 notice.
     deepseek-v4-pro:   {input: 9.00, output: 27.00, currency: CNY}
     # Legacy aliases -- gone from the docs since the V4 lineup but still
     # answering (verified 2026-08-30). Kept so a tier rollback bills nonzero
@@ -204,7 +238,9 @@ accounting:
   ledger: data/ledger.jsonl
   # Hard daily ceiling on API spend. Measured cost is ~25 KRW per decision cycle
   # on deepseek-v4-flash; three venues (Binance 24/7 + KR + US measurement) run
-  # ~150 cycles/day ≈ 3,700 KRW. The budget day is UTC, and the US session sits in
+  # ~165 cycles/day ≈ 4,100 KRW at the 900s interval -- KR went from ~25 to ~42
+  # cycles when its session extended to 20:00 (2026-09-15), which still leaves
+  # ~30% headroom. The budget day is UTC, and the US session sits in
   # its last 6.5 hours — at 2,000 the US venue starved on leftovers (2026-09-02),
   # so the ceiling is sized to cover ALL venues with ~60% headroom (owner,
   # 2026-09-02: DeepSeek is cheap, the budget must be enough). It stays enforced,
@@ -223,14 +259,48 @@ accounting:
   # books, so the hurdle it quotes to the model is the WORSE of them (BINANCE):
   # quoting the cheaper one would understate the bar a bStocks pick must clear.
   market_fees:
-    BINANCE: {commission_rate: 0.001,   sell_tax_rate: 0.0,    slippage_bps: 20}
-    CRYPTO:  {commission_rate: 0.001,   sell_tax_rate: 0.0,    slippage_bps: 15}
-    BSTOCKS: {commission_rate: 0.001,   sell_tax_rate: 0.0,    slippage_bps: 20}
+    # SLIPPAGE RE-MEASURED 2026-09-15 against the live mainnet book
+    # (`uv run python -m trading.accounting.slippage`, data/slippage.json).
+    # The old 15/20 bps was set for a microcap-breakout population the screen
+    # stopped buying on 2026-09-09, and it was wrong by more than an order of
+    # magnitude. Round-trip medians measured at today's ~$105 order:
+    #     CRYPTO  model menu  1.00 bps  (config charged 30 -- 30x)
+    #     CRYPTO  random pool 4.58 bps  (          -- 6.5x)
+    #     BSTOCKS model menu  1.71 bps  (config charged 40 -- 23x)
+    #     BSTOCKS random pool 7.23 bps  (          -- 5.5x)
+    # Set to ~2x the RANDOM POOL median, not to the measured value and not to
+    # the menu's: the pool is the population the random arm draws from and it
+    # opens most of the entries, and a static book snapshot cannot see latency,
+    # adverse selection, or the book moving between decision and fill. The
+    # margin is deliberate -- this ledger overstates costs rather than
+    # flattering them, the same policy the LLM pricing follows. Re-run the probe
+    # if the screen's population changes again or the account grows: the pool
+    # median is size-dependent (CRYPTO reads 20.72 bps at $2,500).
+    BINANCE: {commission_rate: 0.001,   sell_tax_rate: 0.0,    slippage_bps: 6}
+    CRYPTO:  {commission_rate: 0.001,   sell_tax_rate: 0.0,    slippage_bps: 5}
+    BSTOCKS: {commission_rate: 0.001,   sell_tax_rate: 0.0,    slippage_bps: 6}
     # Kiwoom books, in KRW terms (currency drives the ledger's conversion).
     # KR pays the 0.15% 거래세 on sells; verify the rate each budget year.
     KR:      {commission_rate: 0.00015, sell_tax_rate: 0.0015, slippage_bps: 5, currency: KRW}
     US:      {commission_rate: 0.00015, sell_tax_rate: 0.0,    slippage_bps: 5, currency: USD}
   report_currency: KRW
+  # Re-measures the `slippage_bps` above against the live mainnet book, because
+  # 15 bps/side was set for a microcap-breakout population the screen stopped
+  # buying on 2026-09-09. See trading/accounting/slippage.py.
+  slippage_probe:
+    # Slippage is a property of (symbol, NOTIONAL): one number would answer the
+    # wrong question. The rungs bracket both today's order (4% of ~2,617 USDT
+    # orderable ≈ $105) and the size orders become if the idle mainnet USD 4,820
+    # is ever converted (4% of ~7,437 ≈ $297) -- and beyond, so the answer keeps
+    # holding as the account grows.
+    notionals: [100, 250, 500, 1000, 2500]
+    # /api/v3/depth accepts 5/10/20/50/100/500/1000/5000. 500 costs weight 25,
+    # so a 25-symbol sweep is 625 of the 6,000/min budget. Enough levels that a
+    # thin book reports `insufficient` on its own merits rather than because the
+    # probe stopped looking.
+    depth_limit: 500
+    symbols_per_book: 12
+    output: data/slippage.json
 
 notify:
   telegram:
@@ -327,6 +397,14 @@ explore:
   # would never produce a closed trip or a random baseline. US is dry-run
   # (measurement-only) and never explores; a dry-run venue is skipped in code.
   markets: [BINANCE, KR]
+  # 2026-09-16: which Binance BOOKS the random arm may enter. BSTOCKS paused --
+  # it measures negative on every instrument this system has: realised
+  # -2.44%/trip (n=8), a random draw from its menu -2.07% excess (n=19), a
+  # random draw from its pool -1.21% excess (n=42), against CRYPTO's +1.89%.
+  # Three small samples pointing the same way, and a book whose tokens trade
+  # 24/7 against an underlying that trades 6.5h/day. Re-admit when the
+  # `screen control` line reads positive for BSTOCKS. Empty = every book.
+  books: [CRYPTO]
 
 allocator:
   # THE MODEL'S SHARE OF THE BOOK, EARNED AUTOMATICALLY (owner, 2026-09-07):
@@ -352,9 +430,23 @@ allocator:
   # a long-only rule in a +96% window lost to buy-and-hold). Coming DOWN needs
   # only realised loss, which requires no significance test to act on.
   enabled: true
-  base_share: 0.50              # in force until evidence arrives (= today's entry_pct 0.5)
+  # 2026-09-16: 0.50 -> 0.25. The prior was a coin flip; the record is not.
+  # The model's own sleeve runs -1.03%/trip (n=51) while the arm it shares the
+  # book with runs +1.61%/trip (n=62), and the model does not even USE the
+  # share it holds -- 67 orders against 472 random-arm attempts, with 4-7 of
+  # 15 slots EMPTY on every recent decision. Those empty slots are the cheapest
+  # profit in the system. The model loses nothing measurable by this: its
+  # verdict comes from the virtual pick, journalled on every decide reply,
+  # which costs no slot and no dollar (the 09-13 independence argument). It can
+  # still climb to max_share the moment it earns it; only the start moved.
+  # WAS: 0.50.
+  base_share: 0.25
   max_share: 0.85               # the owner's target; 1 - this is the PERMANENT epsilon floor
-  min_share: 0.15               # a losing model still keeps a seat to learn from
+  # 2026-09-16: 0.15 -> 0.05. A 15% floor for a sleeve that measures negative
+  # was a measurement subsidy the virtual pick makes unnecessary. Not zero: a
+  # token traded share keeps the exit contract graded on REAL fills for the
+  # model's picks, which the virtual pick cannot do. WAS: 0.15.
+  min_share: 0.05
   target_net_pct: 0.50          # avg net %/trip after hurdle scoring profit 1.0
   target_edge_pct: 2.00         # model-vs-shadow edge (CI LOWER bound) scoring 1.0
   min_ready_buckets: 30         # RAG buckets past score.min_bucket_n for a full context score
@@ -396,6 +488,22 @@ score:
   # 0.45 floor is the decision boundary, so its band is measured directly.
   confidence_bands: [0.45, 0.55, 0.65]
   bootstrap_samples: 2000
+  # 2026-09-16: SELECTOR ARMS. The LLM is one selector among several that the
+  # journalled menu already supports, and for two weeks it was the only one on
+  # trial. Each arm below is a pure function of a decision's menu, opened as
+  # its own source (`arm_<name>`) against the SAME shadow on the SAME menus, so
+  # "does anything here beat chance" is answered for all of them at once and
+  # for free -- and retroactively, since every menu since 09-02 is journalled.
+  # flow_top / prior_top are the two rankers this repo has shipped; volume_top
+  # is the liquidity head; change_low is the mean-reversion reading of the
+  # screen finding (buy what fell); change_high is its momentum control.
+  arms: [flow_top, prior_top, volume_top, change_low, change_high]
+  # 2026-09-16: the screen changed (rank_by sample, change band off), so the
+  # model's self-record before this date was earned on a population that no
+  # longer exists -- a random draw from it lost 2.57% to benchmark. The prompt
+  # keeps the full-epoch row AND renders a "since" row once it has min_bucket_n
+  # observations, both labelled. Move the date only when the menu changes again.
+  model_record_since: "2026-09-16"
   bootstrap_seed: 20260903
   ci_level: 0.95
 
@@ -425,6 +533,12 @@ promotion:
 # report is ever summed across a sleeve -- quote currencies differ between
 # books, and pooling is the defect it exists to remove.
 pnl:
+  # 2026-09-16: KR was invisible. `score.trade_markets` is Binance-only because
+  # the gate SUMS pnl_quote and a KRW trip cannot join a USDT sum -- but this
+  # report never sums across a sleeve, so KR is safe here and was simply never
+  # listed. First reading: n=85, +7.45M KRW, +0.557%/trip, clear 0.58 -- a
+  # profitable paper sleeve nobody was counting. Empty = score.trade_markets.
+  markets: [CRYPTO, BSTOCKS, BINANCE, KR]
   match_tolerance_s: 900   # trip entry -> journalled entry, nearest within this
   days: 14                 # daily rows rendered per sleeve; 0 = the whole epoch
 
@@ -620,11 +734,19 @@ agent:
     # trap the 09-03 medians and clear rates were added to catch, and the whole
     # reason the model declined 100 straight cycles -- it was handed five names
     # from the one band the record condemns and said so every time.
-    # The gate is now permissive over the two bands the record favours and the
-    # FLOW ranker (the measured edge) does the selecting inside them.
-    # To revert: min 0.15 / max 0.60.
-    min_change_pct: -0.10
-    max_change_pct: 0.15
+    # 2026-09-16: THE CHANGE BAND IS OFF (0 disables each bound).
+    # `min_change_pct` had ALREADY been a no-op since 09-09 -- the filter compares
+    # `abs(change_pct)`, which is never below a negative bound -- so the "signed
+    # -0.10..0.15 band" described above was really |chg| <= 15%, treating a -14%
+    # crash exactly like a +14% pump. The band was also where the damage lived:
+    # on the live menu `change 5%+` was 85 of 127 observations at -3.29% excess
+    # and -6.02% MEDIAN, and no sub-slice of the menu beat the unscreened pool
+    # (a RANDOM draw from the menu lost 3.93% of excess to a random draw outside
+    # it). Liquidity, lot rules and the stablecoin exclusion still qualify the
+    # pool, exactly as they always did -- what is gone is the strategy bet.
+    # To revert: min -0.10 / max 0.15 (09-09), or min 0.15 / max 0.60 (before).
+    min_change_pct: 0
+    max_change_pct: 0
     # ...and the real floor scales with the order: an entry must stay under
     # 1/200th of the thinnest allowed name's daily turnover. Changing the balance
     # therefore moves the liquidity bar automatically.
@@ -641,7 +763,9 @@ agent:
     # live), so both books trade there. Caveat: quantisation filters come from
     # mainnet exchangeInfo (data plane); a testnet filter mismatch surfaces as a
     # BinanceError at order time, not silently.
-    book_slots:            {CRYPTO: 18, BSTOCKS: 7}
+    # 2026-09-16: BSTOCKS 7 -> 0 (see explore.books for the measurement);
+    # CRYPTO takes the 25. WAS: {CRYPTO: 18, BSTOCKS: 7}.
+    book_slots:            {CRYPTO: 25, BSTOCKS: 0}
     # Recalibrated 2026-08-30 for fixed-fraction sizing: the old floors
     # (CRYPTO 5M / BSTOCKS 500k) were sized against full-balance orders. A 4%
     # position needs ~200x its own notional, which min_volume_multiple_of_order
@@ -657,11 +781,20 @@ agent:
     flow_interval: 1d
     flow_lookback: 5
     flow_pool_per_book: 30
-    # flow | model | change. `model` orders the move ranking by the frozen
-    # fitted prior (fit.model) and falls back to flow when no artifact exists.
-    # Stays on flow until a fit report shows the prior beats the flow rank
-    # out of sample -- switching the ranker is an outer-loop step.
-    rank_by: flow
+    # sample | flow | model | change. `model` orders by the frozen fitted prior
+    # (fit.model) and falls back to flow when no artifact exists.
+    # 2026-09-16: `sample`, not `flow`. Every ranker here selects the EXTREME
+    # TAIL of something, and each tail has now measured worse than the body it
+    # came from: momentum's had no edge (08-10), the fitted prior lost to a
+    # constant (09-13), and flow does not sort INSIDE the menu at all -- the
+    # clear rate FALLS as flow rises (0.36 / 0.29 / 0.23, low to high tertile).
+    # `sample` strides across the liquidity-ordered pool and so ranks by
+    # NOTHING, spanning the only population here that has ever measured positive
+    # (+1.36% excess unscreened vs -2.57% from the menu). The 08-10 decile
+    # finding is NOT retracted: "top vs bottom decile spreads +1.05%" and "the
+    # top 18 are the best 18" are different claims, and only the second is what
+    # this ranker was doing. WAS: flow. One word to revert.
+    rank_by: sample
     BINANCE:
       min_price: 0                # any price; quantisation handles sub-cent coins
     KR:
@@ -674,20 +807,34 @@ agent:
       # So: turnover ranking for liquidity, the foreigner/institution net-buy
       # rankings for flow, a 10% change cap, and the candidates ordered by
       # each name's own net-buy share over the last week (ka10061).
-      rank_by: flow
-      max_change_pct: 0.10
+      # 2026-09-16: same correction as the Binance screen, for the same
+      # measurement -- a RANDOM draw from this menu returned -1.22% of excess
+      # against +1.76% for a random draw outside it, so the menu's construction
+      # is subtracting value here too. NOTE the evidence is AGGREGATE for KR:
+      # the per-slice decomposition that condemned Binance's change band
+      # (`change 5%+`, -6.02% median) has no KR equivalent yet, so the band is
+      # turned off by analogy, not by its own measurement. Re-read the KR
+      # `screen control` line before treating this as settled.
+      # WAS: rank_by flow / max_change_pct 0.10.
+      rank_by: sample
+      max_change_pct: 0
+      # stex_tp on the RANKERS is "1:KRX, 2:NXT, 3:통합" -- a different enum from
+      # the account calls below, where 0 is 통합 and there is no 3. It read "1"
+      # (KRX only), which after 15:30 would rank a closed tape: every evening
+      # cycle would screen a frozen 15:30 snapshot and call it today's flow.
+      # "3" (통합) spans both venues all day.
       rankers:
-        - {api_id: ka10032, params: {mrkt_tp: "000", mang_stk_incls: "0", stex_tp: "1"}}  # 거래대금상위
+        - {api_id: ka10032, params: {mrkt_tp: "000", mang_stk_incls: "0", stex_tp: "3"}}  # 거래대금상위
         # 외국인기관매매상위: four rankings per row; the two NET-BUY columns are
         # read as rankings of their own (amounts in 천만 KRW).
         - api_id: ka90009
-          params: {mrkt_tp: "000", amt_qty_tp: "1", qry_dt_tp: "0", stex_tp: "1"}
+          params: {mrkt_tp: "000", amt_qty_tp: "1", qry_dt_tp: "0", stex_tp: "3"}
           columns:
             - {code: for_netprps_stk_cd,  name: for_netprps_stk_nm,  amount: for_netprps_amt}
             - {code: orgn_netprps_stk_cd, name: orgn_netprps_stk_nm, amount: orgn_netprps_amt}
       # The random arm's pool: turnover-ranked names, no strategy bounds.
       pool_rankers:
-        - {api_id: ka10032, params: {mrkt_tp: "000", mang_stk_incls: "0", stex_tp: "1"}}
+        - {api_id: ka10032, params: {mrkt_tp: "000", mang_stk_incls: "0", stex_tp: "3"}}
       # Per-candidate net-buy share, same construction as the backfill feature:
       # (foreigner + institution) / (|individual| + |foreigner| + |institution|).
       flow:
@@ -695,13 +842,21 @@ agent:
         params: {amt_qty_tp: "1", trde_tp: "0", unit_tp: "1000"}
         lookback_days: 7
     US:
-      min_price: 1                # USD
-      min_change_pct: 0.02
-      max_change_pct: 0.25
+      # 2026-09-16: the US menu was "thin, low-priced momentum junk" in the
+      # model's own words -- 12 names, median turnover $0.5M, several under $1.
+      # The 등락률상위 ranker is the source (penny-stock movers), and the change
+      # band is the same strategy bet the screen control condemned on the two
+      # venues where it CAN be measured. US has no random arm (no paper venue),
+      # so this is by analogy, recorded as such. Backtest prior worth keeping in
+      # view: the US 15-40% band read +3.93% vs +0.53% baseline (n=88, 09-01)
+      # -- survivorship-prone and small, but the one place momentum ever
+      # measured anything. WAS: min_price 1 / 0.02..0.25 / both rankers.
+      min_price: 5                # USD -- below this the menu is penny movers
+      min_change_pct: 0
+      max_change_pct: 0
       # stk_tp "1" restricts to 주식; the default mixes in ETFs and indices.
       rankers:
         - {api_id: usa20540, params: {stk_tp: "1", stex_tp: "0"}}                  # 당일 거래대금 상위
-        - {api_id: usa20910, params: {stk_tp: "1", stex_tp: "0", sort_tp: "1"}}    # 전일대비 등락률상위
   # BINANCE is 24/7: `always_open` markets skip the clock gate entirely rather
   # than being given fake 00:00-23:59 hours that would still close for a minute
   # each day and stop trading at a weekend boundary.
@@ -709,7 +864,19 @@ agent:
   # Equities follow their exchange's own clock, declared in its own timezone so
   # DST resolves from the zone database rather than fixed KST offsets.
   sessions:
-    KR: {timezone: Asia/Seoul,       open: "09:00", close: "15:20"}
+    # 2026-09-15: KR trades until 20:00 (owner). The extension is NXT's
+    # after-market, not a longer KRX day -- KRX still ends at 15:30, so the
+    # evening window exists only on the alternative venue and the `stex_tp`
+    # routing below is what makes it reachable. `close` bounds CONTINUOUS
+    # trading as it always did; the break is the 15:20-15:30 closing auction
+    # plus the 15:30-15:40 changeover, when neither venue quotes continuously.
+    # ASSUMPTION worth re-checking against the venue calendar: 15:40 after-market
+    # open, 20:00 close, no evening closing auction.
+    KR:
+      timezone: Asia/Seoul
+      open: "09:00"
+      close: "20:00"
+      breaks: [["15:20", "15:40"]]
     US: {timezone: America/New_York, open: "09:30", close: "15:55"}
   trade_on_weekends: false
   # Quote endpoints the observe step uses, per market surface.
@@ -730,3 +897,12 @@ agent:
     # profitable above a ~35% hit rate. Set just above the payoff's break-even so
     # the floor screens out genuine coin flips, not positive-expectancy bets.
     confidence_floor: 0.45
+    # 2026-09-16: the `deep` tier (v4-pro) as a SECOND OPINION on every
+    # decision. Same prompt, same menu, same instant; only its best_candidate is
+    # kept, journalled as `virtual_pick_deep` and scored as `arm_llm_deep` on
+    # the selector leaderboard against the same shadow as everything else. It
+    # is never traded and never consulted for the decision -- a measurement of
+    # whether the stronger model picks better, at roughly one extra call per
+    # cycle (~3x flash's token price; a few thousand KRW/day at most, inside the
+    # 6,000 cap -- watch `/costs`). Set to "" to switch it off.
+    second_opinion: deep

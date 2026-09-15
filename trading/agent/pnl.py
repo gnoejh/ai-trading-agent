@@ -162,7 +162,7 @@ def evaluate(cfg: AppConfig | None = None, *, since: str = "") -> dict:
     cfg = cfg or config()
     since = since or cfg.promotion.since or cfg.score.trade_since
     ledger = CostLedger(cfg)
-    markets = set(cfg.score.trade_markets)
+    markets = set(cfg.pnl.markets or cfg.score.trade_markets)
 
     trips = attribute(
         ledger.closed_trades(since=since, markets=markets),

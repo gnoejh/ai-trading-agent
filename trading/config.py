@@ -167,8 +167,18 @@ class FeeConfig(BaseModel):
         return self.commission_rate * 2 + self.sell_tax_rate + slip * 2
 
 
+class SlippageProbeConfig(BaseModel):
+    """Inputs to the mainnet-book slippage measurement (accounting/slippage.py)."""
+
+    notionals: list[float] = Field(default_factory=lambda: [100.0, 1000.0])
+    depth_limit: int = 500
+    symbols_per_book: int = 12
+    output: str = "data/slippage.json"
+
+
 class AccountingConfig(BaseModel):
     ledger: str = "data/ledger.jsonl"
+    slippage_probe: SlippageProbeConfig = Field(default_factory=SlippageProbeConfig)
     max_api_krw_per_day: float = 0.0
     fees: FeeConfig = Field(default_factory=FeeConfig)
     # Venues differ structurally, not just numerically: KR pays a 0.15% transaction
@@ -330,23 +340,46 @@ class ExitConfig(BaseModel):
 
 
 class Session(BaseModel):
-    """Trading hours in the exchange's own timezone, so DST resolves correctly."""
+    """Trading hours in the exchange's own timezone, so DST resolves correctly.
+
+    `open`/`close` bound CONTINUOUS trading, not the exchange's posted day: KR
+    sat at 15:20 while KRX closed at 15:30 because 15:20-15:30 is the closing
+    single-price auction, and an entry sized against a continuous book has no
+    business landing in one. `breaks` carries the same idea inside the day --
+    KR's venues now run two continuous sessions with an auction and a venue
+    changeover between them, which one open/close pair cannot express.
+    """
 
     timezone: str
     open: str
     close: str
+    # Inclusive-start, exclusive-end windows inside [open, close] that are NOT
+    # continuous trading. Empty for a venue with an unbroken session.
+    breaks: list[tuple[str, str]] = Field(default_factory=list)
 
     def is_open(self, now: dt.datetime | None = None, *, weekends: bool = False) -> bool:
         local = (now or dt.datetime.now(dt.UTC)).astimezone(ZoneInfo(self.timezone))
         if not weekends and local.weekday() >= 5:
             return False
-        return dt.time.fromisoformat(self.open) <= local.time() <= dt.time.fromisoformat(self.close)
+        clock = local.time()
+        if not (dt.time.fromisoformat(self.open) <= clock <= dt.time.fromisoformat(self.close)):
+            return False
+        return not any(
+            dt.time.fromisoformat(start) <= clock < dt.time.fromisoformat(end)
+            for start, end in self.breaks
+        )
 
 
 class AgentTiers(BaseModel):
     decide: str = "deep"
     escalate_on_low_confidence: str = "escalation"
     confidence_floor: float = 0.6
+    # A SECOND LLM asked the identical question on every decision, whose
+    # `best_candidate` is journalled and scored as its own selector arm
+    # (`arm_llm_<tier>`) -- never traded, never consulted for the decision.
+    # Answers "would a stronger model select better" by measurement instead of
+    # by assumption. Empty disables it.
+    second_opinion: str = ""
 
 
 class UniverseMarket(BaseModel):
@@ -584,6 +617,9 @@ class ExploreConfig(BaseModel):
     entry_pct: float = 0.5  # probability per cycle of attempting random entries
     floor_pct: float = 0.15  # documented floor for manual decay; not enforced in code
     max_positions: int = 4  # cap on concurrently open random-arm entries
+    # Binance books the random arm may enter; empty means every book. Lets a
+    # book that measures negative be paused without touching the screen.
+    books: list[str] = Field(default_factory=list)
     entries_per_cycle: int = 1  # entries attempted per cycle once the pct roll passes
     seed: int = 0  # 0 = OS entropy; set for a reproducible sequence
     # Venues the random arm runs on (BINANCE / KR / US); empty = every venue
@@ -668,6 +704,17 @@ class ScoreConfig(BaseModel):
     # Paired model-vs-shadow: bootstrap CI on the mean difference. Seeded so
     # the same store renders the same interval every time.
     bootstrap_samples: int = 2000
+    # Deterministic SELECTOR ARMS, each a pure function of the journalled menu
+    # (see scorer.SELECTORS). Computed at scoring time, so they need no slot,
+    # no dollar, no decide-path change -- and they are RETROACTIVE over every
+    # decision already journalled. Names must exist in scorer.SELECTORS.
+    arms: list[str] = Field(default_factory=list)
+    # ISO date from which the model's OWN record is additionally rendered as a
+    # separate, labelled row. Set it when the menu's construction changes: a
+    # self-record earned on a retired population is stale evidence, not a
+    # signal, and the model discounts itself on it (the 2026-09-09 trap, back
+    # on 2026-09-16). Both rows render, each with its n; nothing is hidden.
+    model_record_since: str = ""
     bootstrap_seed: int = 20260903
     ci_level: float = 0.95
 
@@ -700,6 +747,11 @@ class PnlConfig(BaseModel):
     2026-09-13. Owner instruction the same day: daily P&L for each sleeve,
     independently. Nothing here is ever summed across a sleeve.
     """
+
+    # Markets whose closed trips the sleeve report reads. Empty means
+    # `score.trade_markets`. Wider than the gate on purpose: the gate sums
+    # money and cannot mix currencies; this report never sums across a sleeve.
+    markets: list[str] = Field(default_factory=list)
 
     # A closed trip is credited to the journalled entry of the same symbol
     # nearest in time within this window. The ledger records a fill when the

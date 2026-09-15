@@ -36,6 +36,10 @@ def cfg(tmp_path):
     c.score.enabled = False
     c.score.observations = str(tmp_path / "observations.jsonl")
     c.score.experience = str(tmp_path / "experience.json")
+    # These count LLM calls per decision; the second-opinion tier (2026-09-16)
+    # adds one and has its own tests. Pinned off so a config edit cannot
+    # move an assertion here.
+    c.agent.tiers.second_opinion = ""
     c.fit.model = str(tmp_path / "no_model.json")
     # The allocator persists its share to data/ by default. A test that leaves
     # this pointing at the real path writes -- and stomps -- the LIVE service's

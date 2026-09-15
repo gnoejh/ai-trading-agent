@@ -1,0 +1,4583 @@
+[
+  {
+    "population": "menu",
+    "symbols": [
+      "AVGOBUSDT",
+      "BABABUSDT",
+      "BNBUSDT",
+      "BTCUSDT",
+      "CRCLBUSDT",
+      "DOGEUSDT",
+      "ETHUSDT",
+      "LITEBUSDT",
+      "MUBUSDT",
+      "NEARUSDT",
+      "NVDABUSDT",
+      "REZUSDT",
+      "SNDKBUSDT",
+      "SOLUSDT",
+      "SUIUSDT",
+      "UNIUSDT",
+      "UUSDT",
+      "XRPUSDT",
+      "ZECUSDT"
+    ],
+    "cells": [
+      {
+        "book": "BSTOCKS",
+        "notional": 100.0,
+        "n_symbols": 7,
+        "round_trip_bps_median": 1.71,
+        "round_trip_bps_mean": 2.96,
+        "round_trip_bps_worst": 8.51,
+        "configured_round_trip_bps": 40.0,
+        "overstated_x": 23.34,
+        "insufficient_depth": []
+      },
+      {
+        "book": "BSTOCKS",
+        "notional": 250.0,
+        "n_symbols": 7,
+        "round_trip_bps_median": 2.3,
+        "round_trip_bps_mean": 3.19,
+        "round_trip_bps_worst": 8.51,
+        "configured_round_trip_bps": 40.0,
+        "overstated_x": 17.42,
+        "insufficient_depth": []
+      },
+      {
+        "book": "BSTOCKS",
+        "notional": 500.0,
+        "n_symbols": 7,
+        "round_trip_bps_median": 2.49,
+        "round_trip_bps_mean": 3.37,
+        "round_trip_bps_worst": 8.51,
+        "configured_round_trip_bps": 40.0,
+        "overstated_x": 16.07,
+        "insufficient_depth": []
+      },
+      {
+        "book": "BSTOCKS",
+        "notional": 1000.0,
+        "n_symbols": 7,
+        "round_trip_bps_median": 3.62,
+        "round_trip_bps_mean": 4.4,
+        "round_trip_bps_worst": 9.2,
+        "configured_round_trip_bps": 40.0,
+        "overstated_x": 11.05,
+        "insufficient_depth": []
+      },
+      {
+        "book": "BSTOCKS",
+        "notional": 2500.0,
+        "n_symbols": 7,
+        "round_trip_bps_median": 3.63,
+        "round_trip_bps_mean": 6.87,
+        "round_trip_bps_worst": 14.74,
+        "configured_round_trip_bps": 40.0,
+        "overstated_x": 11.02,
+        "insufficient_depth": []
+      },
+      {
+        "book": "CRYPTO",
+        "notional": 100.0,
+        "n_symbols": 12,
+        "round_trip_bps_median": 1.0,
+        "round_trip_bps_mean": 1.77,
+        "round_trip_bps_worst": 9.94,
+        "configured_round_trip_bps": 30.0,
+        "overstated_x": 30.15,
+        "insufficient_depth": []
+      },
+      {
+        "book": "CRYPTO",
+        "notional": 250.0,
+        "n_symbols": 12,
+        "round_trip_bps_median": 1.0,
+        "round_trip_bps_mean": 2.03,
+        "round_trip_bps_worst": 13.1,
+        "configured_round_trip_bps": 30.0,
+        "overstated_x": 30.15,
+        "insufficient_depth": []
+      },
+      {
+        "book": "CRYPTO",
+        "notional": 500.0,
+        "n_symbols": 12,
+        "round_trip_bps_median": 1.0,
+        "round_trip_bps_mean": 2.43,
+        "round_trip_bps_worst": 16.55,
+        "configured_round_trip_bps": 30.0,
+        "overstated_x": 30.15,
+        "insufficient_depth": []
+      },
+      {
+        "book": "CRYPTO",
+        "notional": 1000.0,
+        "n_symbols": 12,
+        "round_trip_bps_median": 1.0,
+        "round_trip_bps_mean": 2.68,
+        "round_trip_bps_worst": 19.09,
+        "configured_round_trip_bps": 30.0,
+        "overstated_x": 30.15,
+        "insufficient_depth": []
+      },
+      {
+        "book": "CRYPTO",
+        "notional": 2500.0,
+        "n_symbols": 12,
+        "round_trip_bps_median": 1.1,
+        "round_trip_bps_mean": 3.45,
+        "round_trip_bps_worst": 24.18,
+        "configured_round_trip_bps": 30.0,
+        "overstated_x": 27.22,
+        "insufficient_depth": []
+      }
+    ],
+    "fills": [
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 76914.64,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713407929059,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 76914.63,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713426848626,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 76914.64,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713407929059,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 76914.63,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713426848626,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 76914.64,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713407929059,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 76914.63,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713426848626,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 76914.64,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713407929059,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 76914.63,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713426848626,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 76914.64,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713407929059,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 76914.63,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713426848626,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ETHUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 2478.0,
+        "mid": 2477.995,
+        "slippage_bps": 0.020177603264369542,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ETHUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 2477.99,
+        "mid": 2477.995,
+        "slippage_bps": 0.020177603264369542,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ETHUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 2478.0,
+        "mid": 2477.995,
+        "slippage_bps": 0.020177603264369542,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ETHUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 2477.99,
+        "mid": 2477.995,
+        "slippage_bps": 0.020177603264369542,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ETHUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 2478.0,
+        "mid": 2477.995,
+        "slippage_bps": 0.020177603264369542,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ETHUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 2477.99,
+        "mid": 2477.995,
+        "slippage_bps": 0.020177603264369542,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ETHUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 2478.0,
+        "mid": 2477.995,
+        "slippage_bps": 0.020177603264369542,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ETHUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 2477.99,
+        "mid": 2477.995,
+        "slippage_bps": 0.020177603264369542,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ETHUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 2478.0,
+        "mid": 2477.995,
+        "slippage_bps": 0.020177603264369542,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ETHUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 2477.99,
+        "mid": 2477.995,
+        "slippage_bps": 0.020177603264369542,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "XRPUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 1.4322,
+        "mid": 1.43215,
+        "slippage_bps": 0.3491254407700553,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "XRPUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 1.4321,
+        "mid": 1.43215,
+        "slippage_bps": 0.3491254407716057,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "XRPUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 1.4321,
+        "mid": 1.4320499999999998,
+        "slippage_bps": 0.3491498201885795,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "XRPUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 1.432,
+        "mid": 1.4320499999999998,
+        "slippage_bps": 0.3491498201870289,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "XRPUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 1.4321,
+        "mid": 1.4320499999999998,
+        "slippage_bps": 0.3491498201885795,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "XRPUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 1.432,
+        "mid": 1.4320499999999998,
+        "slippage_bps": 0.3491498201870289,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "XRPUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 1.4321,
+        "mid": 1.4320499999999998,
+        "slippage_bps": 0.3491498201885795,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "XRPUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 1.432,
+        "mid": 1.4320499999999998,
+        "slippage_bps": 0.3491498201870289,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "XRPUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 1.432,
+        "mid": 1.43195,
+        "slippage_bps": 0.3491742030090678,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "XRPUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 1.4319,
+        "mid": 1.43195,
+        "slippage_bps": 0.34917420301061847,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SOLUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 100.98,
+        "mid": 100.975,
+        "slippage_bps": 0.49517207229607957,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SOLUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 100.97,
+        "mid": 100.975,
+        "slippage_bps": 0.49517207229467225,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SOLUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 100.98,
+        "mid": 100.975,
+        "slippage_bps": 0.49517207229607957,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SOLUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 100.97,
+        "mid": 100.975,
+        "slippage_bps": 0.49517207229467225,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SOLUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 100.98,
+        "mid": 100.975,
+        "slippage_bps": 0.49517207229607957,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SOLUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 100.97,
+        "mid": 100.975,
+        "slippage_bps": 0.49517207229467225,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SOLUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 100.98,
+        "mid": 100.975,
+        "slippage_bps": 0.49517207229607957,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SOLUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 100.97,
+        "mid": 100.975,
+        "slippage_bps": 0.49517207229467225,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SOLUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 100.98,
+        "mid": 100.975,
+        "slippage_bps": 0.49517207229607957,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SOLUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 100.97,
+        "mid": 100.975,
+        "slippage_bps": 0.49517207229467225,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ZECUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 1135.31,
+        "mid": 1135.3,
+        "slippage_bps": 0.08808244516859777,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ZECUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 1135.29,
+        "mid": 1135.3,
+        "slippage_bps": 0.08808244516859777,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ZECUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 1135.32,
+        "mid": 1135.315,
+        "slippage_bps": 0.04404064070219953,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ZECUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 1135.31,
+        "mid": 1135.315,
+        "slippage_bps": 0.04404064070420226,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ZECUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 1135.422048058667,
+        "mid": 1135.3850000000002,
+        "slippage_bps": 0.32630392921228574,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ZECUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 1135.38,
+        "mid": 1135.3850000000002,
+        "slippage_bps": 0.04403792546236861,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ZECUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 1135.4547895469761,
+        "mid": 1135.3850000000002,
+        "slippage_bps": 0.614677373542243,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ZECUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 1135.38,
+        "mid": 1135.3850000000002,
+        "slippage_bps": 0.04403792546236861,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ZECUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 1135.518402897456,
+        "mid": 1135.3850000000002,
+        "slippage_bps": 1.174957370899567,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ZECUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 1135.3527935300883,
+        "mid": 1135.3850000000002,
+        "slippage_bps": 0.2836612242710467,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BNBUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 720.41,
+        "mid": 720.405,
+        "slippage_bps": 0.0694054039046849,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BNBUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 720.4,
+        "mid": 720.405,
+        "slippage_bps": 0.0694054039046849,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BNBUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 720.4121625948543,
+        "mid": 720.405,
+        "slippage_bps": 0.09942455777405028,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BNBUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 720.4,
+        "mid": 720.405,
+        "slippage_bps": 0.0694054039046849,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BNBUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 720.41,
+        "mid": 720.405,
+        "slippage_bps": 0.0694054039046849,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BNBUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 720.4,
+        "mid": 720.405,
+        "slippage_bps": 0.0694054039046849,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BNBUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 720.41,
+        "mid": 720.405,
+        "slippage_bps": 0.0694054039046849,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BNBUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 720.4,
+        "mid": 720.405,
+        "slippage_bps": 0.0694054039046849,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BNBUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 720.41,
+        "mid": 720.405,
+        "slippage_bps": 0.0694054039046849,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BNBUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 720.4,
+        "mid": 720.405,
+        "slippage_bps": 0.0694054039046849,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UNIUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 6.7,
+        "mid": 6.6995000000000005,
+        "slippage_bps": 0.7463243525632104,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UNIUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 6.699,
+        "mid": 6.6995000000000005,
+        "slippage_bps": 0.7463243525645362,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UNIUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 6.7,
+        "mid": 6.6995000000000005,
+        "slippage_bps": 0.7463243525632104,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UNIUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 6.699,
+        "mid": 6.6995000000000005,
+        "slippage_bps": 0.7463243525645362,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UNIUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 6.7,
+        "mid": 6.6995000000000005,
+        "slippage_bps": 0.7463243525632104,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UNIUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 6.698252658090263,
+        "mid": 6.6995000000000005,
+        "slippage_bps": 1.8618432864201617,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UNIUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 6.7,
+        "mid": 6.6995000000000005,
+        "slippage_bps": 0.7463243525632104,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UNIUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 6.698111216650841,
+        "mid": 6.6995000000000005,
+        "slippage_bps": 2.072965667824855,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UNIUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 6.700374721031033,
+        "mid": 6.6995000000000005,
+        "slippage_bps": 1.30565121431853,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UNIUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 6.697444442413199,
+        "mid": 6.6995000000000005,
+        "slippage_bps": 3.068225370253143,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NEARUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 2.397,
+        "mid": 2.3964999999999996,
+        "slippage_bps": 2.086375964949581,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NEARUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 2.396,
+        "mid": 2.3964999999999996,
+        "slippage_bps": 2.086375964947728,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NEARUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 2.397,
+        "mid": 2.3964999999999996,
+        "slippage_bps": 2.086375964949581,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NEARUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 2.396,
+        "mid": 2.3964999999999996,
+        "slippage_bps": 2.086375964947728,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NEARUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 2.397,
+        "mid": 2.3964999999999996,
+        "slippage_bps": 2.086375964949581,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NEARUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 2.396,
+        "mid": 2.3964999999999996,
+        "slippage_bps": 2.086375964947728,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NEARUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 2.397,
+        "mid": 2.3964999999999996,
+        "slippage_bps": 2.086375964949581,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NEARUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 2.396,
+        "mid": 2.3964999999999996,
+        "slippage_bps": 2.086375964947728,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NEARUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 2.3971067421436074,
+        "mid": 2.3964999999999996,
+        "slippage_bps": 2.531784450689697,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NEARUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 2.395912555174015,
+        "mid": 2.3964999999999996,
+        "slippage_bps": 2.451261531336652,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SUIUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 0.7135,
+        "mid": 0.71345,
+        "slippage_bps": 0.7008199593523651,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SUIUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 0.7134,
+        "mid": 0.71345,
+        "slippage_bps": 0.7008199593523651,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SUIUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 0.7134999999999999,
+        "mid": 0.71345,
+        "slippage_bps": 0.700819959350809,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SUIUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 0.7134,
+        "mid": 0.71345,
+        "slippage_bps": 0.7008199593523651,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SUIUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 0.7134999999999999,
+        "mid": 0.71345,
+        "slippage_bps": 0.700819959350809,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SUIUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 0.7134,
+        "mid": 0.71345,
+        "slippage_bps": 0.7008199593523651,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SUIUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 0.7134999999999999,
+        "mid": 0.71345,
+        "slippage_bps": 0.700819959350809,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SUIUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 0.7134,
+        "mid": 0.71345,
+        "slippage_bps": 0.7008199593523651,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SUIUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 0.7135694221231232,
+        "mid": 0.71345,
+        "slippage_bps": 1.6738681494598637,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SUIUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 0.7134,
+        "mid": 0.71345,
+        "slippage_bps": 0.7008199593523651,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "REZUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 0.003701678572144545,
+        "mid": 0.0036994999999999997,
+        "slippage_bps": 5.888828610746134,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "REZUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 0.003698,
+        "mid": 0.0036994999999999997,
+        "slippage_bps": 4.054601973238993,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "REZUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 0.0037023185186730503,
+        "mid": 0.0036994999999999997,
+        "slippage_bps": 7.6186475822424855,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "REZUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 0.0036974735038298417,
+        "mid": 0.0036994999999999997,
+        "slippage_bps": 5.477756913523275,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "REZUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 0.0037026592279795485,
+        "mid": 0.0036994999999999997,
+        "slippage_bps": 8.539607999861717,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "REZUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 0.0036965383321703165,
+        "mid": 0.0036994999999999997,
+        "slippage_bps": 8.005589484209102,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "REZUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 0.0037028296061494487,
+        "mid": 0.0036994999999999997,
+        "slippage_bps": 9.000151775777923,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "REZUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 0.0036957690060057703,
+        "mid": 0.0036994999999999997,
+        "slippage_bps": 10.085130407431652,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "REZUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 0.0037040069446836786,
+        "mid": 0.0036994999999999997,
+        "slippage_bps": 12.182577871817761,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "REZUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 0.003695063286533849,
+        "mid": 0.0036994999999999997,
+        "slippage_bps": 11.992738116369148,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DOGEUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 0.08303999999999999,
+        "mid": 0.083035,
+        "slippage_bps": 0.6021557174674683,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DOGEUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 0.08303,
+        "mid": 0.083035,
+        "slippage_bps": 0.6021557174674683,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DOGEUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 0.08304,
+        "mid": 0.083035,
+        "slippage_bps": 0.6021557174691395,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DOGEUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 0.08303,
+        "mid": 0.083035,
+        "slippage_bps": 0.6021557174674683,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DOGEUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 0.08304,
+        "mid": 0.083035,
+        "slippage_bps": 0.6021557174691395,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DOGEUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 0.08303,
+        "mid": 0.083035,
+        "slippage_bps": 0.6021557174674683,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DOGEUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 0.08304,
+        "mid": 0.083035,
+        "slippage_bps": 0.6021557174691395,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DOGEUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 0.08303,
+        "mid": 0.083035,
+        "slippage_bps": 0.6021557174674683,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DOGEUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 0.08304,
+        "mid": 0.083035,
+        "slippage_bps": 0.6021557174691395,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DOGEUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 0.08303,
+        "mid": 0.083035,
+        "slippage_bps": 0.6021557174674683,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 1.0003,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124324445,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 1.0002,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124102456,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 1.0003,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124324445,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 1.0002,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124102456,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 1.0003,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124324445,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 1.0002,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124102456,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 1.0003,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124324445,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 1.0002,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124102456,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 1.0003,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124324445,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 1.0002,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124102456,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 1565.1960870097826,
+        "mid": 1565.135,
+        "slippage_bps": 0.390298662943249,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 1564.927823082168,
+        "mid": 1565.135,
+        "slippage_bps": 1.323699986467174,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 1565.198434801565,
+        "mid": 1565.135,
+        "slippage_bps": 0.4052992333895063,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 1564.839125881532,
+        "mid": 1565.135,
+        "slippage_bps": 1.8904063768809967,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 1565.1992174003915,
+        "mid": 1565.135,
+        "slippage_bps": 0.41029943354086906,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 1564.8095623822524,
+        "mid": 1565.135,
+        "slippage_bps": 2.0792942317923937,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 1565.2211942433123,
+        "mid": 1565.135,
+        "slippage_bps": 0.5507144323800848,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 1564.8039705698495,
+        "mid": 1565.135,
+        "slippage_bps": 2.1150215805695067,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 1565.2684767450933,
+        "mid": 1565.135,
+        "slippage_bps": 0.8528129847794337,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 1564.7939122697153,
+        "mid": 1565.135,
+        "slippage_bps": 2.1792863253629777,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "CRCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 92.56907430925689,
+        "mid": 92.55000000000001,
+        "slippage_bps": 2.060973447528846,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "CRCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 92.54,
+        "mid": 92.55000000000001,
+        "slippage_bps": 1.0804970286337239,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "CRCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 92.5696297214811,
+        "mid": 92.55000000000001,
+        "slippage_bps": 2.1209855733220344,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "CRCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 92.54,
+        "mid": 92.55000000000001,
+        "slippage_bps": 1.0804970286337239,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "CRCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 92.56981486037029,
+        "mid": 92.55000000000001,
+        "slippage_bps": 2.1409897752863096,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "CRCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 92.54,
+        "mid": 92.55000000000001,
+        "slippage_bps": 1.0804970286337239,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "CRCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 92.57351059690716,
+        "mid": 92.55000000000001,
+        "slippage_bps": 2.54031300995614,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "CRCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 92.54,
+        "mid": 92.55000000000001,
+        "slippage_bps": 1.0804970286337239,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "CRCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 92.57173889802074,
+        "mid": 92.55000000000001,
+        "slippage_bps": 2.3488814717157127,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "CRCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 92.53813965476404,
+        "mid": 92.55000000000001,
+        "slippage_bps": 1.2815067786033028,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MUBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 934.57,
+        "mid": 934.53,
+        "slippage_bps": 0.4280226423986101,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MUBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 934.49,
+        "mid": 934.53,
+        "slippage_bps": 0.42802264239739357,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MUBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 934.5555146455163,
+        "mid": 934.48,
+        "slippage_bps": 0.8080926880858906,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MUBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 934.4099999999999,
+        "mid": 934.48,
+        "slippage_bps": 0.7490797020820532,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MUBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 934.5677571623812,
+        "mid": 934.48,
+        "slippage_bps": 0.9391015578845409,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MUBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 934.4099999999999,
+        "mid": 934.48,
+        "slippage_bps": 0.7490797020820532,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MUBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 934.5696730051133,
+        "mid": 934.47,
+        "slippage_bps": 1.06662605662281,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MUBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 934.4099999999999,
+        "mid": 934.47,
+        "slippage_bps": 0.6420751870062474,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MUBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 934.5758691746581,
+        "mid": 934.47,
+        "slippage_bps": 1.1329328352766401,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MUBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 934.4099999999999,
+        "mid": 934.47,
+        "slippage_bps": 0.6420751870062474,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NVDABUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 212.92,
+        "mid": 212.915,
+        "slippage_bps": 0.23483549773362386,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NVDABUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 212.91,
+        "mid": 212.915,
+        "slippage_bps": 0.23483549773362386,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NVDABUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 212.91999999999996,
+        "mid": 212.915,
+        "slippage_bps": 0.234835497732289,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NVDABUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 212.90459873933278,
+        "mid": 212.915,
+        "slippage_bps": 0.4885170451686631,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NVDABUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 212.91999999999996,
+        "mid": 212.915,
+        "slippage_bps": 0.234835497732289,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NVDABUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 212.8925436286706,
+        "mid": 212.915,
+        "slippage_bps": 1.0547106276863196,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NVDABUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 212.91999999999996,
+        "mid": 212.915,
+        "slippage_bps": 0.234835497732289,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NVDABUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 212.88335843074154,
+        "mid": 212.915,
+        "slippage_bps": 1.4861127331777557,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NVDABUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 212.9295672545297,
+        "mid": 212.915,
+        "slippage_bps": 0.6841816936199359,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "NVDABUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 212.85948713773993,
+        "mid": 212.915,
+        "slippage_bps": 2.60727812789419,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "LITEBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 846.76,
+        "mid": 846.4,
+        "slippage_bps": 4.253308128544584,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "LITEBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 846.04,
+        "mid": 846.4,
+        "slippage_bps": 4.253308128544584,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "LITEBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 846.76,
+        "mid": 846.4,
+        "slippage_bps": 4.253308128544584,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "LITEBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 846.04,
+        "mid": 846.4,
+        "slippage_bps": 4.253308128544584,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "LITEBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 846.76,
+        "mid": 846.4,
+        "slippage_bps": 4.253308128544584,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "LITEBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 846.04,
+        "mid": 846.4,
+        "slippage_bps": 4.253308128544584,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "LITEBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 846.76,
+        "mid": 846.4,
+        "slippage_bps": 4.253308128544584,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "LITEBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 845.9814262118149,
+        "mid": 846.4,
+        "slippage_bps": 4.945342488009044,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "LITEBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 846.8965925313703,
+        "mid": 846.4,
+        "slippage_bps": 5.86711402847721,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "LITEBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 845.8118541397413,
+        "mid": 846.4,
+        "slippage_bps": 6.948793245022351,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVGOBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 346.11,
+        "mid": 346.1,
+        "slippage_bps": 0.2889338341517164,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVGOBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 346.09,
+        "mid": 346.1,
+        "slippage_bps": 0.2889338341533588,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVGOBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 346.11,
+        "mid": 346.1,
+        "slippage_bps": 0.2889338341517164,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVGOBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 346.09,
+        "mid": 346.1,
+        "slippage_bps": 0.2889338341533588,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVGOBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 346.11494672177787,
+        "mid": 346.1,
+        "slippage_bps": 0.43186136312760776,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVGOBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 346.08264251484195,
+        "mid": 346.1,
+        "slippage_bps": 0.5015164737957946,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVGOBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 346.11747334244455,
+        "mid": 346.1,
+        "slippage_bps": 0.5048639827949187,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVGOBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 345.92037538265515,
+        "mid": 346.1,
+        "slippage_bps": 5.189962939753562,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVGOBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 346.12353856578204,
+        "mid": 346.1,
+        "slippage_bps": 0.6801088061837287,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVGOBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 345.6133691609318,
+        "mid": 346.1,
+        "slippage_bps": 14.060411414856917,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 109.87,
+        "mid": 109.84,
+        "slippage_bps": 2.731245447924357,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 109.81,
+        "mid": 109.84,
+        "slippage_bps": 2.731245447924357,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 109.87,
+        "mid": 109.84,
+        "slippage_bps": 2.731245447924357,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 109.81,
+        "mid": 109.84,
+        "slippage_bps": 2.731245447924357,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 109.87,
+        "mid": 109.84,
+        "slippage_bps": 2.731245447924357,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 109.81,
+        "mid": 109.84,
+        "slippage_bps": 2.731245447924357,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 109.87381080823718,
+        "mid": 109.84,
+        "slippage_bps": 3.0781872029476984,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 109.80612946656785,
+        "mid": 109.84,
+        "slippage_bps": 3.0836246751775582,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 109.87752423962384,
+        "mid": 109.84,
+        "slippage_bps": 3.416263621980598,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 109.78060652898779,
+        "mid": 109.84,
+        "slippage_bps": 5.407271577951033,
+        "filled_pct": 1.0
+      }
+    ]
+  },
+  {
+    "population": "pool",
+    "symbols": [
+      "AAPLBUSDT",
+      "AMZNBUSDT",
+      "ASMLBUSDT",
+      "AVAXUSDT",
+      "BABABUSDT",
+      "BABYUSDT",
+      "BTCUSDT",
+      "DRAMBUSDT",
+      "GLWBUSDT",
+      "HEMIUSDT",
+      "HIVEUSDT",
+      "INJUSDT",
+      "METUSDT",
+      "MIRAUSDT",
+      "MSTRBUSDT",
+      "MVLLBUSDT",
+      "ORCLBUSDT",
+      "SKHYBUSDT",
+      "SNDKBUSDT",
+      "SYNUSDT",
+      "TQQQBUSDT",
+      "TUTUSDT",
+      "UUSDT",
+      "VETUSDT"
+    ],
+    "cells": [
+      {
+        "book": "BSTOCKS",
+        "notional": 100.0,
+        "n_symbols": 12,
+        "round_trip_bps_median": 7.23,
+        "round_trip_bps_mean": 8.0,
+        "round_trip_bps_worst": 27.68,
+        "configured_round_trip_bps": 40.0,
+        "overstated_x": 5.54,
+        "insufficient_depth": []
+      },
+      {
+        "book": "BSTOCKS",
+        "notional": 250.0,
+        "n_symbols": 12,
+        "round_trip_bps_median": 7.82,
+        "round_trip_bps_mean": 8.56,
+        "round_trip_bps_worst": 26.3,
+        "configured_round_trip_bps": 40.0,
+        "overstated_x": 5.12,
+        "insufficient_depth": []
+      },
+      {
+        "book": "BSTOCKS",
+        "notional": 500.0,
+        "n_symbols": 12,
+        "round_trip_bps_median": 7.9,
+        "round_trip_bps_mean": 9.66,
+        "round_trip_bps_worst": 26.3,
+        "configured_round_trip_bps": 40.0,
+        "overstated_x": 5.06,
+        "insufficient_depth": []
+      },
+      {
+        "book": "BSTOCKS",
+        "notional": 1000.0,
+        "n_symbols": 12,
+        "round_trip_bps_median": 8.15,
+        "round_trip_bps_mean": 10.88,
+        "round_trip_bps_worst": 26.56,
+        "configured_round_trip_bps": 40.0,
+        "overstated_x": 4.91,
+        "insufficient_depth": []
+      },
+      {
+        "book": "BSTOCKS",
+        "notional": 2500.0,
+        "n_symbols": 12,
+        "round_trip_bps_median": 11.71,
+        "round_trip_bps_mean": 16.12,
+        "round_trip_bps_worst": 52.75,
+        "configured_round_trip_bps": 40.0,
+        "overstated_x": 3.42,
+        "insufficient_depth": []
+      },
+      {
+        "book": "CRYPTO",
+        "notional": 100.0,
+        "n_symbols": 12,
+        "round_trip_bps_median": 4.58,
+        "round_trip_bps_mean": 6.47,
+        "round_trip_bps_worst": 18.81,
+        "configured_round_trip_bps": 30.0,
+        "overstated_x": 6.55,
+        "insufficient_depth": []
+      },
+      {
+        "book": "CRYPTO",
+        "notional": 250.0,
+        "n_symbols": 12,
+        "round_trip_bps_median": 6.14,
+        "round_trip_bps_mean": 7.82,
+        "round_trip_bps_worst": 18.81,
+        "configured_round_trip_bps": 30.0,
+        "overstated_x": 4.89,
+        "insufficient_depth": []
+      },
+      {
+        "book": "CRYPTO",
+        "notional": 500.0,
+        "n_symbols": 12,
+        "round_trip_bps_median": 8.61,
+        "round_trip_bps_mean": 9.72,
+        "round_trip_bps_worst": 27.43,
+        "configured_round_trip_bps": 30.0,
+        "overstated_x": 3.48,
+        "insufficient_depth": []
+      },
+      {
+        "book": "CRYPTO",
+        "notional": 1000.0,
+        "n_symbols": 12,
+        "round_trip_bps_median": 12.94,
+        "round_trip_bps_mean": 12.65,
+        "round_trip_bps_worst": 32.53,
+        "configured_round_trip_bps": 30.0,
+        "overstated_x": 2.32,
+        "insufficient_depth": []
+      },
+      {
+        "book": "CRYPTO",
+        "notional": 2500.0,
+        "n_symbols": 12,
+        "round_trip_bps_median": 20.72,
+        "round_trip_bps_mean": 18.29,
+        "round_trip_bps_worst": 35.59,
+        "configured_round_trip_bps": 30.0,
+        "overstated_x": 1.45,
+        "insufficient_depth": []
+      }
+    ],
+    "fills": [
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 76914.64,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713407929059,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 76914.63,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713426848626,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 76914.64,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713407929059,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 76914.63,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713426848626,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 76914.64,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713407929059,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 76914.63,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713426848626,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 76914.64,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713407929059,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 76914.63,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713426848626,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 76914.64,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713407929059,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BTCUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 76914.63,
+        "mid": 76914.63500000001,
+        "slippage_bps": 0.0006500713426848626,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 1.0003,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124324445,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 1.0002,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124102456,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 1.0003,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124324445,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 1.0002,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124102456,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 1.0003,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124324445,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 1.0002,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124102456,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 1.0003,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124324445,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 1.0002,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124102456,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 1.0003,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124324445,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "UUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 1.0002,
+        "mid": 1.0002499999999999,
+        "slippage_bps": 0.49987503124102456,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVAXUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 7.61,
+        "mid": 7.609500000000001,
+        "slippage_bps": 0.6570733950978682,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVAXUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 7.609,
+        "mid": 7.609500000000001,
+        "slippage_bps": 0.6570733950990355,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVAXUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 7.61,
+        "mid": 7.609500000000001,
+        "slippage_bps": 0.6570733950978682,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVAXUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 7.608999999999999,
+        "mid": 7.609500000000001,
+        "slippage_bps": 0.6570733951002026,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVAXUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 7.610149641879017,
+        "mid": 7.609500000000001,
+        "slippage_bps": 0.8537247900870318,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVAXUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 7.608999999999999,
+        "mid": 7.609500000000001,
+        "slippage_bps": 0.6570733951002026,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVAXUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 7.61057479718608,
+        "mid": 7.609500000000001,
+        "slippage_bps": 1.412441272199007,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVAXUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 7.608999999999999,
+        "mid": 7.609500000000001,
+        "slippage_bps": 0.6570733951002026,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVAXUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 7.6108299131731005,
+        "mid": 7.609500000000001,
+        "slippage_bps": 1.7477011276692804,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AVAXUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 7.608999999999999,
+        "mid": 7.609500000000001,
+        "slippage_bps": 0.6570733951002026,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "INJUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 5.9221282627197285,
+        "mid": 5.9215,
+        "slippage_bps": 1.0609857632837787,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "INJUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 5.921,
+        "mid": 5.9215,
+        "slippage_bps": 0.8443806467951075,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "INJUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 5.92265127429297,
+        "mid": 5.9215,
+        "slippage_bps": 1.9442274642739088,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "INJUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 5.921,
+        "mid": 5.9215,
+        "slippage_bps": 0.8443806467951075,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "INJUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 5.922825632013393,
+        "mid": 5.9215,
+        "slippage_bps": 2.238676033763736,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "INJUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 5.921,
+        "mid": 5.9215,
+        "slippage_bps": 0.8443806467951075,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "INJUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 5.923385507987401,
+        "mid": 5.9215,
+        "slippage_bps": 3.184172907880046,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "INJUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 5.920713564398781,
+        "mid": 5.9215,
+        "slippage_bps": 1.3281020032404403,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "INJUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 5.924260510106087,
+        "mid": 5.9215,
+        "slippage_bps": 4.661842617726214,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "INJUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 5.9198638502124785,
+        "mid": 5.9215,
+        "slippage_bps": 2.7630664316836415,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HEMIUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 0.00674,
+        "mid": 0.006735,
+        "slippage_bps": 7.423904974017318,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HEMIUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 0.00673,
+        "mid": 0.006735,
+        "slippage_bps": 7.423904974016031,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HEMIUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 0.00674,
+        "mid": 0.006735,
+        "slippage_bps": 7.423904974017318,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HEMIUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 0.00673,
+        "mid": 0.006735,
+        "slippage_bps": 7.423904974016031,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HEMIUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 0.00674,
+        "mid": 0.006735,
+        "slippage_bps": 7.423904974017318,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HEMIUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 0.00673,
+        "mid": 0.006735,
+        "slippage_bps": 7.423904974016031,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HEMIUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 0.006742901134371843,
+        "mid": 0.006735,
+        "slippage_bps": 11.731454152699197,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HEMIUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 0.00673,
+        "mid": 0.006735,
+        "slippage_bps": 7.423904974016031,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HEMIUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 0.0067471586608345195,
+        "mid": 0.006735,
+        "slippage_bps": 18.05294852935394,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HEMIUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 0.006729155379267885,
+        "mid": 0.006735,
+        "slippage_bps": 8.677981784876994,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HIVEUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 0.0532,
+        "mid": 0.05315,
+        "slippage_bps": 9.407337723423234,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HIVEUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 0.0531,
+        "mid": 0.05315,
+        "slippage_bps": 9.40733772342454,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HIVEUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 0.0532,
+        "mid": 0.05315,
+        "slippage_bps": 9.407337723423234,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HIVEUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 0.0531,
+        "mid": 0.05315,
+        "slippage_bps": 9.40733772342454,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HIVEUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 0.05324579577989607,
+        "mid": 0.05315,
+        "slippage_bps": 18.023665079222404,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HIVEUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 0.0531,
+        "mid": 0.05315,
+        "slippage_bps": 9.40733772342454,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HIVEUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 0.05327288410199208,
+        "mid": 0.05315,
+        "slippage_bps": 23.120244965583847,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HIVEUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 0.0531,
+        "mid": 0.05315,
+        "slippage_bps": 9.40733772342454,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HIVEUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 0.05328915032899302,
+        "mid": 0.05315,
+        "slippage_bps": 26.18068278325831,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "HIVEUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 0.05310000000000001,
+        "mid": 0.05315,
+        "slippage_bps": 9.407337723423234,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TUTUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 0.01988,
+        "mid": 0.019874999999999997,
+        "slippage_bps": 2.5157232704410224,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TUTUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 0.01987,
+        "mid": 0.019874999999999997,
+        "slippage_bps": 2.5157232704392767,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TUTUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 0.01988,
+        "mid": 0.019874999999999997,
+        "slippage_bps": 2.5157232704410224,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TUTUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 0.01986600748066215,
+        "mid": 0.019874999999999997,
+        "slippage_bps": 4.524538031620814,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TUTUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 0.01988,
+        "mid": 0.019874999999999997,
+        "slippage_bps": 2.5157232704410224,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TUTUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 0.019863003286096855,
+        "mid": 0.019874999999999997,
+        "slippage_bps": 6.036082466989532,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TUTUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 0.01988,
+        "mid": 0.019874999999999997,
+        "slippage_bps": 2.5157232704410224,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TUTUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 0.019861501529515626,
+        "mid": 0.019874999999999997,
+        "slippage_bps": 6.791683262576549,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TUTUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 0.01988723533822369,
+        "mid": 0.019874999999999997,
+        "slippage_bps": 6.156145018209529,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TUTUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 0.019860600584561676,
+        "mid": 0.019874999999999997,
+        "slippage_bps": 7.244988899784105,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MIRAUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 0.04838,
+        "mid": 0.048369999999999996,
+        "slippage_bps": 2.0673971469925703,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MIRAUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 0.04836,
+        "mid": 0.048369999999999996,
+        "slippage_bps": 2.067397146991136,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MIRAUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 0.048385325117974325,
+        "mid": 0.048369999999999996,
+        "slippage_bps": 3.168310517744115,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MIRAUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 0.04836,
+        "mid": 0.048369999999999996,
+        "slippage_bps": 2.067397146991136,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MIRAUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 0.04840059102648286,
+        "mid": 0.048369999999999996,
+        "slippage_bps": 6.324380087422162,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MIRAUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 0.04835863598193092,
+        "mid": 0.048369999999999996,
+        "slippage_bps": 2.3493938534368066,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MIRAUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 0.04842102804505177,
+        "mid": 0.048369999999999996,
+        "slippage_bps": 10.549523475661854,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MIRAUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 0.0483408824877806,
+        "mid": 0.048369999999999996,
+        "slippage_bps": 6.019746168987806,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MIRAUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 0.04844934173649532,
+        "mid": 0.048369999999999996,
+        "slippage_bps": 16.403087966782444,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MIRAUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 0.0483016620963039,
+        "mid": 0.048369999999999996,
+        "slippage_bps": 14.128158713272436,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SYNUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 0.08163132177418218,
+        "mid": 0.0816,
+        "slippage_bps": 3.8384527184041075,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SYNUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 0.0815660138487968,
+        "mid": 0.0816,
+        "slippage_bps": 4.164969510196381,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SYNUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 0.08163699914461224,
+        "mid": 0.0816,
+        "slippage_bps": 4.534208898558179,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SYNUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 0.08154754218108383,
+        "mid": 0.0816,
+        "slippage_bps": 6.428654278943227,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SYNUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 0.08163816081232478,
+        "mid": 0.081595,
+        "slippage_bps": 5.289639355938147,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SYNUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 0.08153877014703949,
+        "mid": 0.081595,
+        "slippage_bps": 6.891335616215778,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SYNUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 0.08168023177379467,
+        "mid": 0.0816,
+        "slippage_bps": 9.832325219934715,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SYNUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 0.08153208068992791,
+        "mid": 0.0816,
+        "slippage_bps": 8.323444861776055,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SYNUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 0.08171664882208153,
+        "mid": 0.081595,
+        "slippage_bps": 14.90885741547029,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SYNUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 0.08148100613483109,
+        "mid": 0.081595,
+        "slippage_bps": 13.97069246509166,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "VETUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 0.007453,
+        "mid": 0.0074515,
+        "slippage_bps": 2.0130175132532147,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "VETUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 0.00745,
+        "mid": 0.0074515,
+        "slippage_bps": 2.0130175132520503,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "VETUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 0.0074529999999999996,
+        "mid": 0.0074515,
+        "slippage_bps": 2.0130175132520503,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "VETUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 0.007449754363514375,
+        "mid": 0.0074515,
+        "slippage_bps": 2.342664544889844,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "VETUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 0.0074529999999999996,
+        "mid": 0.0074515,
+        "slippage_bps": 2.0130175132520503,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "VETUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 0.0074479978926635165,
+        "mid": 0.0074515,
+        "slippage_bps": 4.699868934420314,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "VETUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 0.007456149955829878,
+        "mid": 0.007452,
+        "slippage_bps": 5.568915499031249,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "VETUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 0.007451,
+        "mid": 0.007452,
+        "slippage_bps": 1.3419216317768823,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "VETUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 0.007464619240629115,
+        "mid": 0.007452,
+        "slippage_bps": 16.934031976804743,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "VETUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 0.00745069568546346,
+        "mid": 0.007452,
+        "slippage_bps": 1.7502878912246715,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "METUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 0.20549486262843428,
+        "mid": 0.20535,
+        "slippage_bps": 7.054425538557216,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "METUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 0.2053,
+        "mid": 0.20535,
+        "slippage_bps": 2.4348672997318963,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "METUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 0.20554385364093944,
+        "mid": 0.20535,
+        "slippage_bps": 9.440157825148978,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "METUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 0.20525018777591494,
+        "mid": 0.20535,
+        "slippage_bps": 4.860590410765071,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "METUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 0.20557192298675847,
+        "mid": 0.20535,
+        "slippage_bps": 10.80706047034166,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "METUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 0.20522509081960358,
+        "mid": 0.20535,
+        "slippage_bps": 6.082745575672091,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "METUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 0.20558596053475509,
+        "mid": 0.20535,
+        "slippage_bps": 11.490651802049225,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "METUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 0.20521254464285402,
+        "mid": 0.20535,
+        "slippage_bps": 6.693711085755441,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "METUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 0.205641679197213,
+        "mid": 0.20535,
+        "slippage_bps": 14.20400278612053,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "METUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 0.2051743543653246,
+        "mid": 0.20535,
+        "slippage_bps": 8.553476244236553,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABYUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 0.011,
+        "mid": 0.010995,
+        "slippage_bps": 4.547521600727419,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABYUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 0.01099,
+        "mid": 0.010995,
+        "slippage_bps": 4.547521600727419,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABYUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 0.011004551866461952,
+        "mid": 0.010995,
+        "slippage_bps": 8.687463812598944,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABYUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 0.01099,
+        "mid": 0.010995,
+        "slippage_bps": 4.547521600727419,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABYUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 0.011007275259082367,
+        "mid": 0.010995,
+        "slippage_bps": 11.16440116631878,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABYUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 0.01099,
+        "mid": 0.010995,
+        "slippage_bps": 4.547521600727419,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABYUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 0.011012782222531353,
+        "mid": 0.010995,
+        "slippage_bps": 16.17300821405514,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABYUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 0.010986991682026775,
+        "mid": 0.010995,
+        "slippage_bps": 7.283599793746667,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABYUSDT",
+        "book": "CRYPTO",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 0.011017971328126003,
+        "mid": 0.010995,
+        "slippage_bps": 20.89252217008086,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABYUSDT",
+        "book": "CRYPTO",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 0.010982687991921803,
+        "mid": 0.010995,
+        "slippage_bps": 11.197824536786296,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 1565.1307946593715,
+        "mid": 1565.02,
+        "slippage_bps": 0.7079440478175975,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 1565.0039307856903,
+        "mid": 1565.02,
+        "slippage_bps": 0.10267737351413671,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 1565.1483177329565,
+        "mid": 1565.02,
+        "slippage_bps": 0.8199111382376908,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 1564.9371734661568,
+        "mid": 1565.02,
+        "slippage_bps": 0.529236264349449,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 1565.1541588446794,
+        "mid": 1565.02,
+        "slippage_bps": 0.8572340588580648,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 1564.913586377574,
+        "mid": 1565.02,
+        "slippage_bps": 0.6799505592649884,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 1565.165081167039,
+        "mid": 1565.02,
+        "slippage_bps": 0.927024364155424,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 1564.8924034290956,
+        "mid": 1565.02,
+        "slippage_bps": 0.815303132895527,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 1565.1860322798482,
+        "mid": 1565.02,
+        "slippage_bps": 1.060895578639223,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SNDKBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 1564.810090735988,
+        "mid": 1565.02,
+        "slippage_bps": 1.341256111819098,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MSTRBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 131.7,
+        "mid": 131.695,
+        "slippage_bps": 0.37966513535027546,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MSTRBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 131.68098760740708,
+        "mid": 131.695,
+        "slippage_bps": 1.0640033860752058,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MSTRBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 131.7,
+        "mid": 131.695,
+        "slippage_bps": 0.37966513535027546,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MSTRBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 131.67701048403816,
+        "mid": 131.695,
+        "slippage_bps": 1.365998402508048,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MSTRBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 131.70122869816868,
+        "mid": 131.695,
+        "slippage_bps": 0.47296390665430554,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MSTRBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 131.67350514870705,
+        "mid": 131.695,
+        "slippage_bps": 1.632169125095295,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MSTRBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 131.71010988784852,
+        "mid": 131.695,
+        "slippage_bps": 1.1473395230285353,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MSTRBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 131.67175255102643,
+        "mid": 131.695,
+        "slippage_bps": 1.7652491722209407,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MSTRBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 131.71656859806689,
+        "mid": 131.695,
+        "slippage_bps": 1.6377689408779577,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MSTRBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 131.66588891281043,
+        "mid": 131.695,
+        "slippage_bps": 2.2104929716057993,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SKHYBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 178.24,
+        "mid": 178.23000000000002,
+        "slippage_bps": 0.5610727711379063,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SKHYBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 178.2157029024929,
+        "mid": 178.23000000000002,
+        "slippage_bps": 0.8021712117558797,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SKHYBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 178.24441025529438,
+        "mid": 178.23000000000002,
+        "slippage_bps": 0.8085201870821418,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SKHYBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 178.21228111719827,
+        "mid": 178.23000000000002,
+        "slippage_bps": 0.9941582675051864,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SKHYBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 178.25257405895528,
+        "mid": 178.23000000000002,
+        "slippage_bps": 1.2665689813868153,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SKHYBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 178.20159023142867,
+        "mid": 178.23000000000002,
+        "slippage_bps": 1.5939947579728702,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SKHYBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 178.2686166794293,
+        "mid": 178.23000000000002,
+        "slippage_bps": 2.1666767339551103,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SKHYBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 178.19579492725103,
+        "mid": 178.23000000000002,
+        "slippage_bps": 1.919153495426645,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SKHYBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 178.28144605621821,
+        "mid": 178.23000000000002,
+        "slippage_bps": 2.8864981326486356,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "SKHYBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 178.19231792567157,
+        "mid": 178.23000000000002,
+        "slippage_bps": 2.11423858657039,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AAPLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 331.31,
+        "mid": 331.28999999999996,
+        "slippage_bps": 0.6037006852014445,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AAPLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 331.27,
+        "mid": 331.28999999999996,
+        "slippage_bps": 0.6037006851997287,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AAPLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 331.31,
+        "mid": 331.28999999999996,
+        "slippage_bps": 0.6037006852014445,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AAPLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 331.27,
+        "mid": 331.28999999999996,
+        "slippage_bps": 0.6037006851997287,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AAPLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 331.31,
+        "mid": 331.28999999999996,
+        "slippage_bps": 0.6037006852014445,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AAPLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 331.26516773661666,
+        "mid": 331.28999999999996,
+        "slippage_bps": 0.74956272097868,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AAPLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 331.3682406666428,
+        "mid": 331.28999999999996,
+        "slippage_bps": 2.3616972031404955,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AAPLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 331.2529856446739,
+        "mid": 331.28999999999996,
+        "slippage_bps": 1.117279583629161,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AAPLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 331.4627143948287,
+        "mid": 331.28999999999996,
+        "slippage_bps": 5.213389925103228,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AAPLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 331.2104751515712,
+        "mid": 331.28999999999996,
+        "slippage_bps": 2.4004602743449968,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DRAMBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 55.77,
+        "mid": 55.760000000000005,
+        "slippage_bps": 1.7934002869436891,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DRAMBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 55.75,
+        "mid": 55.760000000000005,
+        "slippage_bps": 1.7934002869449632,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DRAMBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 55.77,
+        "mid": 55.760000000000005,
+        "slippage_bps": 1.7934002869436891,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DRAMBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 55.74999999999999,
+        "mid": 55.760000000000005,
+        "slippage_bps": 1.7934002869462375,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DRAMBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 55.77,
+        "mid": 55.760000000000005,
+        "slippage_bps": 1.7934002869436891,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DRAMBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 55.74999999999999,
+        "mid": 55.760000000000005,
+        "slippage_bps": 1.7934002869462375,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DRAMBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 55.77,
+        "mid": 55.760000000000005,
+        "slippage_bps": 1.7934002869436891,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DRAMBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 55.7464052619646,
+        "mid": 55.760000000000005,
+        "slippage_bps": 2.4380807093630246,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DRAMBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 55.77243948810299,
+        "mid": 55.760000000000005,
+        "slippage_bps": 2.2308981533329164,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "DRAMBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 55.742561928146216,
+        "mid": 55.760000000000005,
+        "slippage_bps": 3.127344306633605,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 109.87604446239935,
+        "mid": 109.84,
+        "slippage_bps": 3.2815424617030127,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 109.81,
+        "mid": 109.84,
+        "slippage_bps": 2.731245447924357,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 109.87841775078438,
+        "mid": 109.84,
+        "slippage_bps": 3.4976102316438387,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 109.81,
+        "mid": 109.84,
+        "slippage_bps": 2.731245447924357,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 109.87920886969613,
+        "mid": 109.84,
+        "slippage_bps": 3.5696348958599096,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 109.81,
+        "mid": 109.84,
+        "slippage_bps": 2.731245447924357,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 109.87960443342403,
+        "mid": 109.84,
+        "slippage_bps": 3.6056476169001757,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 109.80612946656785,
+        "mid": 109.84,
+        "slippage_bps": 3.0836246751775582,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 109.87984177302783,
+        "mid": 109.84,
+        "slippage_bps": 3.627255373983166,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "BABABUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 109.78060652898779,
+        "mid": 109.84,
+        "slippage_bps": 5.407271577951033,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TQQQBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 69.1539836034265,
+        "mid": 69.10499999999999,
+        "slippage_bps": 7.088286437523591,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TQQQBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 69.08,
+        "mid": 69.10499999999999,
+        "slippage_bps": 3.6176832356546527,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TQQQBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 69.16089842576716,
+        "mid": 69.10499999999999,
+        "slippage_bps": 8.088911911897577,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TQQQBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 69.07875918666487,
+        "mid": 69.10499999999999,
+        "slippage_bps": 3.7972380196977817,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TQQQBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 69.17585762568864,
+        "mid": 69.10499999999999,
+        "slippage_bps": 10.253617782887774,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TQQQBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 69.07437931564861,
+        "mid": 69.10499999999999,
+        "slippage_bps": 4.431037457691387,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TQQQBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 69.18792670678967,
+        "mid": 69.10499999999999,
+        "slippage_bps": 12.000102277646763,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TQQQBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 69.07218958840994,
+        "mid": 69.10499999999999,
+        "slippage_bps": 4.747907038571554,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TQQQBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 69.1839271900352,
+        "mid": 69.11,
+        "slippage_bps": 10.697032272494072,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "TQQQBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 69.05731731334252,
+        "mid": 69.11,
+        "slippage_bps": 7.6230193398171835,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ORCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 144.0,
+        "mid": 143.935,
+        "slippage_bps": 4.515927328307759,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ORCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 143.87,
+        "mid": 143.935,
+        "slippage_bps": 4.515927328307759,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ORCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 144.0,
+        "mid": 143.935,
+        "slippage_bps": 4.515927328307759,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ORCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 143.86462093162433,
+        "mid": 143.935,
+        "slippage_bps": 4.889642434131532,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ORCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 143.99906112612146,
+        "mid": 143.93,
+        "slippage_bps": 4.798244015942069,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ORCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 143.86231042870548,
+        "mid": 143.93,
+        "slippage_bps": 4.702950829884142,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ORCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 143.99953056153038,
+        "mid": 143.93,
+        "slippage_bps": 4.830859551891264,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ORCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 143.8611552050763,
+        "mid": 143.93,
+        "slippage_bps": 4.7832137096995675,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ORCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 144.0692961139438,
+        "mid": 143.93,
+        "slippage_bps": 9.678045851719588,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ORCLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 143.8088914124152,
+        "mid": 143.93,
+        "slippage_bps": 8.414408919948178,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "GLWBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 144.7,
+        "mid": 144.5,
+        "slippage_bps": 13.840830449826202,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "GLWBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 144.3,
+        "mid": 144.5,
+        "slippage_bps": 13.840830449826202,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "GLWBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 144.68,
+        "mid": 144.49,
+        "slippage_bps": 13.149698941103033,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "GLWBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 144.3,
+        "mid": 144.49,
+        "slippage_bps": 13.149698941103033,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "GLWBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 144.68,
+        "mid": 144.49,
+        "slippage_bps": 13.149698941103033,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "GLWBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 144.3,
+        "mid": 144.49,
+        "slippage_bps": 13.149698941103033,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "GLWBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 144.6836993971236,
+        "mid": 144.49,
+        "slippage_bps": 13.405730301307699,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "GLWBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 144.3,
+        "mid": 144.49,
+        "slippage_bps": 13.149698941103033,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "GLWBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 144.9674456887017,
+        "mid": 144.49,
+        "slippage_bps": 33.043510879762785,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "GLWBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 144.2053116548058,
+        "mid": 144.49,
+        "slippage_bps": 19.70297911234078,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MVLLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 25.59073615351243,
+        "mid": 25.575,
+        "slippage_bps": 6.152943699875514,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MVLLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 25.56,
+        "mid": 25.575,
+        "slippage_bps": 5.86510263929641,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MVLLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 25.598879846594638,
+        "mid": 25.575,
+        "slippage_bps": 9.337183419213614,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MVLLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 25.56,
+        "mid": 25.575,
+        "slippage_bps": 5.86510263929641,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MVLLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 25.612199521332673,
+        "mid": 25.575,
+        "slippage_bps": 14.545267383254789,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MVLLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 25.56,
+        "mid": 25.575,
+        "slippage_bps": 5.86510263929641,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MVLLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 25.624334666398134,
+        "mid": 25.575,
+        "slippage_bps": 19.29019214003319,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MVLLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 25.557899946873576,
+        "mid": 25.575,
+        "slippage_bps": 6.686237781592718,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MVLLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 25.643329657089602,
+        "mid": 25.59,
+        "slippage_bps": 20.84003794044628,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "MVLLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 25.550425883833395,
+        "mid": 25.59,
+        "slippage_bps": 15.46468001821228,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ASMLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 1621.1283711393476,
+        "mid": 1619.705,
+        "slippage_bps": 8.78784185606414,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ASMLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 1618.9066375172142,
+        "mid": 1619.705,
+        "slippage_bps": 4.929061049917767,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ASMLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 1621.2321224937637,
+        "mid": 1619.705,
+        "slippage_bps": 9.428398960080553,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ASMLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 1618.9016107623524,
+        "mid": 1619.705,
+        "slippage_bps": 4.960096052352,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ASMLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 1621.2895798812287,
+        "mid": 1619.705,
+        "slippage_bps": 9.783138789031456,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ASMLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 1618.8581105823407,
+        "mid": 1619.705,
+        "slippage_bps": 5.228664588052843,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ASMLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 1621.3697859725783,
+        "mid": 1619.705,
+        "slippage_bps": 10.278328291746517,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ASMLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 1618.726704575134,
+        "mid": 1619.705,
+        "slippage_bps": 6.0399605166744506,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ASMLBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 1621.4179134366275,
+        "mid": 1619.705,
+        "slippage_bps": 10.575465511482395,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "ASMLBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 1618.1345374464431,
+        "mid": 1619.705,
+        "slippage_bps": 9.695978919351417,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AMZNBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 100.0,
+        "vwap": 252.76,
+        "mid": 252.685,
+        "slippage_bps": 2.9681223657909506,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AMZNBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 100.0,
+        "vwap": 252.54671774269198,
+        "mid": 252.685,
+        "slippage_bps": 5.472515476107424,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AMZNBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 250.0,
+        "vwap": 252.78628684223435,
+        "mid": 252.685,
+        "slippage_bps": 4.008423223948571,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AMZNBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 250.0,
+        "vwap": 252.54268705419022,
+        "mid": 252.685,
+        "slippage_bps": 5.632029831995473,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AMZNBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 500.0,
+        "vwap": 252.85187100887856,
+        "mid": 252.685,
+        "slippage_bps": 6.603914315395008,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AMZNBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 500.0,
+        "vwap": 252.5413435199475,
+        "mid": 252.685,
+        "slippage_bps": 5.685200152462516,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AMZNBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 1000.0,
+        "vwap": 252.87307127784695,
+        "mid": 252.72000000000003,
+        "slippage_bps": 6.056951481755279,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AMZNBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 1000.0,
+        "vwap": 252.5640643040469,
+        "mid": 252.72000000000003,
+        "slippage_bps": 6.170295028218298,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AMZNBUSDT",
+        "book": "BSTOCKS",
+        "side": "BUY",
+        "notional": 2500.0,
+        "vwap": 252.9133192828333,
+        "mid": 252.72000000000003,
+        "slippage_bps": 7.649544271655277,
+        "filled_pct": 1.0
+      },
+      {
+        "symbol": "AMZNBUSDT",
+        "book": "BSTOCKS",
+        "side": "SELL",
+        "notional": 2500.0,
+        "vwap": 252.54962517131455,
+        "mid": 252.72000000000003,
+        "slippage_bps": 6.741644060045971,
+        "filled_pct": 1.0
+      }
+    ]
+  }
+]
