@@ -527,6 +527,11 @@ class ScreenConfig(BaseModel):
     # 169th bar. At exactly 168 the feature was always None (caught by test).
     path_bars: int = 192
     benchmark_symbol: str = "BTCUSDT"  # relative strength and regime are against this
+    # Perp funding on every candidate: ONE premiumIndex call per cycle for all
+    # perps. A spot name without a perp carries None. Validated 2026-09-17:
+    # decile spread +2.36% (CI +1.33..+3.47), the sign being CONTINUATION --
+    # the highest-funding decile outperforms -- and the contrarian pick loses.
+    funding_features: bool = False
     # What orders the "move" ranking: `flow` (the measured signal), `model`
     # (the frozen fitted prior in fit.model, falling back to flow when no
     # artifact exists) or `change` (price momentum -- measured to carry no edge).
@@ -585,6 +590,11 @@ class BinanceEndpoint(BaseModel):
     method: str = "GET"
     signed: bool = False
     order: bool = False
+    # "spot" (the default) resolves to the data plane, or the trade plane when
+    # signed. "futures" resolves to `futures_data_url`: the USDT-M perp market,
+    # read for POSITIONING (funding rate) and nothing else -- this system
+    # never trades there, so no signed futures endpoint exists.
+    host: str = "spot"
 
 
 class BinanceMarket(BaseModel):
@@ -603,6 +613,9 @@ class BinanceConfig(BaseModel):
     timezone: str = "Asia/Seoul"
     timeout_s: float = 15.0
     recv_window_ms: int = 5000
+    # The USDT-M perpetuals data plane, always mainnet, never signed. Funding
+    # rates are the one positioning signal with six months of free history.
+    futures_data_url: str = "https://fapi.binance.com"
     min_call_interval_s: float = 0.1
     retry_backoff_s: float = 2.0
     allow_orders: bool = False
@@ -758,6 +771,7 @@ class ScoreConfig(BaseModel):
     # Path/RS features for every backtest observation, keyed by id
     # (agent/backfill_features.py); joined by the replay at read time.
     backtest_features: str = "data/backtest_features.jsonl"
+    backtest_funding: str = "data/backtest_funding.jsonl"
     feature_replay_output: str = "data/feature_replay.json"
     # Case-based retrieval (agent/similar.py). `similar_k` 0 keeps
     # `similar_setups` out of the prompt; set it only after validate() shows a

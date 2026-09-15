@@ -293,6 +293,8 @@ class BinanceScreen:
 
         if self.scfg.path_features:
             self._attach_path_features(selected)
+        if self.scfg.funding_features:
+            self._attach_funding(selected)
 
         log.info(
             "binance screen: %d in pool -> %d candidates (%s)",
@@ -316,6 +318,27 @@ class BinanceScreen:
         except Exception as exc:  # noqa: BLE001 - no regime reading means no gate, not no entries
             log.warning("market state unavailable: %s", exc)
             return {}
+
+    def funding_rates(self) -> dict[str, float]:
+        """Every perp's current funding rate in %, from ONE premiumIndex call."""
+        rows = self.client.call("premium_index", {}).body.get("rows", [])
+        out = {}
+        for r in rows:
+            try:
+                out[str(r["symbol"])] = float(r["lastFundingRate"]) * 100
+            except (KeyError, TypeError, ValueError):
+                continue
+        return out
+
+    def _attach_funding(self, selected: list[dict]) -> None:
+        """`funding_rate_pct` on each selected candidate; None where no perp."""
+        try:
+            rates = self.funding_rates()
+        except Exception as exc:  # noqa: BLE001 - positioning is additive, never fatal
+            log.warning("funding rates unavailable: %s", exc)
+            rates = {}
+        for e in selected:
+            e["funding_rate_pct"] = rates.get(e["symbol"])
 
     def _hourly(self, symbol: str) -> list[list]:
         return self.client.call(

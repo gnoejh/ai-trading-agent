@@ -40,9 +40,10 @@ from trading.config import AppConfig, config
 
 log = logging.getLogger(__name__)
 
-FEATURES = [
-    k for k in PATH_KEYS if k != "ret_24h"
-] + RS_KEYS  # ret_24h == change_pct, already an arm
+FUNDING_KEYS = ["funding_rate_pct", "funding_3d_avg_pct"]
+FEATURES = (
+    [k for k in PATH_KEYS if k != "ret_24h"] + RS_KEYS + FUNDING_KEYS
+)  # ret_24h == change_pct, already an arm
 
 
 def load_features(path: Path) -> dict[str, dict]:
@@ -62,6 +63,9 @@ def load_features(path: Path) -> dict[str, dict]:
 def _sections(cfg: AppConfig):
     groups = load_cross_sections(Path(cfg.score.observations))
     feats = load_features(Path(cfg.score.backtest_features))
+    # Funding is a second side-file (a spot name without a perp has no row);
+    # joined the same way, absent keys simply stay absent.
+    funding = load_features(Path(cfg.score.backtest_funding))
     min_group = cfg.score.screen_replay_min_group
     out = []
     for ts, rows in sorted(groups.items()):
@@ -71,6 +75,11 @@ def _sections(cfg: AppConfig):
                 **{
                     k: v
                     for k, v in feats.get(r["id"], {}).items()
+                    if k not in ("id", "symbol", "ts")
+                },
+                **{
+                    k: v
+                    for k, v in funding.get(r["id"], {}).items()
                     if k not in ("id", "symbol", "ts")
                 },
             }
@@ -234,6 +243,19 @@ def menu_rules(sections, cfg: AppConfig) -> list[dict]:
         "range>=0.5": lambda m: [r for r in m if (r.get("range_pos_7d") or 0) >= 0.5],
         "range>=0.8": lambda m: [r for r in m if (r.get("range_pos_7d") or 0) >= 0.8],
         "ret72h>0": lambda m: [r for r in m if (r.get("ret_72h") or 0) > 0],
+        # Positioning: the bottom funding decile loses and the contrarian pick
+        # loses significantly, so the actionable form is an EXCLUSION -- drop
+        # names whose longs are being paid to hold (negative funding), keep
+        # names without a perp (no reading is not a bad reading).
+        "funding>=0": lambda m: [
+            r for r in m if r.get("funding_rate_pct") is None or r["funding_rate_pct"] >= 0
+        ],
+        "fund>=0&range>=0.5": lambda m: [
+            r
+            for r in m
+            if (r.get("funding_rate_pct") is None or r["funding_rate_pct"] >= 0)
+            and (r.get("range_pos_7d") or 0) >= 0.5
+        ],
     }
     diffs: dict[str, list[float]] = defaultdict(list)
     sizes: dict[str, list[int]] = defaultdict(list)

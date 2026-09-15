@@ -105,6 +105,11 @@ broker:
       # hurdle is about mainnet execution, and the testnet's bot-seeded
       # book would answer a different question. See accounting/slippage.py.
       depth:         {path: /api/v3/depth}
+      # USDT-M perpetuals (host: futures): positioning, never traded.
+      # fundingRate is the 8h history (limit 1000 ~ 11 months); premiumIndex
+      # with no symbol returns every perp's current rate in ONE call.
+      funding_history: {path: /fapi/v1/fundingRate, host: futures}
+      premium_index:   {path: /fapi/v1/premiumIndex, host: futures}
       account:       {path: /api/v3/account,    signed: true}
       open_orders:   {path: /api/v3/openOrders, signed: true}
       my_trades:     {path: /api/v3/myTrades,   signed: true}
@@ -506,7 +511,8 @@ score:
   # is the liquidity head; change_low is the mean-reversion reading of the
   # screen finding (buy what fell); change_high is its momentum control.
   arms: [flow_top, prior_top, volume_top, change_low, change_high,
-         near_7d_high, far_from_7d_high, ret_7d_top, vol_surge_top]
+         near_7d_high, far_from_7d_high, ret_7d_top, vol_surge_top,
+         funding_low, funding_high]
   # 2026-09-16: the screen changed (rank_by sample, change band off), so the
   # model's self-record before this date was earned on a population that no
   # longer exists -- a random draw from it lost 2.57% to benchmark. The prompt
@@ -522,6 +528,7 @@ score:
   # backtest observation, so a feature is validated over six months BEFORE it
   # reaches the prompt. Side-file; the observation log stays append-only.
   backtest_features: data/backtest_features.jsonl
+  backtest_funding: data/backtest_funding.jsonl
   feature_replay_output: data/feature_replay.json
   # 2026-09-17: experiences as CASES. The k nearest resolved setups to each
   # candidate, by standardised feature distance, and their outcome. 0 = off;
@@ -844,6 +851,12 @@ agent:
     path_features: true
     path_bars: 192              # 168 needs a 169th bar for ret_7d; slack on top
     benchmark_symbol: BTCUSDT
+    # 2026-09-17: perp funding on every candidate (one premiumIndex call per
+    # cycle). Six-month decile spread +2.36% (CI +1.33..+3.47) with the sign
+    # of CONTINUATION, not reversal: the crowded-long decile keeps going for
+    # 72h, and buying the most-shorted name loses 3.2% to a random draw (CI
+    # excludes zero). The model sees it; the funding arms measure it live.
+    funding_features: true
     # sample | flow | model | change. `model` orders by the frozen fitted prior
     # (fit.model) and falls back to flow when no artifact exists.
     # 2026-09-16: `sample`, not `flow`. Every ranker here selects the EXTREME

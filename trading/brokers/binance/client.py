@@ -152,7 +152,12 @@ class BinanceClient:
 
         key, _ = self.secrets.credentials(testnet=self.bcfg.use_testnet)
         headers = {"X-MBX-APIKEY": key} if ep.signed else {}
-        base_url = (self.trade_url if ep.signed else self.data_url) + ep.path
+        if ep.host == "futures":
+            if ep.signed:
+                raise ValueError(f"endpoint {name!r}: no signed futures calls exist here")
+            base_url = self.bcfg.futures_data_url + ep.path
+        else:
+            base_url = (self.trade_url if ep.signed else self.data_url) + ep.path
 
         def build() -> tuple:
             """(url, params) for one attempt. Signed calls re-sign every time.

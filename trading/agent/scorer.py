@@ -120,6 +120,11 @@ SELECTORS: dict[str, object] = {
     "vol_surge_top": lambda menu: _pick_by(menu, "vol_ratio_24h", largest=True),
     "taker_24h_top": lambda menu: _pick_by(menu, "taker_share_24h", largest=True),
     "taker_24h_low": lambda menu: _pick_by(menu, "taker_share_24h", largest=False),
+    # Positioning (perp funding, 2026-09-17): crowded longs pay the highest
+    # funding; the contrarian pick is the LOWEST. No-ops until the live menu
+    # carries the feature.
+    "funding_low": lambda menu: _pick_by(menu, "funding_rate_pct", largest=False),
+    "funding_high": lambda menu: _pick_by(menu, "funding_rate_pct", largest=True),
 }
 
 

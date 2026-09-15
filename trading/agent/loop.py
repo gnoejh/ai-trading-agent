@@ -103,6 +103,12 @@ Reply with JSON only:
   pick. Your past confidences are graded against what actually happened
   (`your_calibration` in `measured_record`, when enough have resolved) -- use it
   to correct yourself.
+- `funding_rate_pct` on a candidate is the perpetual's current 8-hourly funding
+  rate (0.01 is the neutral default; 0.1 is crowded longs; negative means
+  shorts are paying). Measured over six months on this universe it is a
+  CONTINUATION signal at this horizon, not a reversal one: the highest-funding
+  decile went on to beat the benchmark by ~2.4% more than the lowest, and
+  buying the most-shorted name lost ~3% to a random pick. Absent = no perp.
 - `similar_setups` on a candidate, when present, is this system's own case
   memory: the outcome of the N most similar past setups (by 24h change,
   turnover, taker flow, 7d return, range position, volatility, distance from

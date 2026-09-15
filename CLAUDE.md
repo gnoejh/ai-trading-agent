@@ -98,6 +98,40 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-17 (overnight, 4/n)** — **Positioning: perp funding, and it says continuation, not
+  reversal.** The one positioning signal with six months of free history is the USDT-M
+  perpetual funding rate (open interest history stops at 30 days and so cannot be validated to
+  this repo's standard; not fetched). New futures data plane: `BinanceEndpoint.host: futures`
+  → `broker.binance.futures_data_url`, unsigned only — a signed futures endpoint is refused by
+  the client, because this system holds no futures account and must never look as if it might.
+  `backfill_funding.py` put the funding at every backtest observation into a side-file (11,385
+  rows; names without a perp simply have none) in one call per symbol. **Replayed**:
+
+      decile spreads (excess vs BTC, n=11,126)
+        funding_rate_pct     top +1.91%  bottom −0.45%  spread +2.36%  CI +1.33..+3.47  <- excludes 0
+        funding_3d_avg_pct   +0.97%  CI −0.28..+2.14
+      pick arms (one name vs a random draw from the sample menu)
+        funding_high   −0.32%  CI −3.38..+3.55
+        funding_low    −3.21%  CI −5.65..−0.60   <- the ONE pick arm on the board that excludes 0
+      menu rules (random draw from the menu vs from the pool)
+        fund>=0 & range>=0.5   +0.70%  median +0.25%  wins 45/76  CI −0.03..+1.49   <- best rule measured
+        funding>=0             +0.06%  (an exclusion alone does nothing)
+
+  **The sign is the opposite of the textbook.** The crowded-long decile keeps going for 72h and
+  the most-shorted names keep falling: on this universe at this horizon, positioning is a
+  continuation signal, and the contrarian trade — buy the most negative funding — is the only
+  single-name rule tonight that loses with a CI excluding zero. Same strength as
+  `range_pos_7d` as a decile; as a pick, only the losing side is significant, which is by now
+  the pattern of the night (every "buy the weakest" rule loses; no "buy the strongest" pick
+  beats a draw). The combined menu `funding>=0 & range>=0.5` is the best rule measured — 45 of
+  76 sections, positive median, pool ~51 names — and stops a hair short of the CI bar, so it
+  does **not** become a filter; it is the leading candidate for one when the live control can
+  confirm it. **Shipped**: `screen.funding_features: true` (ONE `premiumIndex` call per cycle
+  for every perp; None where there is no perp; a failed read carries None for all), the
+  `funding_low`/`funding_high` arms live, the system prompt says what the field is and what was
+  measured, and the decile row reaches `backtest_priors` automatically because its CI excludes
+  zero. Not added to the case-memory vector: changing the vector needs a re-validation, and
+  the live arms will say first whether it earns it. 396 tests.
 - **2026-09-17 (overnight, 3/n)** — **Experiences as cases, not a census.** The owner's
   framing was "the model as an expert, the RAG as experiences" — and the RAG rendered
   experience as "24h-change 0..15%: 47% cleared", which is a census. An expert asks: the
