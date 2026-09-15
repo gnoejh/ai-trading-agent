@@ -523,6 +523,17 @@ score:
   # reaches the prompt. Side-file; the observation log stays append-only.
   backtest_features: data/backtest_features.jsonl
   feature_replay_output: data/feature_replay.json
+  # 2026-09-17: experiences as CASES. The k nearest resolved setups to each
+  # candidate, by standardised feature distance, and their outcome. 0 = off;
+  # switched on only if `uv run python -m trading.agent.similar` shows the
+  # neighbours' hit rate has a decile spread whose CI excludes zero.
+  # ON since 2026-09-17: validated leave-the-future-out on 1,547 backtest
+  # cases -- the neighbours' hit rate has a +3.18% decile spread in realised
+  # excess return (CI +0.48..+6.20). Each candidate carries the outcome of
+  # its 30 nearest resolved setups, with n.
+  similar_k: 30
+  similar_index: data/similar_index.json
+  similar_validation: data/similar_validation.json
   bootstrap_seed: 20260903
   ci_level: 0.95
 

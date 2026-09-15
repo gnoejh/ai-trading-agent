@@ -1,0 +1,44 @@
+{
+ "n": 1547,
+ "k": 30,
+ "keys": [
+  "change_pct",
+  "log_turnover",
+  "taker_share",
+  "ret_7d",
+  "range_pos_7d",
+  "vol_24h_pct",
+  "from_7d_high_pct",
+  "vol_ratio_24h"
+ ],
+ "index_size": 12542,
+ "top_decile_excess_pct": 2.641,
+ "bottom_decile_excess_pct": -0.539,
+ "spread_pct": 3.18,
+ "ci_low": 0.478,
+ "ci_high": 6.196,
+ "top_decile_hit_rate": 0.409,
+ "bottom_decile_hit_rate": 0.351,
+ "calibration": {
+  "0.0-0.2": {
+   "n": 100,
+   "realised": 0.32
+  },
+  "0.2-0.4": {
+   "n": 582,
+   "realised": 0.442
+  },
+  "0.4-0.6": {
+   "n": 776,
+   "realised": 0.455
+  },
+  "0.6-0.8": {
+   "n": 88,
+   "realised": 0.432
+  },
+  "0.8-1.0": {
+   "n": 1,
+   "realised": 0.0
+  }
+ }
+}

@@ -759,6 +759,27 @@ class ScoreConfig(BaseModel):
     # (agent/backfill_features.py); joined by the replay at read time.
     backtest_features: str = "data/backtest_features.jsonl"
     feature_replay_output: str = "data/feature_replay.json"
+    # Case-based retrieval (agent/similar.py). `similar_k` 0 keeps
+    # `similar_setups` out of the prompt; set it only after validate() shows a
+    # decile spread whose CI excludes zero.
+    similar_k: int = 0
+    similar_features: list[str] = Field(
+        default_factory=lambda: [
+            "change_pct",
+            "log_turnover",
+            "taker_share",
+            "ret_7d",
+            "range_pos_7d",
+            "vol_24h_pct",
+            "from_7d_high_pct",
+            "vol_ratio_24h",
+        ]
+    )
+    similar_sources: list[str] = Field(
+        default_factory=lambda: ["backtest", "universe", "random", "shadow"]
+    )
+    similar_index: str = "data/similar_index.json"
+    similar_validation: str = "data/similar_validation.json"
     bootstrap_seed: int = 20260903
     ci_level: float = 0.95
 

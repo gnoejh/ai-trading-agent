@@ -98,6 +98,34 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-17 (overnight, 3/n)** — **Experiences as cases, not a census.** The owner's
+  framing was "the model as an expert, the RAG as experiences" — and the RAG rendered
+  experience as "24h-change 0..15%: 47% cleared", which is a census. An expert asks: the
+  twenty most similar setups to THIS one — what happened? New `trading/agent/similar.py`
+  (`uv run python -m trading.agent.similar`): a standardised feature vector per resolved
+  observation (24h change, log turnover, taker flow, 7d return, range position, vol, distance
+  from the week's high, volume surge), a nearest-neighbour query, and the neighbours' outcome
+  distribution. Pure Python (no numpy in this repo); 13,732 cases, 1.7 MB, the live query is
+  25 candidates in about a second. **Validated before it reached the prompt, leave-the-future-
+  out** — a query sees only cases that resolved before it opened, enforced per query:
+
+      neighbours' hit rate, top decile vs bottom, realised excess vs BTC
+        top  +2.64%   bottom  −0.54%   spread +3.18%   CI +0.48..+6.20   n=1,547   <- excludes 0
+      calibration of the score (predicted vs realised hit after costs)
+        0.0–0.2 → 0.32 (n=100)   0.2–0.4 → 0.44 (n=582)   0.4–0.6 → 0.46 (n=776)   0.6–0.8 → 0.43 (n=88)
+
+  Monotone at the low end, flat above 0.4: the score is better at naming losers than winners,
+  which is consistent with everything else measured tonight (every "buy the weakest" pick
+  loses; the bottom decile of range position loses). A comparable spread to `range_pos_7d`'s,
+  and since that is one of the eight features it is partly the same information re-expressed;
+  the case memory's value is that it combines all eight without a fitted model. **Shipped**:
+  `score.similar_k: 30`; each candidate carries `similar_setups` (hit rate after costs, average
+  and median return, average excess, n) when it has the full vector, the system prompt says
+  what the field is and what was validated, and the scorer rebuilds the index after every
+  aggregation so tonight's resolutions are tomorrow's cases. A missing index or a candidate
+  with a hole in its vector simply carries nothing — silence, never a filled-in neighbour.
+  Prior by the repo's rule: backtest cases, survivorship-biased; the live arms will say whether
+  the model uses it. 389 tests.
 - **2026-09-17 (overnight, 2/n)** — **The stop now fits the name.** A fixed 8% is a different
   bet on BTC than on a microcap; an expert sets the stop by the name's own volatility. The exit
   grid gained volatility-scaled cells (`exit_eval.vol_multiples`: each trip's stop is k × its

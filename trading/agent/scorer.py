@@ -306,6 +306,17 @@ class ExperienceScorer:
             # Scoring must never break a trading cycle.
             log.exception("scorer pass failed")
 
+    def _refresh_similar(self) -> None:
+        """Rewrite the case index so tonight's resolutions are tomorrow's cases."""
+        if self.scfg.similar_k <= 0:
+            return
+        try:
+            from trading.agent.similar import build
+
+            build(self.cfg)
+        except Exception:
+            log.exception("similar index rebuild failed")
+
     def run_once(self) -> dict:
         opens, resolves = self._load()
         from_journal = self._open_from_journal(opens, resolves)
@@ -316,6 +327,7 @@ class ExperienceScorer:
         self.exp_path.write_text(
             json.dumps(experience, ensure_ascii=False, indent=1), encoding="utf-8"
         )
+        self._refresh_similar()
         stats = {
             "opened_journal": from_journal,
             "opened_universe": from_universe,
