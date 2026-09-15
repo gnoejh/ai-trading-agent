@@ -809,16 +809,11 @@ class TradingAgent:
         # and starve the model of slots exactly as it did all epoch (281 of 298
         # decisions saw free_slots=0).
         alloc = self.allocator.current
-        batch = min(
-            free_slots,
-            max(ecfg.entries_per_cycle, 1),
-            max(alloc.explore_max_positions - len(self._random_positions & held), 0),
-        )
-        if batch <= 0:
-            return 0
         # The regime gate: in a BTC-down week the roll runs at a fraction of
-        # the allocator's rate. Journalled before the roll so the regime is on
-        # the record whether or not an entry follows.
+        # the allocator's rate. Journalled BEFORE the slot-cap check as well as
+        # the roll, so the regime is on the record every cycle -- with the
+        # random arm at its cap for most of 2026-09-16 the row appeared once
+        # in five cycles, and a regime series with holes cannot be read back.
         entry_pct = alloc.explore_entry_pct
         state = screen.market_state() if hasattr(screen, "market_state") else {}
         btc_7d = state.get("btc_ret_7d") if state else None
@@ -831,6 +826,13 @@ class TradingAgent:
             entry_pct=round(entry_pct, 4),
             gated=bool(btc_7d is not None and btc_7d <= 0 and ecfg.regime_down_multiplier < 1.0),
         )
+        batch = min(
+            free_slots,
+            max(ecfg.entries_per_cycle, 1),
+            max(alloc.explore_max_positions - len(self._random_positions & held), 0),
+        )
+        if batch <= 0:
+            return 0
         if self._rng.random() >= entry_pct:
             return 0
 

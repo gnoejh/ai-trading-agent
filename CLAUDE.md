@@ -98,6 +98,27 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-17 (overnight, 6/n — closing)** — **What the health pass found, and the state the
+  owner wakes to.** Verified live, in the journal and the persisted exit state: every candidate
+  carries 27 keys (path, relative strength, vol, range, funding on 22 of 25, `similar_setups` on
+  25 of 25, a `market_state` block above the menu); the model's commentary cites breadth, 4h/72h
+  momentum, relative strength and "the best similar setups" — and still declines into a
+  breadth-0.08 tape, which is the right answer to the information it now has. RAYUSDT was the
+  first adoption after the vol stop shipped and persisted at **15.00%** (the cap; a high-vol
+  name); the twelve older plans keep their 8% because a stop only ratchets up. **One ordering
+  defect fixed**: the regime row was journalled after the slot-cap check, so with the random
+  arm at its cap (13 plans, cap 13 at an 11% model share) it appeared once in five cycles — a
+  regime series with holes cannot be read back. It now writes after `alloc` and before the cap,
+  every cycle. Noted, not a defect: nssm rotates the stderr log on every restart, so a grep of
+  the current log misses earlier adoptions — the persisted plans are the record. Gate unchanged
+  at 4 of 5 (the model's edge +0.27%, CI straddling zero, n=129); sleeves unchanged; API 2,785
+  of 6,000 KRW with the second opinion roughly doubling calls. **Not done tonight, by choice**:
+  catalysts (token unlocks, listings — external data, not measurable from the archive); KR
+  path/funding features (the Kiwoom screen would need archive bars, and the KR agent has no
+  funding source); any menu filter (the best rule measured, `funding>=0 & range>=0.5`, stopped
+  a hair short of the CI bar). Everything shipped tonight was validated over six months of
+  cross-sections before it reached the model, and every instrument that will confirm or refute
+  it live is in `/status`. 396 tests.
 - **2026-09-17 (overnight, 5/n)** — **The exit grid read per venue: KR's 4% stop was the worst
   cell on its own board, and a pooled number I logged was KR's, not Binance's.** `exit_eval`
   gained `--market`; the earlier vol-stop grid had pooled 85 KR trips with 97 Binance ones.
