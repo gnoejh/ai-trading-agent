@@ -103,6 +103,23 @@ SELECTORS: dict[str, object] = {
     "volume_top": lambda menu: _pick_by(menu, "quote_volume", largest=True),
     "change_low": lambda menu: _pick_by(menu, "change_pct", largest=False),
     "change_high": lambda menu: _pick_by(menu, "change_pct", largest=True),
+    # The richer feature set (features.py), 2026-09-16. No-ops on a menu that
+    # does not carry the feature -- so they cost nothing until the live screen
+    # ships it, and switch on with no second definition when it does. Each is
+    # validated over six months by feature_replay before that happens.
+    "ret_7d_top": lambda menu: _pick_by(menu, "ret_7d", largest=True),
+    "ret_7d_low": lambda menu: _pick_by(menu, "ret_7d", largest=False),
+    "rs_7d_top": lambda menu: _pick_by(menu, "rs_7d", largest=True),
+    "rs_7d_low": lambda menu: _pick_by(menu, "rs_7d", largest=False),
+    "rs_24h_top": lambda menu: _pick_by(menu, "rs_24h", largest=True),
+    "rs_24h_low": lambda menu: _pick_by(menu, "rs_24h", largest=False),
+    "vol_high": lambda menu: _pick_by(menu, "vol_24h_pct", largest=True),
+    "vol_low": lambda menu: _pick_by(menu, "vol_24h_pct", largest=False),
+    "near_7d_high": lambda menu: _pick_by(menu, "from_7d_high_pct", largest=True),
+    "far_from_7d_high": lambda menu: _pick_by(menu, "from_7d_high_pct", largest=False),
+    "vol_surge_top": lambda menu: _pick_by(menu, "vol_ratio_24h", largest=True),
+    "taker_24h_top": lambda menu: _pick_by(menu, "taker_share_24h", largest=True),
+    "taker_24h_low": lambda menu: _pick_by(menu, "taker_share_24h", largest=False),
 }
 
 

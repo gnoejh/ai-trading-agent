@@ -1,0 +1,261 @@
+"""Which features are information at the 72h horizon? Six months says.
+
+    uv run python -m trading.agent.feature_replay
+
+The richer feature set (`features.py`) is validated here BEFORE it reaches the
+prompt, three ways, all on the backtest cross-sections joined with
+`score.backtest_features`:
+
+1. DECILE SPREADS — the 2026-08-10 methodology. Every observation's forward
+   excess return (vs its section's BTC) is bucketed by the feature's decile;
+   the spread is top minus bottom, with a bootstrap CI. This is the test flow
+   passed at +1.05% on daily bars, and the one momentum failed.
+2. PICK ARMS — each feature as a top-pick and bottom-pick selector on the
+   `sample` menu, paired against a random draw from that menu. This is the
+   test flow FAILED (2026-09-16): a decile spread and "the top name is the
+   best name" are different claims, and only the second is what a selector
+   does.
+3. REGIME — the pool's forward return (raw, and excess vs BTC) conditioned on
+   the market state: BTC's trailing week and breadth. Long-only with no regime
+   filter is beta with costs; this asks whether the state is worth knowing.
+
+A PRIOR by the repo's rule, with the backfill's survivorship bias. But it is
+the difference between "give the model more data" and "give the model data
+that measured as information".
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import statistics
+from collections import defaultdict
+from pathlib import Path
+
+from trading.agent.features import PATH_KEYS, RS_KEYS
+from trading.agent.scorer import SELECTORS, bootstrap_ci
+from trading.agent.screen_replay import BENCHMARK, _sample_menu, load_cross_sections
+from trading.config import AppConfig, config
+
+log = logging.getLogger(__name__)
+
+FEATURES = [
+    k for k in PATH_KEYS if k != "ret_24h"
+] + RS_KEYS  # ret_24h == change_pct, already an arm
+
+
+def load_features(path: Path) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    if not path.exists():
+        return out
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            out[r["id"]] = r
+    return out
+
+
+def _sections(cfg: AppConfig):
+    groups = load_cross_sections(Path(cfg.score.observations))
+    feats = load_features(Path(cfg.score.backtest_features))
+    min_group = cfg.score.screen_replay_min_group
+    out = []
+    for ts, rows in sorted(groups.items()):
+        members = [
+            {
+                **r,
+                **{
+                    k: v
+                    for k, v in feats.get(r["id"], {}).items()
+                    if k not in ("id", "symbol", "ts")
+                },
+            }
+            for r in rows
+            if str(r.get("book") or "CRYPTO") == "CRYPTO"
+        ]
+        bench = next(
+            (
+                r
+                for r in members
+                if r["symbol"] == BENCHMARK["CRYPTO"] and r.get("ret_7d") is not None
+            ),
+            None,
+        )
+        if bench is None or len(members) < min_group:
+            continue
+        out.append((ts, members, bench))
+    return out
+
+
+def deciles(sections, feature: str, cfg: AppConfig) -> dict | None:
+    rows = []
+    for _ts, members, bench in sections:
+        b = bench["forward_return_pct"]
+        for r in members:
+            v = r.get(feature)
+            if v is not None:
+                rows.append((float(v), r["forward_return_pct"] - b))
+    if len(rows) < 200:
+        return None
+    rows.sort()
+    k = len(rows) // 10
+    top = [e for _, e in rows[-k:]]
+    bottom = [e for _, e in rows[:k]]
+    spread = statistics.fmean(top) - statistics.fmean(bottom)
+    # Bootstrap the spread by resampling within each decile.
+    import random
+
+    rng = random.Random(cfg.score.bootstrap_seed)
+    draws = []
+    for _ in range(min(cfg.score.bootstrap_samples, 1000)):
+        t = statistics.fmean(rng.choice(top) for _ in range(len(top)))
+        bm = statistics.fmean(rng.choice(bottom) for _ in range(len(bottom)))
+        draws.append(t - bm)
+    draws.sort()
+    lo = draws[int(0.025 * len(draws))]
+    hi = draws[int(0.975 * len(draws)) - 1]
+    return {
+        "feature": feature,
+        "n": len(rows),
+        "top_decile_excess_pct": round(statistics.fmean(top), 3),
+        "bottom_decile_excess_pct": round(statistics.fmean(bottom), 3),
+        "spread_pct": round(spread, 3),
+        "ci_low": round(lo, 3),
+        "ci_high": round(hi, 3),
+    }
+
+
+def pick_arms(sections, cfg: AppConfig) -> list[dict]:
+    diffs: dict[str, list[float]] = defaultdict(list)
+    slots = cfg.agent.screen.book_slots.get("CRYPTO", cfg.agent.screen.candidates)
+    for _ts, members, _bench in sections:
+        menu = _sample_menu(members, slots)
+        if not menu:
+            continue
+        shadow = statistics.fmean(r["forward_return_pct"] for r in menu)
+        by_symbol = {r["symbol"]: r["forward_return_pct"] for r in menu}
+        live = [{**r, "taker_buy_share": r.get("taker_share")} for r in menu]
+        for name, selector in SELECTORS.items():
+            pick = selector(live)
+            if pick is not None:
+                diffs[name].append(by_symbol[pick] - shadow)
+    out = []
+    for name, d in diffs.items():
+        ci = bootstrap_ci(
+            d,
+            samples=cfg.score.bootstrap_samples,
+            seed=cfg.score.bootstrap_seed,
+            level=cfg.score.ci_level,
+        )
+        out.append(
+            {
+                "selector": name,
+                "n": len(d),
+                "edge_pct": round(statistics.fmean(d), 3),
+                "median_pct": round(statistics.median(d), 3),
+                "ci_low": ci[0] if ci else None,
+                "ci_high": ci[1] if ci else None,
+                "wins": sum(1 for x in d if x > 0),
+            }
+        )
+    out.sort(key=lambda r: r["ci_low"] if r["ci_low"] is not None else -1e9, reverse=True)
+    return out
+
+
+def regime_table(sections) -> list[dict]:
+    """The pool's forward return by market state at the section's open."""
+    buckets: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    for _ts, members, bench in sections:
+        raw = statistics.fmean(r["forward_return_pct"] for r in members)
+        excess = raw - bench["forward_return_pct"]
+        r7 = bench.get("ret_7d")
+        up = [r.get("ret_7d") for r in members if r.get("ret_7d") is not None]
+        breadth = (sum(1 for v in up if v > 0) / len(up)) if up else None
+        buckets["all"].append((raw, excess))
+        if r7 is not None:
+            buckets["btc_7d_up" if r7 > 0 else "btc_7d_down"].append((raw, excess))
+        if breadth is not None:
+            buckets["breadth_7d>0.5" if breadth > 0.5 else "breadth_7d<=0.5"].append((raw, excess))
+    out = []
+    for name, vals in buckets.items():
+        out.append(
+            {
+                "state": name,
+                "n_sections": len(vals),
+                "pool_raw_pct": round(statistics.fmean(v[0] for v in vals), 3),
+                "pool_excess_pct": round(statistics.fmean(v[1] for v in vals), 3),
+                "median_raw_pct": round(statistics.median(v[0] for v in vals), 3),
+            }
+        )
+    return out
+
+
+def replay(cfg: AppConfig | None = None) -> dict:
+    cfg = cfg or config()
+    sections = _sections(cfg)
+    with_feats = sum(1 for _, m, _ in sections if any(r.get("ret_7d") is not None for r in m))
+    dec = [d for f in FEATURES if (d := deciles(sections, f, cfg))]
+    dec.sort(key=lambda d: d["ci_low"], reverse=True)
+    return {
+        "sections": len(sections),
+        "sections_with_features": with_feats,
+        "deciles": dec,
+        "pick_arms": pick_arms(sections, cfg),
+        "regime": regime_table(sections),
+    }
+
+
+def render(result: dict) -> str:
+    lines = [
+        "*Feature replay* (backtest prior — not a criterion; survivorship-biased)",
+        f"  {result['sections']} cross-sections ({result['sections_with_features']} with features), 72h forward, CRYPTO",
+        "  ── decile spreads: top 10% minus bottom 10% of each feature, excess vs BTC",
+    ]
+    for d in result["deciles"]:
+        mark = " <- excludes 0" if d["ci_low"] > 0 or d["ci_high"] < 0 else ""
+        lines.append(
+            f"     {d['feature']:18} n={d['n']:<6} top {d['top_decile_excess_pct']:+6.2f}%  "
+            f"bottom {d['bottom_decile_excess_pct']:+6.2f}%  spread {d['spread_pct']:+6.2f}%  "
+            f"CI {d['ci_low']:+.2f}..{d['ci_high']:+.2f}{mark}"
+        )
+    lines.append("  ── pick arms on the sample menu (pick vs a random draw from it)")
+    for r in result["pick_arms"]:
+        ci = f"  CI {r['ci_low']:+.2f}..{r['ci_high']:+.2f}" if r["ci_low"] is not None else ""
+        mark = (
+            " <- excludes 0"
+            if r["ci_low"] is not None and (r["ci_low"] > 0 or r["ci_high"] < 0)
+            else ""
+        )
+        lines.append(
+            f"     {r['selector']:18} n={r['n']:<4} edge {r['edge_pct']:+6.2f}%  median {r['median_pct']:+6.2f}%{ci}  wins {r['wins']}/{r['n']}{mark}"
+        )
+    lines.append("  ── regime: the pool's 72h forward return by market state at entry")
+    for r in result["regime"]:
+        lines.append(
+            f"     {r['state']:16} n={r['n_sections']:<3} raw {r['pool_raw_pct']:+6.2f}%  "
+            f"median {r['median_raw_pct']:+6.2f}%  excess vs BTC {r['pool_excess_pct']:+6.2f}%"
+        )
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    argparse.ArgumentParser(
+        description="Validate the feature set over the backtest corpus."
+    ).parse_args(argv)
+    cfg = config()
+    result = replay(cfg)
+    print(render(result))
+    out = Path(cfg.score.feature_replay_output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    print(f"written: {out}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

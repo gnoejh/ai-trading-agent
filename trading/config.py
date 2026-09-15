@@ -720,6 +720,10 @@ class ScoreConfig(BaseModel):
     # benchmark among them, to be scored.
     screen_replay_min_group: int = 30
     screen_replay_output: str = "data/screen_replay.json"
+    # Path/RS features for every backtest observation, keyed by id
+    # (agent/backfill_features.py); joined by the replay at read time.
+    backtest_features: str = "data/backtest_features.jsonl"
+    feature_replay_output: str = "data/feature_replay.json"
     bootstrap_seed: int = 20260903
     ci_level: float = 0.95
 

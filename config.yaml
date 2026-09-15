@@ -509,6 +509,11 @@ score:
   # PRIOR, never a criterion (survivorship-biased: today's pool, not each day's).
   screen_replay_min_group: 30
   screen_replay_output: data/screen_replay.json
+  # 2026-09-16: the richer feature set (agent/features.py) computed for every
+  # backtest observation, so a feature is validated over six months BEFORE it
+  # reaches the prompt. Side-file; the observation log stays append-only.
+  backtest_features: data/backtest_features.jsonl
+  feature_replay_output: data/feature_replay.json
   bootstrap_seed: 20260903
   ci_level: 0.95
 
