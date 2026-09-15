@@ -98,6 +98,36 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-17 (overnight, 2/n)** — **The stop now fits the name.** A fixed 8% is a different
+  bet on BTC than on a microcap; an expert sets the stop by the name's own volatility. The exit
+  grid gained volatility-scaled cells (`exit_eval.vol_multiples`: each trip's stop is k × its
+  pre-entry daily vol from 7d of hourly closes, clamped 3–15%) and replayed 182 closed trips
+  (113 finished). At the live 72h hold and r:r 2.0, finished column:
+
+      stop         net/trip   stop-outs   trails
+      fixed  8%     +0.141%       28        125
+      fixed 12%     +0.201%       15        131
+      vol x 1.5     +0.473%       19        131
+      vol x 2       +0.475%       14        131
+      vol x 3       +0.362%       12        132
+
+  Every vol cell beats the fixed stop at **every** hold (24h/48h/72h/96h) — twelve cells, one
+  direction, roughly 3× the net per trip, with stop-outs halved and the trail exits untouched.
+  n_finished 113 sits at the repo's "hundreds" threshold; what carries the decision is the
+  consistency and the mechanism, not one cell. **Shipped, Binance only**: `exits.markets.BINANCE
+  .vol_multiple: 2.0`, clamped 3–15%, `stop_loss_pct` 8% kept as the FALLBACK. One vol
+  definition (`features.daily_vol_from_closes`) serves the grid, the candidate feature and the
+  live stop, so the number the model sees, the number the grid measured and the number the
+  supervisor sets are the same number. Wiring: `ExitPolicy.plan_for(stop_pct=…)` honours an
+  explicit stop and derives target and trail from it, so reward:risk stays a guarantee; the
+  supervisor takes an injected `vol_of` reader exactly like `is_dust` (it fetches nothing
+  itself), asks it once at adoption, and a failed or empty read means the **fixed** stop, never
+  no stop; 0 reads nothing. KR/US were pooled into that grid (85 of the 182 trips are KR) but
+  keep their own fixed stops until measured on their own — the mechanism argument is strongest
+  where vol disperses most, which is the crypto book. **Live effect at the next adoption**: a
+  name with 1% daily vol gets a 3% stop (floor); 3% → 6%; 12% → 15% (cap). Positions already
+  under a plan keep it (a stop only ratchets up; re-planning could widen one). Revert:
+  `vol_multiple: 0`. 3 exit tests inherit the live grid and now pin `vol_multiples: []`.
 - **2026-09-17 (overnight, 1/n)** — **The model gets the path, the market gets a regime gate,
   and both were measured before they shipped.** Owner, before sleeping: "go for fixing all…
   you can change anything to get profit." Two rules held regardless: no mainnet flip, and no

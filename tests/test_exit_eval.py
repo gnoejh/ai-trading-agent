@@ -25,6 +25,9 @@ def cfg(tmp_path):
     c.exit_eval.output = str(tmp_path / "exit_eval.json")
     c.exit_eval.holds_minutes = [1440, 4320]
     c.exit_eval.stops_pct = [0.04, 0.12]
+    # This file pins the fixed-stop grid; the vol-scaled cells (2026-09-17)
+    # have their own tests and must not inherit config.yaml here.
+    c.exit_eval.vol_multiples = []
     c.promotion.since = ""
     c.score.trade_since = ""
     return c

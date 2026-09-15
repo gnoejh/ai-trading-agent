@@ -590,6 +590,13 @@ exit_eval:
   # The grid measured the CONSEQUENCE all along: `target` fired on 2-7 of 52
   # trips in every cell, i.e. the take-profit was a dead branch.
   reward_risks: [0.75, 1.0, 1.5, 2.0]
+  # 2026-09-17: stops as a multiple of each trip's own pre-entry daily vol
+  # (7d of hourly bars), clamped to 3%..15%. Rendered as "vol x k" cells next
+  # to the fixed-stop rows; read the finished columns, like everything else.
+  vol_multiples: [1.5, 2.0, 3.0]
+  vol_min_stop: 0.03
+  vol_max_stop: 0.15
+  vol_lookback_minutes: 10080
   output: data/exit_eval.json
 
 rungs:
@@ -677,7 +684,19 @@ exits:
       # backtest's +15.5% band average and the 2026-08-10 research both live
       # at multi-day horizons; 180-minute sprint holds guaranteed the hurdle
       # bled every trip.
-      stop_loss_pct: 0.08
+      stop_loss_pct: 0.08         # the FALLBACK when a name's bars cannot be read
+      # 2026-09-17: the stop is 2x the name's own daily vol, clamped 3%..15%.
+      # exit_eval on 182 replayed trips, finished column, live 72h hold / rr 2:
+      #     fixed 8%    +0.141%/trip   stop-outs 28
+      #     vol x 1.5   +0.473%        19
+      #     vol x 2     +0.475%        14
+      #     vol x 3     +0.362%        12
+      # Every vol cell beats the fixed stop at every hold; 2 is the robust
+      # middle. Binance only: KR/US were pooled into that grid but keep their
+      # own fixed stops until measured on their own. Revert: vol_multiple 0.
+      vol_multiple: 2.0
+      vol_min_stop: 0.03
+      vol_max_stop: 0.15
       min_reward_risk: 2.0
       max_hold_minutes: 4320
 

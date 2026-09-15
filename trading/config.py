@@ -308,6 +308,13 @@ class MarketExits(BaseModel):
     target_hurdle_multiple: float | None = None
     min_reward_risk: float | None = None
     max_hold_minutes: float | None = None
+    # `for_market` merges ONLY these fields over the base, so a per-venue vol
+    # stop must be declared here too -- a yaml key absent from this model is
+    # dropped silently, which is how BINANCE read vol_multiple 0.0 for a cycle.
+    vol_multiple: float | None = None
+    vol_min_stop: float | None = None
+    vol_max_stop: float | None = None
+    vol_lookback_bars: int | None = None
 
 
 class ExitConfig(BaseModel):
@@ -321,6 +328,17 @@ class ExitConfig(BaseModel):
     trail_arm_hurdle_multiple: float = 2.0
     trail_give_back: float = 0.4
     max_hold_minutes: float = 360.0
+    # VOLATILITY-SCALED STOP (2026-09-17). When > 0, a position's stop is this
+    # multiple of the name's own pre-entry daily volatility (7d of hourly
+    # closes), clamped to [vol_min_stop, vol_max_stop]; `stop_loss_pct` stays
+    # the fallback when no bars can be read. Measured on 182 replayed trips:
+    # at the live 72h hold, vol x 2 reads +0.475%/trip finished against +0.141%
+    # for the fixed 8%, with stop-outs halved and trails intact -- twelve
+    # cells, one direction. 0 keeps the fixed stop.
+    vol_multiple: float = 0.0
+    vol_min_stop: float = 0.03
+    vol_max_stop: float = 0.15
+    vol_lookback_bars: int = 192
     state: str = "data/exit_policy.json"
     exits_allowed_under_halt: bool = True
     # A 17.8% target in 72h is routine on crypto and impossible on a US large cap.
@@ -831,6 +849,15 @@ class ExitEvalConfig(BaseModel):
     under a grid of holds and stops with the SAME policy arithmetic, so the
     outer loop can take an evidence-driven step on `exits` at zero cost.
     """
+
+    # VOLATILITY-SCALED stops (2026-09-17): extra grid cells where each trip's
+    # stop is `multiple x` its own pre-entry daily volatility (7d of hourly
+    # bars), clamped to [vol_min_stop, vol_max_stop]. A fixed 8% is a different
+    # bet on BTC than on a microcap; an expert sets the stop by the name.
+    vol_multiples: list[float] = Field(default_factory=list)
+    vol_min_stop: float = 0.03
+    vol_max_stop: float = 0.15
+    vol_lookback_minutes: int = 7 * 24 * 60
 
     holds_minutes: list[int] = Field(default_factory=lambda: [1440, 2880, 4320, 5760])
     stops_pct: list[float] = Field(default_factory=lambda: [0.04, 0.08, 0.12])

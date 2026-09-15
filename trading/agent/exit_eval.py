@@ -32,6 +32,7 @@ import statistics
 from pathlib import Path
 
 from trading.accounting.costs import CostLedger
+from trading.agent.features import daily_vol_from_closes
 from trading.agent.prices import Window, price_source
 from trading.config import AppConfig, MarketExits, config
 from trading.risk.exits import ExitPolicy
@@ -104,6 +105,11 @@ def simulate(
     }
 
 
+def daily_vol_pct(window: Window) -> float | None:
+    """Typical daily move in % from a window of hourly bars (features.py's definition)."""
+    return daily_vol_from_closes([b.close for b in window.bars])
+
+
 class ExitEvaluator:
     def __init__(self, cfg: AppConfig | None = None, client=None):
         self.cfg = cfg or config()
@@ -128,9 +134,15 @@ class ExitEvaluator:
         # The reward:risk axis defaults to whatever the live contract uses, so a
         # config without `reward_risks` reproduces the old two-knob grid exactly.
         rrs = self.ecfg.reward_risks or [self.cfg.exits.min_reward_risk]
-        cells: dict[tuple[int, float, float], list[dict]] = {
+        cells: dict[tuple[int, float | str, float], list[dict]] = {
             (h, s, r): [] for h in self.ecfg.holds_minutes for s in self.ecfg.stops_pct for r in rrs
         }
+        # Volatility-scaled cells: the stop is set per trip, so the cell key
+        # carries the multiple as a string and the trip's own vol decides.
+        for h in self.ecfg.holds_minutes:
+            for k in self.ecfg.vol_multiples:
+                for r in rrs:
+                    cells[(h, f"vol x {k:g}", r)] = []
         actual: list[float] = []
         replayed = skipped = 0
         for t in trades:
@@ -150,9 +162,26 @@ class ExitEvaluator:
             hurdle = self.ledger.breakeven_move_pct(t["market"]) * 100
             actual.append(t["return_pct"] - hurdle)
             replayed += 1
+            vol = None
+            if self.ecfg.vol_multiples:
+                before = source.window(
+                    t["symbol"],
+                    opened - dt.timedelta(minutes=self.ecfg.vol_lookback_minutes),
+                    opened,
+                )
+                vol = daily_vol_pct(before) if before is not None else None
             for (hold, stop, rr), members in cells.items():
+                if isinstance(stop, str):
+                    if vol is None:
+                        continue  # no pre-entry record: this trip is absent from vol cells
+                    k = float(stop.split("x")[1])
+                    stop_pct = min(
+                        max(k * vol / 100, self.ecfg.vol_min_stop), self.ecfg.vol_max_stop
+                    )
+                else:
+                    stop_pct = stop
                 policy = policy_for(
-                    self.cfg, venue, stop_pct=stop, hold_minutes=hold, reward_risk=rr
+                    self.cfg, venue, stop_pct=stop_pct, hold_minutes=hold, reward_risk=rr
                 )
                 sim = simulate(window, t["entry_price"], opened, policy, hold)
                 members.append(
@@ -229,7 +258,7 @@ def render(result: dict) -> str:
             f"median {result['actual']['median_net_pct']}% (n={result['actual']['n']})"
         ),
         (
-            f"{'hold':>8} {'stop':>6} {'r:r':>5} {'n':>5} {'avg net%':>9} {'median%':>8} "
+            f"{'hold':>8} {'stop':>8} {'r:r':>5} {'n':>5} {'avg net%':>9} {'median%':>8} "
             f"{'win':>5} {'n_fin':>5} {'avg fin%':>9}  exits"
         ),
     ]
@@ -238,12 +267,18 @@ def render(result: dict) -> str:
         return f"{v if v is not None else '-':>{width}}"
 
     # Sort so the axes read as axes; the finished column is what decides.
+    def stop_key(s):
+        return (1, 0.0, str(s)) if isinstance(s, str) else (0, float(s), "")
+
+    def stop_txt(s):
+        return f"{s:>8}" if isinstance(s, str) else f"{s:>8.2%}"
+
     for g in sorted(
         result["grid"],
-        key=lambda g: (g["hold_minutes"], g["stop_pct"], g.get("reward_risk") or 0),
+        key=lambda g: (g["hold_minutes"], stop_key(g["stop_pct"]), g.get("reward_risk") or 0),
     ):
         lines.append(
-            f"{g['hold_minutes']:>8} {g['stop_pct']:>6.2%} {cell(g.get('reward_risk'), 5)} "
+            f"{g['hold_minutes']:>8} {stop_txt(g['stop_pct'])} {cell(g.get('reward_risk'), 5)} "
             f"{g['n']:>5} "
             f"{cell(g['avg_net_pct'], 9)} {cell(g['median_net_pct'], 8)} {cell(g['win_rate'], 5)} "
             f"{cell(g.get('n_finished'), 5)} {cell(g.get('avg_net_pct_finished'), 9)}  {g['exits']}"

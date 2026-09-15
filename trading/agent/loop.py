@@ -241,7 +241,11 @@ class TradingAgent:
         self.executor = self.adapter.executor(self.gate)
         self.sizer = PositionSizer(self.cfg)
         self.supervisor = PositionSupervisor(
-            self.state, self.cfg, market=self.market, is_dust=self._order_dust
+            self.state,
+            self.cfg,
+            market=self.market,
+            is_dust=self._order_dust,
+            vol_of=self._daily_vol,
         )
         self.ledger = CostLedger(self.cfg)
         self.llm = LLMClient(self.cfg, ledger=self.ledger)
@@ -415,6 +419,20 @@ class TradingAgent:
 
     def _trade_rules(self) -> dict:
         return build_trade_rules(self.cfg, str(self.market), self.ledger)
+
+    def _daily_vol(self, symbol: str) -> float | None:
+        """A name's pre-entry daily vol in %, from the screen's hourly bars.
+
+        Only the Binance screen has `_hourly` (the data plane); a venue without
+        it returns None and the supervisor falls back to the fixed stop.
+        """
+        from trading.agent.features import daily_vol_from_closes
+
+        screen = getattr(self.adapter, "screen", None)
+        if screen is None or not hasattr(screen, "_hourly"):
+            return None
+        bars = screen._hourly(symbol)
+        return daily_vol_from_closes([float(b[4]) for b in bars if len(b) > 4])
 
     def decide(self, observation: dict) -> tuple[list[TradeIntent], str, str | None, float | None]:
         tiers = self.acfg.tiers

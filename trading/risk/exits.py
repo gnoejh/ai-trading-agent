@@ -134,9 +134,13 @@ class ExitPolicy:
         *,
         api_share: float = 0.0,
         opened_at: str | None = None,
+        stop_pct: float | None = None,
     ) -> ExitPlan:
         breakeven = self.net_breakeven(entry_price, quantity, api_share)
-        stop = entry_price * (1 - self.ecfg.stop_loss_pct)
+        # An explicit stop (the vol-scaled one, from the supervisor) wins over
+        # the venue's fixed default; everything downstream -- target, trail --
+        # is derived from whichever applies, so reward:risk stays a guarantee.
+        stop = entry_price * (1 - (self.ecfg.stop_loss_pct if stop_pct is None else stop_pct))
 
         # Two candidate targets, and the wider one wins.
         #
@@ -240,6 +244,7 @@ class PositionSupervisor:
         policy: ExitPolicy | None = None,
         market: str | None = None,
         is_dust=None,
+        vol_of=None,
     ):
         self.cfg = cfg or config()
         self.market = market
@@ -263,8 +268,26 @@ class PositionSupervisor:
         # (~$2, under the $5 minNotional) and its stop refired every cycle
         # forever, each order refused (observed live 2026-08-31).
         self.is_dust = is_dust
+        # Injected like is_dust: symbol -> the name's pre-entry daily vol in %,
+        # or None. The supervisor never fetches anything itself; the loop hands
+        # it a reader over the data plane. None means the fixed stop applies.
+        self.vol_of = vol_of
         self._dust: set[str] = set()
         self.load()
+
+    def stop_pct_for(self, symbol: str) -> float | None:
+        """The vol-scaled stop for a name, or None for the venue's fixed stop."""
+        k = self.ecfg.vol_multiple
+        if k <= 0 or self.vol_of is None:
+            return None
+        try:
+            vol = self.vol_of(symbol)
+        except Exception:
+            log.exception("vol read failed for %s; fixed stop applies", symbol)
+            return None
+        if not vol or vol <= 0:
+            return None
+        return min(max(k * vol / 100, self.ecfg.vol_min_stop), self.ecfg.vol_max_stop)
 
     # -- persistence ----------------------------------------------------------
 
@@ -325,13 +348,15 @@ class PositionSupervisor:
                 if entry <= 0:
                     refused.add(symbol)
                     continue
-                self.plans[symbol] = self.policy.plan_for(symbol, entry, qty)
+                stop_pct = self.stop_pct_for(symbol)
+                self.plans[symbol] = self.policy.plan_for(symbol, entry, qty, stop_pct=stop_pct)
                 # %g, not %.0f: sub-cent crypto stops render as "0" otherwise.
                 log.warning(
-                    "adopted unmanaged position %s x%g; stop %g",
+                    "adopted unmanaged position %s x%g; stop %g (%s)",
                     symbol,
                     qty,
                     self.plans[symbol].stop,
+                    f"vol-scaled {stop_pct:.2%}" if stop_pct is not None else "fixed",
                 )
             elif plan.quantity != qty:
                 # Partial fill or manual trim: follow the broker, keep the stop.

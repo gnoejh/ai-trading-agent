@@ -96,6 +96,24 @@ def path_features(bars: list[list], i: int | None = None) -> dict:
     return out
 
 
+def daily_vol_from_closes(closes: list[float]) -> float | None:
+    """Typical daily move in %, from hourly closes: hourly sigma scaled to a day.
+
+    The same number `path_features` reports as `vol_24h_pct`, exposed on bare
+    closes so the exit supervisor and the exit grid size a stop from it with
+    one definition.
+    """
+    closes = [c for c in closes if c and c > 0]
+    if len(closes) < DAY_H:
+        return None
+    logs = [math.log(b / a) for a, b in pairwise(closes)]
+    if len(logs) < 2:
+        return None
+    mean = sum(logs) / len(logs)
+    var = sum((x - mean) ** 2 for x in logs) / (len(logs) - 1)
+    return math.sqrt(var) * math.sqrt(DAY_H) * 100
+
+
 def relative(feats: dict, benchmark: dict) -> dict:
     """Relative strength: the name's return minus the benchmark's, per horizon."""
     out = {}
