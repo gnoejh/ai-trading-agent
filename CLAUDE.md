@@ -98,6 +98,36 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-16 (arms, six months)** — **No selection rule beats a random draw over six months
+  either — and the flow pick is the worst of them by median.** Owner: "proceed". The selector
+  arms are pure functions of a cross-section, so `screen_replay` now runs all of them on every
+  historical `sample` menu, each pick paired against a random draw from that same menu (its
+  mean) — the exact analogue of the live leaderboard's model-vs-shadow pairing. 76 sections:
+
+      arm           edge vs random draw   median    95% CI          wins
+      volume_top         -0.20%           +0.24%   -0.91..+0.45     41/76
+      flow_top           -1.08%           -1.21%   -2.23..+0.07     29/76
+      change_high        +1.25%           -2.23%   -2.94..+6.00     35/76
+      change_low         -2.35%           -1.14%   -5.76..+0.74     35/76
+
+  `prior_top` yields nothing by construction: `p_clear` is not a backtest feature, and it was
+  fit on these very rows, so a reading would have been in-sample. **The finding that matters
+  is `flow_top`**: the one signal this repo ever measured an edge on (+1.05% top-vs-bottom
+  DECILE spread, 08-10) loses 1.08% to a random draw when used as "pick the top-flow name",
+  29 wins in 76, interval nearly excluding zero on the wrong side — and it was the live board's
+  best point estimate (+2.28%, n=62). Six months says that was noise. The decile claim and the
+  top-pick claim are different claims; only the first has ever measured true, and the screen
+  ranked on the second for a fortnight. `change_high` shows the lottery shape a third time
+  (+1.25% mean, −2.23% median). `volume_top` is flat across six months — the live −3.47% was the
+  alt-rotation window, as the earlier entry guessed.
+  **Where this leaves selection**: the LLM is indistinguishable from chance live (n≈129); five
+  deterministic rules are indistinguishable from chance or worse, live and over six months; the
+  fitted prior lost to a constant. Nothing tried selects. That is not a dead end — it is the
+  measured reason the profit lives in the exit contract, diversification and an unscreened menu,
+  and why the allocator holding the model at the share it earns is the right policy rather than
+  a compromise. What could still change it: `arm_llm_deep` (live only, days away), and any NEW
+  selector, which can now be tried against six months of history in seconds before it costs a
+  single live decision. Still a prior; still survivorship-biased. 358 tests.
 - **2026-09-16 (replay)** — **The screen's cost is structural, not a bad fortnight.** Owner:
   must we wait 72h? For the verdict-grade live readings, yes — they resolve at the hold
   horizon and a shorter one is a different question. But the 13,801 `backtest` observations

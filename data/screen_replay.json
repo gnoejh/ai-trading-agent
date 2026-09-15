@@ -35,5 +35,45 @@
         "median_excess_pct": -0.003
       }
     }
+  },
+  "arms": {
+    "CRYPTO": [
+      {
+        "selector": "volume_top",
+        "n": 76,
+        "edge_vs_shadow_pct": -0.201,
+        "median_pct": 0.237,
+        "ci_low": -0.907,
+        "ci_high": 0.451,
+        "wins": 41
+      },
+      {
+        "selector": "flow_top",
+        "n": 76,
+        "edge_vs_shadow_pct": -1.08,
+        "median_pct": -1.212,
+        "ci_low": -2.235,
+        "ci_high": 0.067,
+        "wins": 29
+      },
+      {
+        "selector": "change_high",
+        "n": 76,
+        "edge_vs_shadow_pct": 1.247,
+        "median_pct": -2.227,
+        "ci_low": -2.94,
+        "ci_high": 5.997,
+        "wins": 35
+      },
+      {
+        "selector": "change_low",
+        "n": 76,
+        "edge_vs_shadow_pct": -2.347,
+        "median_pct": -1.143,
+        "ci_low": -5.756,
+        "ci_high": 0.739,
+        "wins": 35
+      }
+    ]
   }
 }

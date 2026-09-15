@@ -36,7 +36,7 @@ import statistics
 from collections import defaultdict
 from pathlib import Path
 
-from trading.agent.scorer import bootstrap_ci
+from trading.agent.scorer import SELECTORS, bootstrap_ci
 from trading.config import AppConfig, config
 
 log = logging.getLogger(__name__)
@@ -123,6 +123,7 @@ def replay(cfg: AppConfig | None = None) -> dict:
     # per book -> rule -> list of per-cross-section excess returns of a random draw
     excess: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     sizes: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(list))
+    arm_diffs: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     used = 0
     for _ts, rows in sorted(groups.items()):
         by_book: dict[str, list[dict]] = defaultdict(list)
@@ -143,6 +144,22 @@ def replay(cfg: AppConfig | None = None) -> dict:
                 mean_ret = statistics.fmean(r["forward_return_pct"] for r in menu)
                 excess[book][name].append(mean_ret - bench)
                 sizes[book][name].append(len(menu))
+            # The selector arms, exactly as the live leaderboard runs them: each
+            # picks ONE name from the `sample` menu, paired against a random
+            # draw from that same menu (its mean). `taker_share` is the
+            # backtest's name for the live `taker_buy_share`; `p_clear` is not a
+            # backtest feature (and would be in-sample if it were -- the prior
+            # was fit on these rows), so `prior_top` yields nothing here.
+            menu = rules["sample"](members, book)
+            if menu:
+                shadow = statistics.fmean(r["forward_return_pct"] for r in menu)
+                by_symbol = {r["symbol"]: r["forward_return_pct"] for r in menu}
+                menu_live = [{**r, "taker_buy_share": r.get("taker_share")} for r in menu]
+                for arm, selector in SELECTORS.items():
+                    pick = selector(menu_live)
+                    if pick is None:
+                        continue
+                    arm_diffs[book][arm].append(by_symbol[pick] - shadow)
 
     out: dict = {"cross_sections_used": used, "books": {}}
     for book, per_rule in excess.items():
@@ -168,6 +185,31 @@ def replay(cfg: AppConfig | None = None) -> dict:
                 row["menu_wins"] = sum(1 for d in diffs if d > 0)
             book_out[name] = row
         out["books"][book] = book_out
+    # The arms leaderboard, six months deep. Sorted by the CI's lower bound
+    # for the same reason the live one is.
+    out["arms"] = {}
+    for book, per_arm in arm_diffs.items():
+        rows = []
+        for arm, diffs in per_arm.items():
+            ci = bootstrap_ci(
+                diffs,
+                samples=cfg.score.bootstrap_samples,
+                seed=cfg.score.bootstrap_seed,
+                level=cfg.score.ci_level,
+            )
+            rows.append(
+                {
+                    "selector": arm,
+                    "n": len(diffs),
+                    "edge_vs_shadow_pct": round(statistics.fmean(diffs), 3),
+                    "median_pct": round(statistics.median(diffs), 3),
+                    "ci_low": ci[0] if ci else None,
+                    "ci_high": ci[1] if ci else None,
+                    "wins": sum(1 for d in diffs if d > 0),
+                }
+            )
+        rows.sort(key=lambda r: r["ci_low"] if r["ci_low"] is not None else -1e9, reverse=True)
+        out["arms"][book] = rows
     return out
 
 
@@ -188,6 +230,19 @@ def render(result: dict) -> str:
                 if r.get("ci_low") is not None:
                     line += f" (CI {r['ci_low']:+.2f}..{r['ci_high']:+.2f})"
                 line += f"  wins {r['menu_wins']}/{r['n_cross_sections']}"
+            lines.append(line)
+    for book, rows in (result.get("arms") or {}).items():
+        lines.append(
+            f"  ── {book} selector arms on the sample menu (pick vs a random draw from it)"
+        )
+        for r in rows:
+            line = (
+                f"     {r['selector']:12} n={r['n']:<3} edge {r['edge_vs_shadow_pct']:+6.2f}%"
+                f"  median {r['median_pct']:+6.2f}%"
+            )
+            if r.get("ci_low") is not None:
+                line += f"  CI {r['ci_low']:+.2f}..{r['ci_high']:+.2f}"
+            line += f"  wins {r['wins']}/{r['n']}"
             lines.append(line)
     return "\n".join(lines)
 
