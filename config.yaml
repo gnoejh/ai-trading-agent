@@ -504,6 +504,11 @@ score:
   # keeps the full-epoch row AND renders a "since" row once it has min_bucket_n
   # observations, both labelled. Move the date only when the menu changes again.
   model_record_since: "2026-09-16"
+  # 2026-09-16: the screen finding, replayed over six months of backtest
+  # cross-sections so it need not wait 72h for its first live reading. A
+  # PRIOR, never a criterion (survivorship-biased: today's pool, not each day's).
+  screen_replay_min_group: 30
+  screen_replay_output: data/screen_replay.json
   bootstrap_seed: 20260903
   ci_level: 0.95
 

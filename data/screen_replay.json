@@ -1,0 +1,39 @@
+{
+  "cross_sections_used": 76,
+  "books": {
+    "CRYPTO": {
+      "old_0909": {
+        "n_cross_sections": 76,
+        "avg_menu_size": 18.0,
+        "avg_excess_pct": -0.4,
+        "median_excess_pct": -0.534,
+        "menu_minus_pool_pct": -0.659,
+        "ci_low": -1.21,
+        "ci_high": -0.082,
+        "menu_wins": 33
+      },
+      "old_0830": {
+        "n_cross_sections": 68,
+        "avg_menu_size": 3.4,
+        "avg_excess_pct": 3.982,
+        "median_excess_pct": -5.467
+      },
+      "sample": {
+        "n_cross_sections": 76,
+        "avg_menu_size": 25.0,
+        "avg_excess_pct": 0.201,
+        "median_excess_pct": -0.237,
+        "menu_minus_pool_pct": -0.058,
+        "ci_low": -0.426,
+        "ci_high": 0.33,
+        "menu_wins": 34
+      },
+      "pool": {
+        "n_cross_sections": 76,
+        "avg_menu_size": 161.7,
+        "avg_excess_pct": 0.258,
+        "median_excess_pct": -0.003
+      }
+    }
+  }
+}

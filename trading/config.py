@@ -715,6 +715,11 @@ class ScoreConfig(BaseModel):
     # signal, and the model discounts itself on it (the 2026-09-09 trap, back
     # on 2026-09-16). Both rows render, each with its n; nothing is hidden.
     model_record_since: str = ""
+    # Menu-construction replay over the backtest corpus (agent/screen_replay.py).
+    # A cross-section needs at least this many resolved names, and the book's
+    # benchmark among them, to be scored.
+    screen_replay_min_group: int = 30
+    screen_replay_output: str = "data/screen_replay.json"
     bootstrap_seed: int = 20260903
     ci_level: float = 0.95
 

@@ -98,6 +98,36 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-16 (replay)** — **The screen's cost is structural, not a bad fortnight.** Owner:
+  must we wait 72h? For the verdict-grade live readings, yes — they resolve at the hold
+  horizon and a shorter one is a different question. But the 13,801 `backtest` observations
+  already on disk carry every feature the screen ranks on at time t (no lookahead) plus the
+  72h forward return, with BTCUSDT among them as the paired benchmark. New
+  `trading/agent/screen_replay.py` (`uv run python -m trading.agent.screen_replay`) applies
+  each menu rule to every historical cross-section exactly as `candidates()` applied it live
+  and scores a random draw from each menu against the same section's benchmark. Six months,
+  **76 cross-sections**, CRYPTO:
+
+      rule       menu   excess   median   vs pool   95% CI          wins
+      old_0909    18    -0.40%   -0.53%   -0.66%   -1.21..-0.08     33/76   <- excludes zero
+      old_0830   3.4    +3.98%   -5.47%     —      (n mismatch)      —
+      sample      25    +0.20%   -0.24%   -0.06%   -0.43..+0.33     34/76
+      pool       162    +0.26%   -0.00%
+
+  **Three readings.** (1) The screen that ran 09-09→09-16 underperformed its own pool with a CI
+  excluding zero across six months of regimes — the live fortnight's −3.93% was that structural
+  cost in a bad week, not the cost itself. (2) The 08-30 band (15–60% movers) found **~3 names
+  a day** and reads +3.98% mean against **−5.47% median** — the same lottery the 09-09 entry
+  caught in the backfill, now with the union ranking replayed too. (3) `sample` tracks the
+  pool inside the interval, which is what a stride of the pool should do: it neither adds nor
+  costs, and that is the claim it was shipped on. **Expectation-setting, stated so it is not
+  over-read**: the pool's excess over BTC is **+0.26%** across six months, not the +1.36% of
+  the live fortnight — an alt-rotation window. The model's base rate on the new menu should be
+  expected near the benchmark, not a point and a half above it. A PRIOR by the repo's rule:
+  survivorship-biased (today's pool, not each day's), and the live control on 09-19 remains the
+  confirming measurement. No BSTOCKS section qualified: 1,250 opens over 61 names is ~16 per
+  cross-section, under `screen_replay_min_group` 30 — the book listed on Binance too recently
+  for a six-month replay, and it is paused anyway. 356 tests.
 - **2026-09-16 (second opinion)** — **A stronger model, measured rather than assumed.** Owner:
   "proceed" on the one item the previous entry left undone. `agent.tiers.second_opinion: deep`
   asks the v4-pro tier the IDENTICAL question on every decision — same prompt, same menu, same
@@ -955,6 +985,7 @@ uv run python -m trading.agent.promotion  # the mainnet gate, with the paired CI
 uv run python -m trading.agent.allocator  # the model's earned share of the book
 uv run python -m trading.agent.pnl        # daily realised P&L per sleeve (never pooled)
 uv run python -m trading.accounting.slippage  # re-measure the hurdle's slippage from the mainnet book
+uv run python -m trading.agent.screen_replay   # menu rules replayed over the backtest corpus (a prior)
 ```
 
 Tests must stay hermetic: fixtures pin `use_testnet`, `allow_orders` and the risk limits rather than
