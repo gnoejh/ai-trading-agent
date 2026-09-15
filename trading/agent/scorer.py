@@ -1073,6 +1073,8 @@ def experience_block(cfg: AppConfig | None = None, venue: str | None = None) -> 
         if b.get("n", 0) < min_n:
             continue
         label = b["label"]
+        if label.startswith(ARM_PREFIX):
+            continue  # the leaderboard is the operator's instrument, not context
         # "<source> picks:<venue>" is a per-venue split of a live source;
         # "backtest_kr:KR" is a book split and renders as it is.
         if label.startswith(tuple(f"{src} picks:" for src in LIVE_SOURCES)) or (
@@ -1105,7 +1107,28 @@ def experience_block(cfg: AppConfig | None = None, venue: str | None = None) -> 
             f"{c.get('target_rate', 0):.0%} reached the full target; "
             f"avg {c['avg_return_pct']:+.2f}%"
         )
-    if not rows and not calibration:
+    # The six-month feature replay (agent/feature_replay.py): decile spreads
+    # whose CI excludes zero, and the pool's return by regime. Backtest
+    # provenance is in the label. Silence for anything that did not measure.
+    priors: dict[str, str] = {}
+    try:
+        fr = json.loads(Path(cfg.score.feature_replay_output).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        fr = {}
+    for d in fr.get("deciles", []):
+        if d.get("ci_low") is not None and (d["ci_low"] > 0 or d["ci_high"] < 0):
+            priors[f"backtest decile {d['feature']}"] = (
+                f"top 10% {d['top_decile_excess_pct']:+.2f}% vs bottom 10% "
+                f"{d['bottom_decile_excess_pct']:+.2f}% excess at 72h (n={d['n']}, "
+                f"95% CI {d['ci_low']:+.2f}..{d['ci_high']:+.2f})"
+            )
+    for r in fr.get("regime", []):
+        if r.get("state") in ("btc_7d_up", "btc_7d_down"):
+            priors[f"backtest regime {r['state']}"] = (
+                f"pool 72h return {r['pool_raw_pct']:+.2f}% (median "
+                f"{r['median_raw_pct']:+.2f}%) over {r['n_sections']} weeks"
+            )
+    if not rows and not calibration and not priors:
         return None
     horizon = data.get("meta", {}).get("horizon_minutes")
     block = {
@@ -1123,6 +1146,7 @@ def experience_block(cfg: AppConfig | None = None, venue: str | None = None) -> 
             )
         ),
         "record": rows,
+        **({"backtest_priors": priors} if priors else {}),
     }
     if calibration:
         block["your_calibration"] = calibration

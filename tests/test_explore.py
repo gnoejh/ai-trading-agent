@@ -39,6 +39,7 @@ def cfg(tmp_path):
     c.score.enabled = False
     c.score.observations = str(tmp_path / "observations.jsonl")
     c.score.experience = str(tmp_path / "experience.json")
+    c.score.feature_replay_output = str(tmp_path / "feature_replay.json")
     # These pin model+shadow MECHANICS; the selector arms (2026-09-16) open
     # extra observations per decision and have their own tests.
     c.score.arms = []

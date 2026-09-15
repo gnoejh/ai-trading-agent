@@ -500,6 +500,15 @@ class ScreenConfig(BaseModel):
     flow_interval: str = "1d"
     flow_lookback: int = 5
     flow_pool_per_book: int = 30
+    # Attach the path/RS feature set (agent/features.py) to every candidate:
+    # one hourly-kline call per SELECTED candidate (not the shortlist), plus
+    # one for the benchmark. Off until feature_replay says which of them are
+    # information; the selector arms for them switch on with the same flag.
+    path_features: bool = False
+    # 192, not 168: ret_7d divides by the close 168 bars BACK, which needs a
+    # 169th bar. At exactly 168 the feature was always None (caught by test).
+    path_bars: int = 192
+    benchmark_symbol: str = "BTCUSDT"  # relative strength and regime are against this
     # What orders the "move" ranking: `flow` (the measured signal), `model`
     # (the frozen fitted prior in fit.model, falling back to flow when no
     # artifact exists) or `change` (price momentum -- measured to carry no edge).
@@ -620,6 +629,14 @@ class ExploreConfig(BaseModel):
     # Binance books the random arm may enter; empty means every book. Lets a
     # book that measures negative be paused without touching the screen.
     books: list[str] = Field(default_factory=list)
+    # REGIME GATE (2026-09-16). A long-only book earns beta, and the six-month
+    # replay measured it: the pool's 72h raw return is +1.58% when BTC's
+    # trailing week is up and -0.40% when it is down (difference +1.99%, CI
+    # +0.15..+4.09). The random arm's entry probability is multiplied by this
+    # when the benchmark's 7d return is <= 0. Not zero: the arm's second job is
+    # measurement, and the regime effect stays measurable only if some entries
+    # happen in down weeks too. 1.0 disables the gate.
+    regime_down_multiplier: float = 1.0
     entries_per_cycle: int = 1  # entries attempted per cycle once the pct roll passes
     seed: int = 0  # 0 = OS entropy; set for a reproducible sequence
     # Venues the random arm runs on (BINANCE / KR / US); empty = every venue

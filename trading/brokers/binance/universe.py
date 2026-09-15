@@ -291,6 +291,9 @@ class BinanceScreen:
             ranked = sorted(scored.values(), key=lambda e: (-len(e["screens"]), e["best_rank"]))
             selected.extend(ranked[:slots])
 
+        if self.scfg.path_features:
+            self._attach_path_features(selected)
+
         log.info(
             "binance screen: %d in pool -> %d candidates (%s)",
             pool_size,
@@ -298,3 +301,56 @@ class BinanceScreen:
             ", ".join(f"{b}={sum(1 for x in selected if x['book'] == b)}" for b in by_book),
         )
         return selected
+
+    def market_state(self) -> dict:
+        """The benchmark's own path (one hourly-kline call) and nothing else.
+
+        Used by the regime gate whether or not path features are on, so the
+        random arm can read the regime on every cycle it rolls. Breadth needs
+        a cross-section and is attached by `_attach_path_features` instead.
+        """
+        from trading.agent.features import path_features, regime
+
+        try:
+            return regime(path_features(self._hourly(self.scfg.benchmark_symbol)))
+        except Exception as exc:  # noqa: BLE001 - no regime reading means no gate, not no entries
+            log.warning("market state unavailable: %s", exc)
+            return {}
+
+    def _hourly(self, symbol: str) -> list[list]:
+        return self.client.call(
+            "klines", {"symbol": symbol, "interval": "1h", "limit": self.scfg.path_bars}
+        ).body.get("rows", [])
+
+    def _attach_path_features(self, selected: list[dict]) -> None:
+        """The path/RS features on each selected candidate, from the SAME
+        function the backtest replay validated, on the same kind of bars.
+
+        The benchmark's bars are fetched once; a name whose bars cannot be read
+        simply carries no features (every key None), so a hiccup on one symbol
+        cannot bias the menu -- the selector arms treat None as "not offered".
+        The regime is attached to every row identically so the prompt can lift
+        it into a `market_state` block without a second fetch.
+        """
+        from trading.agent.features import PATH_KEYS, RS_KEYS, path_features, regime, relative
+
+        empty = dict.fromkeys(PATH_KEYS + RS_KEYS)
+        try:
+            bench = path_features(self._hourly(self.scfg.benchmark_symbol))
+        except Exception as exc:  # noqa: BLE001 - features are additive, never fatal
+            log.warning("benchmark bars unavailable (%s); path features skipped", exc)
+            for e in selected:
+                e.update(empty)
+            return
+        for e in selected:
+            try:
+                feats = path_features(self._hourly(e["symbol"]))
+            except Exception as exc:  # noqa: BLE001
+                log.warning("path features unavailable for %s: %s", e["symbol"], exc)
+                e.update(empty)
+                continue
+            feats.update(relative(feats, bench))
+            e.update({k: feats.get(k) for k in PATH_KEYS + RS_KEYS})
+        state = regime(bench, selected)
+        for e in selected:
+            e["market_state"] = state

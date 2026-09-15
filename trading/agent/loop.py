@@ -382,7 +382,27 @@ class TradingAgent:
                     else {}
                 ),
                 **({"fitted_prior": self._prior.describe()} if self._prior else {}),
-                "candidates": observation["candidates"],
+                # The market state, once, above the menu: BTC's own path and
+                # breadth. The first question is whether to be long anything;
+                # the menu only ever asked the second.
+                **(
+                    {"market_state": state}
+                    if (
+                        state := next(
+                            (
+                                c.get("market_state")
+                                for c in observation["candidates"]
+                                if c.get("market_state")
+                            ),
+                            None,
+                        )
+                    )
+                    else {}
+                ),
+                "candidates": [
+                    {k: v for k, v in c.items() if k != "market_state"}
+                    for c in observation["candidates"]
+                ],
                 "cash": {k: v for k, v in snap.cash.items() if not isinstance(v, list | dict)},
                 "holdings": held,
                 "unmanaged_balances": len(observation["holdings"]) - len(held),
@@ -732,7 +752,22 @@ class TradingAgent:
         )
         if batch <= 0:
             return 0
-        if self._rng.random() >= alloc.explore_entry_pct:
+        # The regime gate: in a BTC-down week the roll runs at a fraction of
+        # the allocator's rate. Journalled before the roll so the regime is on
+        # the record whether or not an entry follows.
+        entry_pct = alloc.explore_entry_pct
+        state = screen.market_state() if hasattr(screen, "market_state") else {}
+        btc_7d = state.get("btc_ret_7d") if state else None
+        if ecfg.regime_down_multiplier < 1.0 and btc_7d is not None and btc_7d <= 0:
+            entry_pct *= ecfg.regime_down_multiplier
+        self.journal.write(
+            "regime",
+            market=str(self.market),
+            btc_ret_7d=btc_7d,
+            entry_pct=round(entry_pct, 4),
+            gated=bool(btc_7d is not None and btc_7d <= 0 and ecfg.regime_down_multiplier < 1.0),
+        )
+        if self._rng.random() >= entry_pct:
             return 0
 
         try:

@@ -98,6 +98,51 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-17 (overnight, 1/n)** — **The model gets the path, the market gets a regime gate,
+  and both were measured before they shipped.** Owner, before sleeping: "go for fixing all…
+  you can change anything to get profit." Two rules held regardless: no mainnet flip, and no
+  profit from moving a bar. The audit's last finding was that the model is handed a snapshot
+  with no path and no market state and asked a question about the path. **`features.py`** is
+  the one definition of the richer set — returns at 1h/4h/24h/72h/7d and the same vs BTC,
+  realised vol, distance from the week's high/low, range position, volume surge, taker share at
+  24h and 7d, plus a regime (BTC's path, breadth) — computed by the SAME code in the backtest
+  and live, so a validation means something. `backfill_features.py` computed it for all 13,801
+  backtest observations (side-file; the log stays append-only). **`feature_replay.py`**
+  validated every feature three ways over 76 six-month cross-sections before any of it reached
+  the prompt:
+
+      DECILE SPREADS (top 10% − bottom 10%, excess vs BTC, n≈12,290)
+        range_pos_7d      +2.36%   CI +1.27..+3.77   <- the only one that excludes zero
+        ret_4h / ret_72h  +1.34%   from_7d_high +1.10%   vol_ratio +0.99%   (same direction, short)
+        taker_share_24h   +0.50%   rs_* ≈ 0   vol_24h ≈ 0
+      PICK ARMS (one name vs a random draw from the sample menu): NONE excludes zero, incl.
+        near_7d_high +0.08%; every "buy the dip/weakest/most volatile" pick −2 to −3%
+      REGIME (pool 72h RAW return by BTC's trailing week)
+        up   n=44  +1.58% (median +0.83%)    down n=32  −0.40% (median −0.42%)
+        up − down  +1.99%   CI +0.15..+4.09   <- excludes zero
+
+  **Three readings.** Position in the weekly range is information at 72h — a bigger decile
+  spread than flow ever had — but as a **portfolio** effect: the single top-range pick does not
+  beat a random draw, and a menu restricted to `range>=0.8` reads +1.42% vs the pool with a CI
+  straddling zero and a median near 0 while shrinking the pool to 19 names. So it does **not**
+  become a filter; it becomes a feature the model sees and a live arm measures. Flow replicates
+  weakly. **Relative strength vs BTC carries nothing** at any horizon — worth knowing, since it
+  is the first thing a human would ask for. And the regime effect is real and is pure beta: a
+  long-only book paying 0.30% a round trip earns +1.6% in BTC-up weeks and loses in BTC-down
+  weeks.
+  **Shipped.** (1) `screen.path_features: true` — every candidate now carries the feature set
+  (25 hourly-kline calls + 1 for BTC per cycle), the prompt gets a `market_state` block above
+  the menu, and the four feature arms join `score.arms` (they were registered as no-ops and
+  switch on with the flag; one definition, no drift). (2) **`explore.regime_down_multiplier:
+  0.25`** — the random arm rolls at a quarter rate when BTC's trailing week is ≤ 0; not zero, so
+  the regime line stays measurable; the regime is journalled on every explore cycle before the
+  roll. (3) The model's `measured_record` gains `backtest_priors`: only decile rows whose CI
+  excludes zero, plus the two regime rows, each with n and provenance — the RAG principle
+  applied to the new features. (4) The `arm_*` diagnostic buckets no longer reach the prompt.
+  **Caught by test, would have shipped otherwise**: `path_bars: 168` — `ret_7d` divides by the
+  close 168 bars back, which needs a 169th bar, so the feature was always None; now 192.
+  A prior by the repo's rule (survivorship-biased backtest); the live arms and the regime rows in
+  the journal are the confirming measurements. 374 tests.
 - **2026-09-16 (arms, six months)** — **No selection rule beats a random draw over six months
   either — and the flow pick is the worst of them by median.** Owner: "proceed". The selector
   arms are pure functions of a cross-section, so `screen_replay` now runs all of them on every

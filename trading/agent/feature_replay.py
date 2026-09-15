@@ -191,6 +191,82 @@ def regime_table(sections) -> list[dict]:
                 "median_raw_pct": round(statistics.median(v[0] for v in vals), 3),
             }
         )
+    # Is the up/down split real? Bootstrap the difference of the two groups'
+    # mean RAW return (raw, because a long-only book earns beta).
+    up = [v[0] for v in buckets.get("btc_7d_up", [])]
+    down = [v[0] for v in buckets.get("btc_7d_down", [])]
+    if len(up) > 5 and len(down) > 5:
+        import random
+
+        rng = random.Random(20260916)
+        draws = sorted(
+            statistics.fmean(rng.choice(up) for _ in up)
+            - statistics.fmean(rng.choice(down) for _ in down)
+            for _ in range(1000)
+        )
+        out.append(
+            {
+                "state": "up_minus_down",
+                "n_sections": len(up) + len(down),
+                "pool_raw_pct": round(statistics.fmean(up) - statistics.fmean(down), 3),
+                "pool_excess_pct": None,
+                "median_raw_pct": None,
+                "ci_low": round(draws[25], 3),
+                "ci_high": round(draws[974], 3),
+            }
+        )
+    return out
+
+
+def menu_rules(sections, cfg: AppConfig) -> list[dict]:
+    """Menus built from the decile result, each vs the unfiltered pool, paired.
+
+    The decile spread is a PORTFOLIO effect: a random draw from the top of the
+    weekly range beats one from the bottom. The actionable form is a menu that
+    drops the measured losers and samples across the rest -- tested here the
+    way the screen control tests a menu live: random draw from the menu minus
+    random draw from the pool, per section, with a CI.
+    """
+    slots = cfg.agent.screen.book_slots.get("CRYPTO", cfg.agent.screen.candidates)
+    rules = {
+        "sample": lambda m: m,
+        "range>=0.2": lambda m: [r for r in m if (r.get("range_pos_7d") or 0) >= 0.2],
+        "range>=0.5": lambda m: [r for r in m if (r.get("range_pos_7d") or 0) >= 0.5],
+        "range>=0.8": lambda m: [r for r in m if (r.get("range_pos_7d") or 0) >= 0.8],
+        "ret72h>0": lambda m: [r for r in m if (r.get("ret_72h") or 0) > 0],
+    }
+    diffs: dict[str, list[float]] = defaultdict(list)
+    sizes: dict[str, list[int]] = defaultdict(list)
+    for _ts, members, _bench in sections:
+        pool_mean = statistics.fmean(r["forward_return_pct"] for r in members)
+        for name, rule in rules.items():
+            kept = rule(members)
+            menu = _sample_menu(kept, slots)
+            if len(menu) < 5:
+                continue
+            diffs[name].append(statistics.fmean(r["forward_return_pct"] for r in menu) - pool_mean)
+            sizes[name].append(len(kept))
+    out = []
+    for name, d in diffs.items():
+        ci = bootstrap_ci(
+            d,
+            samples=cfg.score.bootstrap_samples,
+            seed=cfg.score.bootstrap_seed,
+            level=cfg.score.ci_level,
+        )
+        out.append(
+            {
+                "rule": name,
+                "n": len(d),
+                "avg_pool_after_filter": round(statistics.fmean(sizes[name]), 1),
+                "menu_minus_pool_pct": round(statistics.fmean(d), 3),
+                "median_pct": round(statistics.median(d), 3),
+                "ci_low": ci[0] if ci else None,
+                "ci_high": ci[1] if ci else None,
+                "wins": sum(1 for x in d if x > 0),
+            }
+        )
+    out.sort(key=lambda r: r["ci_low"] if r["ci_low"] is not None else -1e9, reverse=True)
     return out
 
 
@@ -205,6 +281,7 @@ def replay(cfg: AppConfig | None = None) -> dict:
         "sections_with_features": with_feats,
         "deciles": dec,
         "pick_arms": pick_arms(sections, cfg),
+        "menu_rules": menu_rules(sections, cfg),
         "regime": regime_table(sections),
     }
 
@@ -233,8 +310,28 @@ def render(result: dict) -> str:
         lines.append(
             f"     {r['selector']:18} n={r['n']:<4} edge {r['edge_pct']:+6.2f}%  median {r['median_pct']:+6.2f}%{ci}  wins {r['wins']}/{r['n']}{mark}"
         )
+    lines.append("  ── menus from the decile result: random draw from the menu vs from the pool")
+    for r in result.get("menu_rules", []):
+        ci = f"  CI {r['ci_low']:+.2f}..{r['ci_high']:+.2f}" if r["ci_low"] is not None else ""
+        mark = (
+            " <- excludes 0"
+            if r["ci_low"] is not None and (r["ci_low"] > 0 or r["ci_high"] < 0)
+            else ""
+        )
+        lines.append(
+            f"     {r['rule']:12} n={r['n']:<3} pool→{r['avg_pool_after_filter']:>6}  "
+            f"vs pool {r['menu_minus_pool_pct']:+6.2f}%  median {r['median_pct']:+6.2f}%{ci}"
+            f"  wins {r['wins']}/{r['n']}{mark}"
+        )
     lines.append("  ── regime: the pool's 72h forward return by market state at entry")
     for r in result["regime"]:
+        if r["state"] == "up_minus_down":
+            lines.append(
+                f"     {r['state']:16} n={r['n_sections']:<3} diff {r['pool_raw_pct']:+6.2f}%  "
+                f"CI {r['ci_low']:+.2f}..{r['ci_high']:+.2f}"
+                + (" <- excludes 0" if r["ci_low"] > 0 else "")
+            )
+            continue
         lines.append(
             f"     {r['state']:16} n={r['n_sections']:<3} raw {r['pool_raw_pct']:+6.2f}%  "
             f"median {r['median_raw_pct']:+6.2f}%  excess vs BTC {r['pool_excess_pct']:+6.2f}%"

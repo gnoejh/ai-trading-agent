@@ -405,6 +405,14 @@ explore:
   # 24/7 against an underlying that trades 6.5h/day. Re-admit when the
   # `screen control` line reads positive for BSTOCKS. Empty = every book.
   books: [CRYPTO]
+  # 2026-09-16: entries in a BTC-down week at a quarter of the normal rate.
+  # Measured over six months of backtest cross-sections: the pool's 72h raw
+  # return is +1.58% (median +0.83%) when BTC's trailing week is up and -0.40%
+  # (median -0.42%) when down -- +1.99% apart, CI +0.15..+4.09. A long-only
+  # book paying 0.30% a round trip has no business at full speed in the second
+  # state. 0.25 rather than 0: the regime line stays measurable live. The
+  # regime is journalled on every explore row so the effect can be read back.
+  regime_down_multiplier: 0.25
 
 allocator:
   # THE MODEL'S SHARE OF THE BOOK, EARNED AUTOMATICALLY (owner, 2026-09-07):
@@ -497,7 +505,8 @@ score:
   # flow_top / prior_top are the two rankers this repo has shipped; volume_top
   # is the liquidity head; change_low is the mean-reversion reading of the
   # screen finding (buy what fell); change_high is its momentum control.
-  arms: [flow_top, prior_top, volume_top, change_low, change_high]
+  arms: [flow_top, prior_top, volume_top, change_low, change_high,
+         near_7d_high, far_from_7d_high, ret_7d_top, vol_surge_top]
   # 2026-09-16: the screen changed (rank_by sample, change band off), so the
   # model's self-record before this date was earned on a population that no
   # longer exists -- a random draw from it lost 2.57% to benchmark. The prompt
@@ -791,6 +800,20 @@ agent:
     flow_interval: 1d
     flow_lookback: 5
     flow_pool_per_book: 30
+    # 2026-09-16: the richer feature set on every candidate -- multi-horizon
+    # returns, the same vs BTC, realised vol, distance from the week's
+    # high/low, volume surge, taker share at 24h and 7d -- computed by the SAME
+    # code the six-month replay validated (agent/features.py). Cost: 25 hourly
+    # kline calls per cycle plus one for BTC. Switched on only once
+    # feature_replay has said which features measure as information.
+    # ON since the 2026-09-16 feature replay: range_pos_7d's decile spread is
+    # +2.36% (CI +1.27..+3.77) over six months, the only feature that excludes
+    # zero; ret_72h / from_7d_high / vol_ratio point the same way short of it.
+    # No single-name pick of any of them beats a random draw, so they inform
+    # the model and the live arms rather than filter the menu.
+    path_features: true
+    path_bars: 192              # 168 needs a 169th bar for ret_7d; slack on top
+    benchmark_symbol: BTCUSDT
     # sample | flow | model | change. `model` orders by the frozen fitted prior
     # (fit.model) and falls back to flow when no artifact exists.
     # 2026-09-16: `sample`, not `flow`. Every ranker here selects the EXTREME
