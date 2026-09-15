@@ -27,6 +27,38 @@ hand: the gate's two profit criteria are computed over ALL closed round trips wi
 attribution, so they can read green on money the RANDOM arm earned (they do today). Only the
 shadow/CI criterion currently separates that from a green gate.
 
+## Where things stand (2026-09-16, after the audit)
+
+For two weeks the system measured the wrong things, and every hard verdict it reached —
+including the one blocking mainnet — was an artifact. Corrected, the picture is:
+
+- **The model was never worse than chance.** That reading counted one price path up to 117
+  times. De-overlapped it is +0.27% vs random, CI −2.09..+2.58, on ~129 real pairs: unproven,
+  not inverted.
+- **The screen was the largest effect in the system.** A random draw from the menu lost ~4% of
+  excess return to a random draw outside it, on Binance and KR alike — and nothing could see it,
+  because the model and its control were both drawn from inside it. Both venues now run
+  `rank_by: sample` with the change band off; the `screen control` line is the instrument.
+- **The model was calibrated and was told it wasn't.** Graded against a +17% barrier it was
+  never asked about, it read "overconfident" in every band and declined 95% of cycles.
+- **The profit is real but it is not selection.** The random arm earns (+1.40%/trip CRYPTO,
+  +0.54% KR paper) from the exit contract, diversification and the absence of a screen. No
+  selector — LLM, flow, prior, momentum, deep tier — beats a random draw from its menu with a
+  CI above zero. The one significant leaderboard row is negative (the liquidity head loses).
+- **"Profitable by model" before any edge exists is the honest target**: result = menu base
+  rate + selection edge − costs; the old menu's base rate was −2.6%, the unscreened pool's
+  +1.4%. Put the model on that menu and stop mis-grading it, and it trades at the base rate.
+- **US cannot realise profit** — no paper venue, no gate. Its verdict can be honest; that is the
+  ceiling until either changes.
+
+What opens the gate is unchanged and now unblocked by artifacts: the model, or any selector,
+beating its shadow with the CI above zero. The instruments that will speak next, all in
+`/status`: screen control (~72h), the model's `since` row (~10 picks on the new menu), the
+selector leaderboard and `arm_llm_deep` (each scorer run). If none of them ever clears, the
+conclusion sharpens: the profitable strategy here is the unscreened, trail-exited, diversified
+book, and the LLM is an overlay holding only the share it earns — which is what the allocator
+already does.
+
 ## Open owner actions (things no code can do)
 
 Deadlines and owner-only moves, kept here because a newest-first log buries them.
@@ -906,7 +938,7 @@ that was mostly committed cash, and the daily-loss cap reads the same number.
 
 ```
 uv sync                                   # create/refresh .venv from uv.lock
-uv run pytest                             # 270 tests, no network (httpx MockTransport)
+uv run pytest                             # 350 tests, no network (httpx MockTransport)
 uv run python scripts/wire_test.py        # dry run; --live sends ONE ~$6 order
 uv run pytest tests/test_risk_gate.py -k concentration
 uv run ruff check . --fix && uv run ruff format .
@@ -1239,8 +1271,26 @@ Three methodology traps that produced false positives, all of which looked convi
 3. **No benchmark.** A long-only rule in a +96% window looks brilliant and still loses
    to doing nothing. Always compare against buy-and-hold over the identical period.
 
-Untested and next: whether the model beats a random pick from its own shortlist (the
-learning loop is accumulating exactly this).
+**Measured 2026-09-16 (the audit).** Three findings of the same grade as the ones above,
+each with its own methodology lesson:
+
+- **The model does not beat a random pick from its own shortlist — and does not lose to one.**
+  +0.27% vs shadow, CI −2.09..+2.58, n≈129 independent pairs. The earlier "−2.66%, CI excludes
+  zero" was **trap #2 again**: live picks re-measured a symbol mid-flight, and the concentrated
+  arm was punished for concentrating. De-overlap before every statistic, pairs included.
+- **The screen cost ~4% of excess return.** A random draw from the menu vs a random draw from
+  outside it, identical window and machinery. Every ranker tried selects an extreme tail, and
+  every tail measured worse than its body. **Trap #4, new**: a control drawn from inside the
+  treatment cannot see the treatment — the shadow measured the model against the menu while the
+  menu itself was never on trial.
+- **Grade what you asked.** Confidence was defined as P(profit after costs) and graded as
+  P(+17% target before stop), so a calibrated model read as overconfident by construction and
+  self-censored. **Trap #5, new**: a feedback loop grading a different event from the one it
+  requests will drive the agent away from the behaviour it exists to encourage.
+
+Still open: whether ANY selector beats chance — five deterministic arms and a second LLM now
+run against the same shadow, for free, and the leaderboard in `/status` is the answer as it
+forms.
 
 ## One venue, two books
 
