@@ -127,9 +127,12 @@ class ExitEvaluator:
     def _venue(market: str) -> str:
         return "BINANCE" if market in ("CRYPTO", "BSTOCKS", "BINANCE") else market
 
-    def run(self, since: str = "") -> dict:
+    def run(self, since: str = "", market: str = "") -> dict:
         since = since or self.cfg.promotion.since or self.cfg.score.trade_since
-        trades = self.ledger.closed_trades(since=since)
+        # One venue at a time when asked: the grid pooled 85 KR trips with 97
+        # Binance ones on 2026-09-17, and a stop that fits crypto's vol
+        # dispersion is not evidence about KR's until KR is read alone.
+        trades = self.ledger.closed_trades(since=since, markets={market} if market else None)
         max_hold = max(self.ecfg.holds_minutes or [self.cfg.exits.max_hold_minutes])
         # The reward:risk axis defaults to whatever the live contract uses, so a
         # config without `reward_risks` reproduces the old two-knob grid exactly.
@@ -293,11 +296,12 @@ def main() -> int:
 
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--since", default="", help="ISO date; default promotion.since")
+    ap.add_argument("--market", default="", help="one market only, e.g. KR or CRYPTO")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     cfg = config()
     client = build_adapter("binance", None, cfg).client
-    result = ExitEvaluator(cfg, client).run(since=args.since)
+    result = ExitEvaluator(cfg, client).run(since=args.since, market=args.market)
     print(render(result))
     return 0
 

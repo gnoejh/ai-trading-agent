@@ -539,6 +539,12 @@ score:
   # excess return (CI +0.48..+6.20). Each candidate carries the outcome of
   # its 30 nearest resolved setups, with n.
   similar_k: 30
+  # The vector, explicit. Funding joined 2026-09-17 after re-validation lifted
+  # the leave-the-future-out decile spread from +3.18% to +5.08% (CI
+  # +0.90..+11.22). A candidate without a perp has a hole in its vector and
+  # carries no similar_setups -- silence, never a filled-in neighbour.
+  similar_features: [change_pct, log_turnover, taker_share, ret_7d, range_pos_7d,
+                     vol_24h_pct, from_7d_high_pct, vol_ratio_24h, funding_rate_pct]
   similar_index: data/similar_index.json
   similar_validation: data/similar_validation.json
   bootstrap_seed: 20260903
@@ -690,7 +696,15 @@ exits:
   # Per venue: volatility does not transfer, so levels are set where they apply.
   markets:
     KR:
-      stop_loss_pct: 0.04
+      stop_loss_pct: 0.04         # the FALLBACK when a name's bars cannot be read
+      # 2026-09-17: KR read ALONE on the exit grid (56 paper trips, 27 finished,
+      # 72h / rr 2, finished column): fixed 4% +1.29%/trip with 15 stop-outs --
+      # the worst cell on its own board -- vol x 2 +3.33% with 1. KR daily vol
+      # runs 2-3%, so a 4% stop was ~1.5 sigma and fired on noise. Small n,
+      # large and consistent gap across every hold. Revert: vol_multiple 0.
+      vol_multiple: 2.0
+      vol_min_stop: 0.03
+      vol_max_stop: 0.15
       min_reward_risk: 2.0
       max_hold_minutes: 2880      # 2 trading days
     US:

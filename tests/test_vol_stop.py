@@ -75,11 +75,10 @@ def test_zero_multiple_reads_nothing(tmp_path):
     assert calls == []
 
 
-def test_binance_is_on_and_the_kiwoom_venues_are_not():
-    """Measured on a grid that pooled venues; shipped only where the evidence
-    and the mechanism (microcap vs BTC) are strongest. KR/US keep fixed stops
-    until measured on their own."""
+def test_vol_stops_are_on_where_they_were_measured_alone():
+    """Binance and KR were each read on their own grid; US has no closed trips
+    and keeps its fixed stop until it does."""
     cfg = load_config()
     assert cfg.exits.for_market("BINANCE").vol_multiple > 0
-    assert cfg.exits.for_market("KR").vol_multiple == 0
+    assert cfg.exits.for_market("KR").vol_multiple > 0
     assert cfg.exits.for_market("US").vol_multiple == 0

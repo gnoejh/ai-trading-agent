@@ -98,6 +98,28 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-17 (overnight, 5/n)** — **The exit grid read per venue: KR's 4% stop was the worst
+  cell on its own board, and a pooled number I logged was KR's, not Binance's.** `exit_eval`
+  gained `--market`; the earlier vol-stop grid had pooled 85 KR trips with 97 Binance ones.
+  Read alone (72h hold, r:r 2.0, finished column):
+
+      KR   (56 trips, 27 finished)    fixed 4% +1.29%  stops 15  |  vol x 2  +3.33%  stops 1
+      CRYPTO (118 trips, 79 finished) fixed 8% −0.53%  stops 22  |  vol x 2  −0.33%  stops 11
+
+  **KR**: the live 4% stop is the worst cell KR has — KR daily vol runs 2–3%, so 4% is about
+  1.5σ and fires on noise; every vol multiple roughly doubles the finished net and takes
+  stop-outs from 15 to 1–2. Shipped: `exits.markets.KR.vol_multiple: 2.0`, clamped 3–15%,
+  the 4% kept as fallback. Small n, large and consistent gap. **CRYPTO**: every contract replays
+  slightly negative on the finished column — the replay resolves a stop on the bar's low before
+  a target on its high, which is conservative by construction and is why the 09-04 entry says
+  to read cells relative to each other, never as P&L — and vol×2 still beats the fixed 8%, by
+  0.2pp. The Binance decision stands; **entry 2/n's "+0.475% vs +0.141%, roughly 3×" was the
+  pooled grid and is corrected in place.** Also tonight: the case-memory vector gained
+  `funding_rate_pct` after re-validation lifted its spread from +3.18% to **+5.08% (CI
+  +0.90..+11.22)**; the index rebuilt with nine keys (11,376 cases — names without a perp drop
+  out, and carry no `similar_setups`, which is the honest outcome for a hole in the vector).
+  The live loop reloads the index by mtime and reads its keys from the file, so no restart
+  was needed for the vector. 396 tests.
 - **2026-09-17 (overnight, 4/n)** — **Positioning: perp funding, and it says continuation, not
   reversal.** The one positioning signal with six months of free history is the USDT-M
   perpetual funding rate (open interest history stops at 30 days and so cannot be validated to
@@ -174,7 +196,11 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
       vol x 3       +0.362%       12        132
 
   Every vol cell beats the fixed stop at **every** hold (24h/48h/72h/96h) — twelve cells, one
-  direction, roughly 3× the net per trip, with stop-outs halved and the trail exits untouched.
+  direction, with stop-outs halved and the trail exits untouched. **CORRECTED in entry 5/n**:
+  that grid POOLED 85 KR trips with 97 Binance ones, and the +0.475% was carried by KR. Read
+  on CRYPTO alone, vol×2 beats the fixed 8% by ~0.2pp (−0.33% vs −0.53% finished, both
+  negative in the replay's conservative arithmetic), not 3×. The direction stands; the size in
+  this entry does not.
   n_finished 113 sits at the repo's "hundreds" threshold; what carries the decision is the
   consistency and the mechanism, not one cell. **Shipped, Binance only**: `exits.markets.BINANCE
   .vol_multiple: 2.0`, clamped 3–15%, `stop_loss_pct` 8% kept as the FALLBACK. One vol

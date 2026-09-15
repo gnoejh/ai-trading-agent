@@ -164,12 +164,16 @@ def corpus(cfg: AppConfig, *, sources: tuple[str, ...]) -> list[dict]:
             elif r.get("kind") == "resolve":
                 resolves[r["id"]] = r
     feats = load_features(Path(cfg.score.backtest_features))
+    funding = load_features(Path(cfg.score.backtest_funding))
     rows = []
     for oid, o in opens.items():
         res = resolves.get(oid)
         if not res:
             continue
         extra = {k: v for k, v in feats.get(oid, {}).items() if k not in ("id", "symbol", "ts")}
+        extra.update(
+            {k: v for k, v in funding.get(oid, {}).items() if k not in ("id", "symbol", "ts")}
+        )
         rows.append({**o, **extra, **res, "ts": o["ts"]})
     return rows
 
