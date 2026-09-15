@@ -175,6 +175,19 @@ def corpus(cfg: AppConfig, *, sources: tuple[str, ...]) -> list[dict]:
             {k: v for k, v in funding.get(oid, {}).items() if k not in ("id", "symbol", "ts")}
         )
         rows.append({**o, **extra, **res, "ts": o["ts"]})
+    # Backtest resolves carry no benchmark; derive the excess from BTC's own
+    # forward return at the same timestamp so a case's outcome is comparable
+    # to every other "vs benchmark" figure the prompt renders.
+    btc = {
+        r["ts"]: r["forward_return_pct"]
+        for r in rows
+        if r.get("symbol") == "BTCUSDT" and r.get("forward_return_pct") is not None
+    }
+    for r in rows:
+        if r.get("excess_return_pct") is None and r.get("forward_return_pct") is not None:
+            b = btc.get(r["ts"])
+            if b is not None:
+                r["excess_return_pct"] = round(float(r["forward_return_pct"]) - b, 4)
     return rows
 
 
