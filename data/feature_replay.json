@@ -3,6 +3,15 @@
   "sections_with_features": 76,
   "deciles": [
     {
+      "feature": "funding_rate_pct",
+      "n": 11126,
+      "top_decile_excess_pct": 1.907,
+      "bottom_decile_excess_pct": -0.449,
+      "spread_pct": 2.356,
+      "ci_low": 1.334,
+      "ci_high": 3.469
+    },
+    {
       "feature": "range_pos_7d",
       "n": 12290,
       "top_decile_excess_pct": 1.624,
@@ -37,6 +46,15 @@
       "spread_pct": 1.34,
       "ci_low": -0.168,
       "ci_high": 2.733
+    },
+    {
+      "feature": "funding_3d_avg_pct",
+      "n": 11126,
+      "top_decile_excess_pct": 0.605,
+      "bottom_decile_excess_pct": -0.362,
+      "spread_pct": 0.967,
+      "ci_low": -0.275,
+      "ci_high": 2.142
     },
     {
       "feature": "ret_7d",
@@ -257,6 +275,15 @@
       "wins": 37
     },
     {
+      "selector": "funding_high",
+      "n": 76,
+      "edge_pct": -0.32,
+      "median_pct": -1.168,
+      "ci_low": -3.379,
+      "ci_high": 3.55,
+      "wins": 28
+    },
+    {
       "selector": "vol_surge_top",
       "n": 76,
       "edge_pct": -2.078,
@@ -264,6 +291,15 @@
       "ci_low": -4.427,
       "ci_high": 0.31,
       "wins": 30
+    },
+    {
+      "selector": "funding_low",
+      "n": 76,
+      "edge_pct": -3.205,
+      "median_pct": -3.008,
+      "ci_low": -5.654,
+      "ci_high": -0.603,
+      "wins": 23
     },
     {
       "selector": "change_low",
@@ -304,6 +340,16 @@
   ],
   "menu_rules": [
     {
+      "rule": "fund>=0&range>=0.5",
+      "n": 76,
+      "avg_pool_after_filter": 50.9,
+      "menu_minus_pool_pct": 0.703,
+      "median_pct": 0.254,
+      "ci_low": -0.031,
+      "ci_high": 1.49,
+      "wins": 45
+    },
+    {
       "rule": "range>=0.8",
       "n": 67,
       "avg_pool_after_filter": 18.8,
@@ -322,6 +368,16 @@
       "ci_low": -0.23,
       "ci_high": 1.155,
       "wins": 37
+    },
+    {
+      "rule": "funding>=0",
+      "n": 76,
+      "avg_pool_after_filter": 124.4,
+      "menu_minus_pool_pct": 0.059,
+      "median_pct": 0.08,
+      "ci_low": -0.374,
+      "ci_high": 0.482,
+      "wins": 39
     },
     {
       "rule": "sample",
