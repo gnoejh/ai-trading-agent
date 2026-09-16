@@ -35,7 +35,7 @@ from pathlib import Path
 
 from trading.agent.features import PATH_KEYS, RS_KEYS
 from trading.agent.scorer import SELECTORS, bootstrap_ci
-from trading.agent.screen_replay import BENCHMARK, _sample_menu, load_cross_sections
+from trading.agent.screen_replay import _sample_menu, load_cross_sections
 from trading.config import AppConfig, config
 
 log = logging.getLogger(__name__)
@@ -44,6 +44,45 @@ FUNDING_KEYS = ["funding_rate_pct", "funding_3d_avg_pct"]
 FEATURES = (
     [k for k in PATH_KEYS if k != "ret_24h"] + RS_KEYS + FUNDING_KEYS
 )  # ret_24h == change_pct, already an arm
+
+# The equity venues replay on DAILY features (features.daily_path_features),
+# their own benchmark, and a 3-trading-day horizon -- the backtest_kr/us
+# corpora were resolved that way. One spec per venue keeps the pipeline the
+# same and the labels honest.
+from trading.agent.features import DAILY_PATH_KEYS, DAILY_RS_KEYS
+
+VENUES = {
+    "CRYPTO": {
+        "book": "CRYPTO",
+        "source": "backtest",
+        "benchmark": "BTCUSDT",
+        "features": FEATURES,
+        "horizon": "72h",
+        "side_files": ("backtest_features", "backtest_funding"),
+    },
+    "KR": {
+        "book": "KR",
+        "source": "backtest_kr",
+        "benchmark": "069500",
+        "features": [k for k in DAILY_PATH_KEYS if k != "ret_1d"] + DAILY_RS_KEYS,
+        "horizon": "3 trading days",
+        "side_files": ("by_venue:KR",),
+    },
+    "US": {
+        "book": "US",
+        "source": "backtest_us",
+        "benchmark": "SPY",
+        "features": [k for k in DAILY_PATH_KEYS if k != "ret_1d"] + DAILY_RS_KEYS,
+        "horizon": "3 trading days",
+        "side_files": ("by_venue:US",),
+    },
+}
+
+
+def _side_file(cfg: AppConfig, name: str) -> Path:
+    if name.startswith("by_venue:"):
+        return Path(cfg.score.backtest_features_by_venue[name.split(":", 1)[1]])
+    return Path(getattr(cfg.score, name))
 
 
 def load_features(path: Path) -> dict[str, dict]:
@@ -60,37 +99,35 @@ def load_features(path: Path) -> dict[str, dict]:
     return out
 
 
-def _sections(cfg: AppConfig):
-    groups = load_cross_sections(Path(cfg.score.observations))
-    feats = load_features(Path(cfg.score.backtest_features))
-    # Funding is a second side-file (a spot name without a perp has no row);
-    # joined the same way, absent keys simply stay absent.
-    funding = load_features(Path(cfg.score.backtest_funding))
+def _sections(cfg: AppConfig, venue: str = "CRYPTO"):
+    spec = VENUES[venue]
+    groups = load_cross_sections(Path(cfg.score.observations), source=spec["source"])
+    # Every side-file joins by observation id; a row absent from one simply
+    # lacks those keys (a spot name without a perp, a name without bars).
+    sides = [load_features(_side_file(cfg, name)) for name in spec["side_files"]]
     min_group = cfg.score.screen_replay_min_group
+    anchor_key = spec["features"][0]
     out = []
     for ts, rows in sorted(groups.items()):
-        members = [
-            {
-                **r,
-                **{
-                    k: v
-                    for k, v in feats.get(r["id"], {}).items()
-                    if k not in ("id", "symbol", "ts")
-                },
-                **{
-                    k: v
-                    for k, v in funding.get(r["id"], {}).items()
-                    if k not in ("id", "symbol", "ts")
-                },
-            }
-            for r in rows
-            if str(r.get("book") or "CRYPTO") == "CRYPTO"
-        ]
+        members = []
+        for r in rows:
+            if str(r.get("book") or spec["book"]) != spec["book"]:
+                continue
+            m = dict(r)
+            for side in sides:
+                m.update(
+                    {
+                        k: v
+                        for k, v in side.get(r["id"], {}).items()
+                        if k not in ("id", "symbol", "ts")
+                    }
+                )
+            members.append(m)
         bench = next(
             (
                 r
                 for r in members
-                if r["symbol"] == BENCHMARK["CRYPTO"] and r.get("ret_7d") is not None
+                if r["symbol"] == spec["benchmark"] and r.get(anchor_key) is not None
             ),
             None,
         )
@@ -138,9 +175,9 @@ def deciles(sections, feature: str, cfg: AppConfig) -> dict | None:
     }
 
 
-def pick_arms(sections, cfg: AppConfig) -> list[dict]:
+def pick_arms(sections, cfg: AppConfig, venue: str = "CRYPTO") -> list[dict]:
     diffs: dict[str, list[float]] = defaultdict(list)
-    slots = cfg.agent.screen.book_slots.get("CRYPTO", cfg.agent.screen.candidates)
+    slots = cfg.agent.screen.book_slots.get(venue, cfg.agent.screen.candidates)
     for _ts, members, _bench in sections:
         menu = _sample_menu(members, slots)
         if not menu:
@@ -175,14 +212,14 @@ def pick_arms(sections, cfg: AppConfig) -> list[dict]:
     return out
 
 
-def regime_table(sections) -> list[dict]:
+def regime_table(sections, trend_key: str = "ret_7d") -> list[dict]:
     """The pool's forward return by market state at the section's open."""
     buckets: dict[str, list[tuple[float, float]]] = defaultdict(list)
     for _ts, members, bench in sections:
         raw = statistics.fmean(r["forward_return_pct"] for r in members)
         excess = raw - bench["forward_return_pct"]
-        r7 = bench.get("ret_7d")
-        up = [r.get("ret_7d") for r in members if r.get("ret_7d") is not None]
+        r7 = bench.get(trend_key)
+        up = [r.get(trend_key) for r in members if r.get(trend_key) is not None]
         breadth = (sum(1 for v in up if v > 0) / len(up)) if up else None
         buckets["all"].append((raw, excess))
         if r7 is not None:
@@ -227,7 +264,7 @@ def regime_table(sections) -> list[dict]:
     return out
 
 
-def menu_rules(sections, cfg: AppConfig) -> list[dict]:
+def menu_rules(sections, cfg: AppConfig, venue: str = "CRYPTO") -> list[dict]:
     """Menus built from the decile result, each vs the unfiltered pool, paired.
 
     The decile spread is a PORTFOLIO effect: a random draw from the top of the
@@ -236,7 +273,7 @@ def menu_rules(sections, cfg: AppConfig) -> list[dict]:
     way the screen control tests a menu live: random draw from the menu minus
     random draw from the pool, per section, with a CI.
     """
-    slots = cfg.agent.screen.book_slots.get("CRYPTO", cfg.agent.screen.candidates)
+    slots = cfg.agent.screen.book_slots.get(venue, cfg.agent.screen.candidates)
     rules = {
         "sample": lambda m: m,
         "range>=0.2": lambda m: [r for r in m if (r.get("range_pos_7d") or 0) >= 0.2],
@@ -292,26 +329,34 @@ def menu_rules(sections, cfg: AppConfig) -> list[dict]:
     return out
 
 
-def replay(cfg: AppConfig | None = None) -> dict:
+def replay(cfg: AppConfig | None = None, venue: str = "CRYPTO") -> dict:
     cfg = cfg or config()
-    sections = _sections(cfg)
-    with_feats = sum(1 for _, m, _ in sections if any(r.get("ret_7d") is not None for r in m))
-    dec = [d for f in FEATURES if (d := deciles(sections, f, cfg))]
+    spec = VENUES[venue]
+    sections = _sections(cfg, venue)
+    anchor = spec["features"][0]
+    with_feats = sum(1 for _, m, _ in sections if any(r.get(anchor) is not None for r in m))
+    dec = [d for f in spec["features"] if (d := deciles(sections, f, cfg))]
     dec.sort(key=lambda d: d["ci_low"], reverse=True)
+    trend = "ret_7d" if venue == "CRYPTO" else "ret_5d"
     return {
+        "venue": venue,
+        "horizon": spec["horizon"],
         "sections": len(sections),
         "sections_with_features": with_feats,
         "deciles": dec,
-        "pick_arms": pick_arms(sections, cfg),
-        "menu_rules": menu_rules(sections, cfg),
-        "regime": regime_table(sections),
+        "pick_arms": pick_arms(sections, cfg, venue),
+        "menu_rules": menu_rules(sections, cfg, venue),
+        "regime": regime_table(sections, trend),
     }
 
 
 def render(result: dict) -> str:
     lines = [
         "*Feature replay* (backtest prior — not a criterion; survivorship-biased)",
-        f"  {result['sections']} cross-sections ({result['sections_with_features']} with features), 72h forward, CRYPTO",
+        (
+            f"  {result['sections']} cross-sections ({result['sections_with_features']} with features), "
+            f"{result.get('horizon', '72h')} forward, {result.get('venue', 'CRYPTO')}"
+        ),
         "  ── decile spreads: top 10% minus bottom 10% of each feature, excess vs BTC",
     ]
     for d in result["deciles"]:
@@ -363,13 +408,15 @@ def render(result: dict) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    argparse.ArgumentParser(
-        description="Validate the feature set over the backtest corpus."
-    ).parse_args(argv)
+    ap = argparse.ArgumentParser(description="Validate the feature set over the backtest corpus.")
+    ap.add_argument("--venue", default="CRYPTO", choices=sorted(VENUES))
+    args = ap.parse_args(argv)
     cfg = config()
-    result = replay(cfg)
+    result = replay(cfg, args.venue)
     print(render(result))
     out = Path(cfg.score.feature_replay_output)
+    if args.venue != "CRYPTO":
+        out = out.with_name(f"{out.stem}_{args.venue.lower()}{out.suffix}")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(f"written: {out}")

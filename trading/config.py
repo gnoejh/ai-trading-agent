@@ -772,6 +772,13 @@ class ScoreConfig(BaseModel):
     # (agent/backfill_features.py); joined by the replay at read time.
     backtest_features: str = "data/backtest_features.jsonl"
     backtest_funding: str = "data/backtest_funding.jsonl"
+    # Daily path features for the equity venues (backfill_features_kr.py).
+    backtest_features_by_venue: dict[str, str] = Field(
+        default_factory=lambda: {
+            "KR": "data/backtest_features_kr.jsonl",
+            "US": "data/backtest_features_us.jsonl",
+        }
+    )
     feature_replay_output: str = "data/feature_replay.json"
     # Case-based retrieval (agent/similar.py). `similar_k` 0 keeps
     # `similar_setups` out of the prompt; set it only after validate() shows a
