@@ -56,6 +56,16 @@ cross-sections before it reached the prompt**, then verified live in the journal
   it if it exists.
 - **Corrected in place**: a pooled exit-grid figure (+0.475% for vol×2) was KR's; on CRYPTO
   alone vol×2 beats the fixed 8% by 0.2pp. Direction stood, size did not.
+- **Found and fixed the same day (09-17, KR session)**: the 09-15 move of KR order routing to
+  SOR is not served by the 모의투자 host — every KR paper stop since had failed (RC9000; 47 in
+  all, twelve positions with no working stop). Paper orders now route KRX (`exchange_paper`),
+  SOR stays for mainnet; verified live — four sells sent, filled, plans cleared 12 → 8. Also:
+  `ExitReason.TRAIL` was never emitted, so every profitable trail had been journalled as a
+  stop-out; the plan now remembers its initial stop and says when it was raised.
+- **KR parity verified live**: KR candidates carry 26 keys and the model reasons on them
+  ("uptrend with a modest pullback… rs_20d +19.5, from_20d_low +36%… without the blow-off
+  5d/20d extension"). It still declines on its KR self-record; the `since` row lifts that as
+  featured picks resolve.
 
 The gate is unchanged at 4 of 5 — the model's edge +0.27%, CI straddling zero on 129 pairs.
 Instruments that will move it, all in `/status`: the screen control (from 09-19), the
@@ -1300,7 +1310,7 @@ that was mostly committed cash, and the daily-loss cap reads the same number.
 
 ```
 uv sync                                   # create/refresh .venv from uv.lock
-uv run pytest                             # 406 tests, no network (httpx MockTransport)
+uv run pytest                             # 410 tests, no network (httpx MockTransport)
 uv run python scripts/wire_test.py        # dry run; --live sends ONE ~$6 order
 uv run pytest tests/test_risk_gate.py -k concentration
 uv run ruff check . --fix && uv run ruff format .
