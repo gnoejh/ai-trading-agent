@@ -145,6 +145,17 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-17 (trail label)** — **`ExitReason.TRAIL` existed and was never emitted.** Every
+  stop hit was journalled `stop_loss`, including RAYUSDT's this morning, which closed ABOVE
+  entry on a stop that had ratcheted there. `exit_eval` had separated trails from stops all
+  along (a stop above its initial level is a trail — ~70% of closed positions), so the offline
+  grid and the live journal disagreed by construction about where the money comes from.
+  `ExitPlan.initial_stop` (set in `plan_for`, persisted; 0.0 on plans from before the field,
+  which read as stop-outs — the conservative degradation) and `evaluate` now emits TRAIL with
+  "raised from" in the detail when the stop has moved. Consumers only format the reason into
+  strings, so nothing branches on it. **Restart deferred**: it would have been the fourth in
+  fifteen minutes during the KR session, between four sells just sent and their reconcile; the
+  fix rides the next one. 410 tests.
 - **2026-09-17 (KR paper exits)** — **The mock host has no SOR, and every KR paper stop since
   the routing change had failed.** Found in the KR journal while verifying the daily features:
   **18 `exit_order_failed` rows this morning, 47 since 09-15**, every one `kt10001: RC9000

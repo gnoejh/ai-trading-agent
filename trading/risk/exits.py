@@ -69,6 +69,13 @@ class ExitPlan:
     target: float
     high_water: float = 0.0
     api_cost_share: float = 0.0
+    # The stop as first set. A stop that has ratcheted ABOVE it is a trail, and
+    # an exit there is the system's normal profitable ending -- exit_eval always
+    # counted it that way (~70% of closed positions), while the live journal
+    # called every stop hit `stop_loss` until 2026-09-17, misstating where the
+    # money comes from. 0.0 on plans persisted before the field existed; those
+    # read as stop-outs, which is the conservative degradation.
+    initial_stop: float = 0.0
 
     def tighten_stop(self, candidate: float) -> bool:
         """Raise the stop. Returns True if it moved; never lowers it."""
@@ -160,6 +167,7 @@ class ExitPolicy:
             quantity=quantity,
             opened_at=opened_at or dt.datetime.now(dt.UTC).isoformat(),
             stop=stop,
+            initial_stop=stop,
             net_breakeven=breakeven,
             target=target,
             high_water=entry_price,
@@ -190,13 +198,21 @@ class ExitPolicy:
         now = now or dt.datetime.now(dt.UTC)
 
         # Stop first: a breach is not negotiable against any other consideration.
+        # A stop that has ratcheted above where it started is a TRAIL: the same
+        # exit mechanically, a different fact about the trade.
         if price <= plan.stop:
+            trailed = plan.initial_stop > 0 and plan.stop > plan.initial_stop
             return ExitSignal(
                 plan.symbol,
                 plan.quantity,
-                ExitReason.STOP,
+                ExitReason.TRAIL if trailed else ExitReason.STOP,
                 price,
-                f"price {price:,.6g} at or below stop {plan.stop:,.6g}",
+                (
+                    f"price {price:,.6g} at or below trailing stop {plan.stop:,.6g} "
+                    f"(raised from {plan.initial_stop:,.6g})"
+                    if trailed
+                    else f"price {price:,.6g} at or below stop {plan.stop:,.6g}"
+                ),
             )
 
         if price >= plan.target:
