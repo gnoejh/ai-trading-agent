@@ -179,7 +179,9 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
   14,549.8 stop, 4.6% past it. Same pass, Binance: RAYUSDT — the first position adopted under
   the vol-scaled stop — closed at 1.2535 on a stop that had ratcheted to 1.25557, above its
   1.2415 entry: +0.97% gross, ≈+0.67% net, a trail exit the live journal labelled
-  `stop_loss` (a labelling nit, checked next). 407 tests.
+  `stop_loss` (a labelling nit, fixed in the next entry). **Fills confirmed 12:39 KST**: the
+  four plans cleared on reconcile (12 → 8) and a fifth stop fired cleanly on the following
+  pass. 407 tests.
 - **2026-09-17 (KR parity)** — **KR gets the same information as Binance, and it says the
   opposite thing.** Owner: "proceed." The KR model sleeve is the one that is positive, and its
   screen handed the model 24h change and a flow share. Hourly KR bars exist only in session, so
