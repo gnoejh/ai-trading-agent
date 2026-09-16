@@ -512,7 +512,7 @@ score:
   # screen finding (buy what fell); change_high is its momentum control.
   arms: [flow_top, prior_top, volume_top, change_low, change_high,
          near_7d_high, far_from_7d_high, ret_7d_top, vol_surge_top,
-         funding_low, funding_high]
+         funding_low, funding_high, ret_5d_low, ret_5d_top, range20_low]
   # 2026-09-16: the screen changed (rank_by sample, change band off), so the
   # model's self-record before this date was earned on a population that no
   # longer exists -- a random draw from it lost 2.57% to benchmark. The prompt
@@ -908,6 +908,14 @@ agent:
       # WAS: rank_by flow / max_change_pct 0.10.
       rank_by: sample
       max_change_pct: 0
+      # 2026-09-17: daily path features on every KR candidate from the archive
+      # parquet (no Kiwoom call). The one KR feature that measured, over 80
+      # weekly cross-sections and 21,837 rows: ret_5d, spread -1.19% (CI
+      # -1.85..-0.55) -- the 5-day LOSERS outperform over the next 3 sessions.
+      # Reversal, where crypto continues. Not a filter: every "sample from the
+      # losers" menu read flat-to-negative vs the pool. The model is told; the
+      # KR arms ret_5d_low / ret_5d_top measure it live.
+      daily_features: true
       # stex_tp on the RANKERS is "1:KRX, 2:NXT, 3:통합" -- a different enum from
       # the account calls below, where 0 is 통합 and there is no 3. It read "1"
       # (KRX only), which after 15:30 would rank a closed tape: every evening

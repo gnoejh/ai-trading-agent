@@ -473,6 +473,11 @@ class FlowFeature(BaseModel):
 
 
 class ScreenMarket(BaseModel):
+    # Equity venues: attach the DAILY path features (features.daily_path_features)
+    # to every candidate from the archive parquet, in session, with zero broker
+    # calls. Validated on KR 2026-09-17: ret_5d decile spread -1.19% (CI
+    # -1.85..-0.55) -- REVERSAL at 3 trading days, the opposite of crypto.
+    daily_features: bool = False
     rankers: list[Ranker] = Field(default_factory=list)
     min_change_pct: float = 0.0
     max_change_pct: float = 0.0

@@ -98,6 +98,40 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-17 (KR parity)** — **KR gets the same information as Binance, and it says the
+  opposite thing.** Owner: "proceed." The KR model sleeve is the one that is positive, and its
+  screen handed the model 24h change and a flow share. Hourly KR bars exist only in session, so
+  the hourly definitions would silently mean sessions; `features.daily_path_features` is the
+  equity definition — horizons in trading days (1/3/5/20), vol, range position and distance
+  from the month's high/low, RS against the venue index, a 5-vs-20-session turnover surge —
+  one definition for the KR backtest and the KR screen. `backfill_features_kr.py` read the
+  archive parquet directly (it carries volume; the resolver's `Bar` drops it) and computed the
+  set for all **22,385 KR observations in ten seconds with zero Kiwoom calls**. `feature_replay
+  --venue KR|US` runs each venue on its own features, benchmark (`069500`) and horizon label
+  (3 trading days — how `backtest_kr` was resolved). **80 cross-sections, 21,837 rows**:
+
+      ret_5d              spread −1.19%   CI −1.85..−0.55   <- excludes 0, and NEGATIVE
+      range_pos_20d       spread +0.39%   CI −0.08..+0.87
+      from_20d_high_pct   spread −0.50%   CI −1.05..+0.10
+      regime (069500 5d up vs down)   −0.99%   CI −2.77..+0.88   (no effect)
+      menus: ret5d<=0 −0.33%, bottom-30% −0.35%, bottom-50% −0.05%  (none beats the pool)
+
+  **KR mean-reverts at three sessions where crypto continues**: the bottom decile of 5-day
+  return earns +1.29% excess, the top +0.10%. The sign of a signal is not portable between
+  venues — the exact thing the Binance model would get wrong if told crypto's priors on KR,
+  which is why `experience_block` now reads the VENUE's replay file (`feature_replay_kr.json`
+  for KR) and a test pins that a KR prompt never sees crypto's deciles. As on Binance, the
+  effect is a decile, not a menu: every "sample from the losers" rule read flat-to-negative
+  against the pool, so nothing is filtered. **No KR regime effect** — and the KR random arm is
+  ungated by construction (the Kiwoom screen has no `market_state`, so the gate sees no
+  reading and applies nothing), which is now the measured-correct behaviour rather than an
+  accident. **Shipped**: `screen.KR.daily_features: true` — the Kiwoom screen attaches the
+  daily set and a `market_state` from the archive in session (a name without bars carries
+  None; a missing benchmark skips everyone), the system prompt tells the model equity
+  candidates carry daily features and to read this venue's priors, and three equity arms
+  (`ret_5d_low` the hypothesis, `ret_5d_top` its control, `range20_low`) join `score.arms`
+  as no-ops everywhere else. US inherits the machinery (`--venue US`, `daily_features` per
+  market) but stays off until its own replay is read. 406 tests.
 - **2026-09-17 (overnight, 6/n — closing)** — **What the health pass found, and the state the
   owner wakes to.** Verified live, in the journal and the persisted exit state: every candidate
   carries 27 keys (path, relative strength, vol, range, funding on 22 of 25, `similar_setups` on

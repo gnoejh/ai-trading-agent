@@ -223,9 +223,13 @@ def regime_table(sections, trend_key: str = "ret_7d") -> list[dict]:
         breadth = (sum(1 for v in up if v > 0) / len(up)) if up else None
         buckets["all"].append((raw, excess))
         if r7 is not None:
-            buckets["btc_7d_up" if r7 > 0 else "btc_7d_down"].append((raw, excess))
+            buckets[f"bench_{trend_key}_up" if r7 > 0 else f"bench_{trend_key}_down"].append(
+                (raw, excess)
+            )
         if breadth is not None:
-            buckets["breadth_7d>0.5" if breadth > 0.5 else "breadth_7d<=0.5"].append((raw, excess))
+            buckets[
+                f"breadth_{trend_key}>0.5" if breadth > 0.5 else f"breadth_{trend_key}<=0.5"
+            ].append((raw, excess))
     out = []
     for name, vals in buckets.items():
         out.append(
@@ -239,8 +243,8 @@ def regime_table(sections, trend_key: str = "ret_7d") -> list[dict]:
         )
     # Is the up/down split real? Bootstrap the difference of the two groups'
     # mean RAW return (raw, because a long-only book earns beta).
-    up = [v[0] for v in buckets.get("btc_7d_up", [])]
-    down = [v[0] for v in buckets.get("btc_7d_down", [])]
+    up = [v[0] for v in buckets.get(f"bench_{trend_key}_up", [])]
+    down = [v[0] for v in buckets.get(f"bench_{trend_key}_down", [])]
     if len(up) > 5 and len(down) > 5:
         import random
 
@@ -274,7 +278,56 @@ def menu_rules(sections, cfg: AppConfig, venue: str = "CRYPTO") -> list[dict]:
     random draw from the pool, per section, with a CI.
     """
     slots = cfg.agent.screen.book_slots.get(venue, cfg.agent.screen.candidates)
-    rules = {
+    if venue != "CRYPTO":
+        # Equities: the KR decile result is REVERSAL (the bottom 5d-return
+        # decile outperforms), so the menus tested drop the recent winners.
+        def _q(m, key, frac):
+            vals = sorted(r[key] for r in m if r.get(key) is not None)
+            return vals[int(len(vals) * frac)] if vals else None
+
+        rules = {
+            "sample": lambda m: m,
+            "ret5d<=0": lambda m: [r for r in m if (r.get("ret_5d") or 0) <= 0],
+            "ret5d bottom 30%": lambda m: (
+                [
+                    r
+                    for r in m
+                    if r.get("ret_5d") is not None and r["ret_5d"] <= (_q(m, "ret_5d", 0.3) or 0)
+                ]
+            ),
+            "ret5d bottom 50%": lambda m: (
+                [
+                    r
+                    for r in m
+                    if r.get("ret_5d") is not None and r["ret_5d"] <= (_q(m, "ret_5d", 0.5) or 0)
+                ]
+            ),
+            "not top 30% ret5d": lambda m: (
+                [
+                    r
+                    for r in m
+                    if r.get("ret_5d") is not None and r["ret_5d"] < (_q(m, "ret_5d", 0.7) or 0)
+                ]
+            ),
+        }
+    else:
+        rules = _crypto_rules()
+    diffs: dict[str, list[float]] = defaultdict(list)
+    sizes: dict[str, list[int]] = defaultdict(list)
+    for _ts, members, _bench in sections:
+        pool_mean = statistics.fmean(r["forward_return_pct"] for r in members)
+        for name, rule in rules.items():
+            kept = rule(members)
+            menu = _sample_menu(kept, slots)
+            if len(menu) < 5:
+                continue
+            diffs[name].append(statistics.fmean(r["forward_return_pct"] for r in menu) - pool_mean)
+            sizes[name].append(len(kept))
+    return _summarise_rules(diffs, sizes, cfg)
+
+
+def _crypto_rules():
+    return {
         "sample": lambda m: m,
         "range>=0.2": lambda m: [r for r in m if (r.get("range_pos_7d") or 0) >= 0.2],
         "range>=0.5": lambda m: [r for r in m if (r.get("range_pos_7d") or 0) >= 0.5],
@@ -294,17 +347,9 @@ def menu_rules(sections, cfg: AppConfig, venue: str = "CRYPTO") -> list[dict]:
             and (r.get("range_pos_7d") or 0) >= 0.5
         ],
     }
-    diffs: dict[str, list[float]] = defaultdict(list)
-    sizes: dict[str, list[int]] = defaultdict(list)
-    for _ts, members, _bench in sections:
-        pool_mean = statistics.fmean(r["forward_return_pct"] for r in members)
-        for name, rule in rules.items():
-            kept = rule(members)
-            menu = _sample_menu(kept, slots)
-            if len(menu) < 5:
-                continue
-            diffs[name].append(statistics.fmean(r["forward_return_pct"] for r in menu) - pool_mean)
-            sizes[name].append(len(kept))
+
+
+def _summarise_rules(diffs, sizes, cfg: AppConfig) -> list[dict]:
     out = []
     for name, d in diffs.items():
         ci = bootstrap_ci(
@@ -340,6 +385,8 @@ def replay(cfg: AppConfig | None = None, venue: str = "CRYPTO") -> dict:
     trend = "ret_7d" if venue == "CRYPTO" else "ret_5d"
     return {
         "venue": venue,
+        "benchmark": spec["benchmark"],
+        "trend_key": trend,
         "horizon": spec["horizon"],
         "sections": len(sections),
         "sections_with_features": with_feats,
@@ -357,7 +404,7 @@ def render(result: dict) -> str:
             f"  {result['sections']} cross-sections ({result['sections_with_features']} with features), "
             f"{result.get('horizon', '72h')} forward, {result.get('venue', 'CRYPTO')}"
         ),
-        "  ── decile spreads: top 10% minus bottom 10% of each feature, excess vs BTC",
+        f"  ── decile spreads: top 10% minus bottom 10% of each feature, excess vs {result.get('benchmark', 'BTCUSDT')}",
     ]
     for d in result["deciles"]:
         mark = " <- excludes 0" if d["ci_low"] > 0 or d["ci_high"] < 0 else ""

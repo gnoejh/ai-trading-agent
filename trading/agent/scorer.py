@@ -125,6 +125,11 @@ SELECTORS: dict[str, object] = {
     # carries the feature.
     "funding_low": lambda menu: _pick_by(menu, "funding_rate_pct", largest=False),
     "funding_high": lambda menu: _pick_by(menu, "funding_rate_pct", largest=True),
+    # Equity venues (daily features, 2026-09-17). KR measured REVERSAL at 3
+    # sessions, so ret_5d_low is the hypothesis and ret_5d_top its control.
+    "ret_5d_low": lambda menu: _pick_by(menu, "ret_5d", largest=False),
+    "ret_5d_top": lambda menu: _pick_by(menu, "ret_5d", largest=True),
+    "range20_low": lambda menu: _pick_by(menu, "range_pos_20d", largest=False),
 }
 
 
@@ -1128,8 +1133,16 @@ def experience_block(cfg: AppConfig | None = None, venue: str | None = None) -> 
     # whose CI excludes zero, and the pool's return by regime. Backtest
     # provenance is in the label. Silence for anything that did not measure.
     priors: dict[str, str] = {}
+    replay_path = Path(cfg.score.feature_replay_output)
+    if venue and venue != "BINANCE":
+        # Each equity venue has its own replay (feature_replay --venue KR),
+        # on daily features and its own benchmark; a KR prompt must not be
+        # shown crypto's deciles as if they were its own.
+        replay_path = replay_path.with_name(
+            f"{replay_path.stem}_{venue.lower()}{replay_path.suffix}"
+        )
     try:
-        fr = json.loads(Path(cfg.score.feature_replay_output).read_text(encoding="utf-8"))
+        fr = json.loads(replay_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         fr = {}
     for d in fr.get("deciles", []):
@@ -1140,7 +1153,9 @@ def experience_block(cfg: AppConfig | None = None, venue: str | None = None) -> 
                 f"95% CI {d['ci_low']:+.2f}..{d['ci_high']:+.2f})"
             )
     for r in fr.get("regime", []):
-        if r.get("state") in ("btc_7d_up", "btc_7d_down"):
+        if str(r.get("state", "")).endswith(("_up", "_down")) and "minus" not in str(
+            r.get("state")
+        ):
             priors[f"backtest regime {r['state']}"] = (
                 f"pool 72h return {r['pool_raw_pct']:+.2f}% (median "
                 f"{r['median_raw_pct']:+.2f}%) over {r['n_sections']} weeks"

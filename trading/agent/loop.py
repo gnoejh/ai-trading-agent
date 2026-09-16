@@ -103,6 +103,10 @@ Reply with JSON only:
   pick. Your past confidences are graded against what actually happened
   (`your_calibration` in `measured_record`, when enough have resolved) -- use it
   to correct yourself.
+- On equity venues candidates carry DAILY path features instead (ret_1d/3d/5d/20d,
+  rs_* against the venue index, vol_d_pct, range_pos_20d, from_20d_high/low,
+  turnover_ratio_5d). Read `measured_record.backtest_priors` for what measured
+  in THIS venue -- the sign of a signal is not portable between venues.
 - `funding_rate_pct` on a candidate is the perpetual's current 8-hourly funding
   rate (0.01 is the neutral default; 0.1 is crowded longs; negative means
   shorts are paying). Measured over six months on this universe it is a

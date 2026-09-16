@@ -432,6 +432,8 @@ class Screen:
             e["quote_volume"] = e["price"] * _f(e.get("volume"))
         shortlist = self._order(shortlist, rank_by)
         selected = shortlist[: self.scfg.candidates]
+        if ms.daily_features:
+            self._attach_daily_features(selected)
         log.info(
             "screen %s: %d ranked -> %d candidates (by %s)",
             self.market,
@@ -440,6 +442,51 @@ class Screen:
             rank_by,
         )
         return selected
+
+    def _attach_daily_features(self, selected: list[dict]) -> None:
+        """Daily path/RS features and the venue regime, from the archive parquet.
+
+        The archive is the venue's data plane (the downloader owns the single
+        Kiwoom token; this reads files). Same function as the KR backtest
+        replay validated, on the same bars. A name without bars carries None;
+        a missing benchmark skips features for everyone rather than attaching
+        relative strength against nothing.
+        """
+        from pathlib import Path
+
+        from trading.agent.backfill_features_kr import _daily
+        from trading.agent.features import (
+            DAILY_PATH_KEYS,
+            DAILY_RS_KEYS,
+            daily_path_features,
+            regime_daily,
+            relative_daily,
+            turnover_ratio_daily,
+        )
+
+        empty = dict.fromkeys(DAILY_PATH_KEYS + DAILY_RS_KEYS)
+        root = Path(self.cfg.score.kiwoom_archive)
+        venue_dir = {"KR": "kiwoom_kr", "US": "kiwoom_us"}.get(str(self.market), "")
+        bench_symbol = self.cfg.score.benchmarks.get(str(self.market))
+        bench_bars = _daily(root, venue_dir, bench_symbol) if bench_symbol and venue_dir else []
+        if not bench_bars:
+            log.warning("%s: benchmark bars unavailable; daily features skipped", self.market)
+            for e in selected:
+                e.update(empty)
+            return
+        bench = daily_path_features(bench_bars)
+        for e in selected:
+            bars = _daily(root, venue_dir, str(e["symbol"]))
+            if not bars:
+                e.update(empty)
+                continue
+            feats = daily_path_features(bars)
+            feats.update(relative_daily(feats, bench))
+            feats["turnover_ratio_5d"] = turnover_ratio_daily([b.close * b.volume for b in bars])
+            e.update({k: feats.get(k) for k in DAILY_PATH_KEYS + DAILY_RS_KEYS})
+        state = regime_daily(bench, selected)
+        for e in selected:
+            e["market_state"] = state
 
     def _order(self, rows: list[dict], rank_by: str) -> list[dict]:
         if rank_by == "flow":
