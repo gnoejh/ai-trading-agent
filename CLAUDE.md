@@ -161,7 +161,14 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
   test that builds the executor both ways. Restarted in session so the stops could fire the
   same hour. **Lesson worth the entry**: a routing value has to be validated against every
   host it will be sent to, and "paper" is a different host. The `kt00018` positions check in
-  config is now the one remaining unverified NXT assumption. 407 tests.
+  config is now the one remaining unverified NXT assumption. **Verified live at 12:15 KST**: the
+  fixed process's first KR pass sent four stop-loss sells with `dmst_stex_tp: KRX` and got order
+  numbers back — 010120, 005935, 004310, 024060 — the same names that had failed every pass
+  since morning. The price of the outage is in the fills: 024060 went at 13,880 against a
+  14,549.8 stop, 4.6% past it. Same pass, Binance: RAYUSDT — the first position adopted under
+  the vol-scaled stop — closed at 1.2535 on a stop that had ratcheted to 1.25557, above its
+  1.2415 entry: +0.97% gross, ≈+0.67% net, a trail exit the live journal labelled
+  `stop_loss` (a labelling nit, checked next). 407 tests.
 - **2026-09-17 (KR parity)** — **KR gets the same information as Binance, and it says the
   opposite thing.** Owner: "proceed." The KR model sleeve is the one that is positive, and its
   screen handed the model 24h change and a flow share. Hourly KR bars exist only in session, so
