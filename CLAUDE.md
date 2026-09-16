@@ -27,7 +27,41 @@ hand: the gate's two profit criteria are computed over ALL closed round trips wi
 attribution, so they can read green on money the RANDOM arm earned (they do today). Only the
 shadow/CI criterion currently separates that from a green gate.
 
-## Where things stand (2026-09-16, after the audit)
+## Where things stand (2026-09-17, after the overnight build)
+
+The 09-16 audit (next section) fixed the measurements. The overnight work of 09-17 gave the
+model the information an expert would want, **each piece validated over six months of
+cross-sections before it reached the prompt**, then verified live in the journal:
+
+- **Binance candidates carry 27 keys**: returns at 1h–7d and the same vs BTC, realised vol,
+  range position and distance from the week's high/low, volume surge, taker flow at two
+  horizons, perp funding, and `similar_setups` — the outcome of the 30 nearest resolved
+  cases. A `market_state` block (BTC's week, breadth) sits above the menu. What measured:
+  `range_pos_7d` decile +2.36% (CI +1.27..+3.77); funding decile +2.36% (CI +1.33..+3.47) with
+  the sign of **continuation**; the case memory's score spreads +5.08% (CI +0.90..+11.22);
+  BTC-up weeks +1.58% vs down −0.40% for the pool (diff +1.99%, CI +0.15..+4.09).
+- **KR candidates carry the daily equivalents** from the archive parquet, zero Kiwoom calls,
+  and KR's own priors — because KR **mean-reverts** at three sessions where crypto continues
+  (`ret_5d` decile −1.19%, CI −1.85..−0.55). The sign of a signal is not portable; a KR
+  prompt never sees crypto's deciles.
+- **Behaviour shipped on those measurements**: the random arm rolls at ¼ rate in BTC-down
+  weeks (regime journalled every cycle); stops are 2× the name's own daily vol, clamped
+  3–15%, on Binance and KR (KR's fixed 4% was the worst cell on its own grid); 14 selector
+  arms and the deep-tier second opinion run on the leaderboard.
+- **What the night did NOT find**: any single-name pick that beats a random draw from its
+  menu, on any venue, with a CI above zero; any menu filter that beats the pool with a CI
+  above zero (best: `funding>=0 & range>=0.5`, +0.70%, 45/76, CI −0.03..+1.49). Every "buy
+  the weakest" rule loses; decile effects are portfolio effects. Information is real; single-
+  name selection edge is still unproven, and the LLM is now measured with the tools to prove
+  it if it exists.
+- **Corrected in place**: a pooled exit-grid figure (+0.475% for vol×2) was KR's; on CRYPTO
+  alone vol×2 beats the fixed 8% by 0.2pp. Direction stood, size did not.
+
+The gate is unchanged at 4 of 5 — the model's edge +0.27%, CI straddling zero on 129 pairs.
+Instruments that will move it, all in `/status`: the screen control (from 09-19), the
+model's `since` row (~10 picks on the new menu), the leaderboard and `arm_llm_deep`.
+
+## Where things stand (2026-09-16, after the audit — superseded above)
 
 For two weeks the system measured the wrong things, and every hard verdict it reached —
 including the one blocking mainnet — was an artifact. Corrected, the picture is:
@@ -63,6 +97,19 @@ already does.
 
 Deadlines and owner-only moves, kept here because a newest-first log buries them.
 
+- **Confirm the KR evening session's shape.** Config runs KR 09:00–20:00 with a **15:20–15:40
+  break** for the KRX closing auction and the NXT changeover (owner, 2026-09-17: "KR is open
+  until 8pm at NXT"). If NXT trades continuously through that window, delete `breaks` under
+  `agent.sessions.KR` — one line. The `kt00018` check next to the positions endpoint in config
+  is still open: after the first evening fill, read positions under KRX and under NXT and
+  compare.
+- **Two measured candidates waiting on live confirmation, not on code.** The menu rule
+  `funding>=0 & range>=0.5` (+0.70% vs the pool, 45/76 sections, CI −0.03..+1.49) is the best
+  filter measured and stopped a hair short of the bar; the live screen control on the new menu
+  (from 09-19) is what would clear it. US daily features are built and off
+  (`screen.US.daily_features`), pending `feature_replay --venue US`.
+- **API spend roughly doubled with the second opinion** (≈2,800 KRW by 05:00 on a 6,000 cap).
+  Inside the ceiling; watch `/costs` for a day before assuming it stays there.
 - **The screen change needs its first reading (~72h, so from 2026-09-19).** Both venues now
   run `rank_by: sample` with the change band off. The instrument is the `screen control` line
   in `/status` and `uv run python -m trading.agent.promotion`: if the menu's excess does not
@@ -1216,7 +1263,7 @@ that was mostly committed cash, and the daily-loss cap reads the same number.
 
 ```
 uv sync                                   # create/refresh .venv from uv.lock
-uv run pytest                             # 350 tests, no network (httpx MockTransport)
+uv run pytest                             # 406 tests, no network (httpx MockTransport)
 uv run python scripts/wire_test.py        # dry run; --live sends ONE ~$6 order
 uv run pytest tests/test_risk_gate.py -k concentration
 uv run ruff check . --fix && uv run ruff format .
@@ -1234,6 +1281,12 @@ uv run python -m trading.agent.allocator  # the model's earned share of the book
 uv run python -m trading.agent.pnl        # daily realised P&L per sleeve (never pooled)
 uv run python -m trading.accounting.slippage  # re-measure the hurdle's slippage from the mainnet book
 uv run python -m trading.agent.screen_replay   # menu rules replayed over the backtest corpus (a prior)
+uv run python -m trading.agent.backfill_features       # path/RS features for every backtest observation (mainnet klines)
+uv run python -m trading.agent.backfill_funding        # perp funding at every backtest observation (fapi, one call/symbol)
+uv run python -m trading.agent.backfill_features_kr    # daily features for KR/US backtest observations (archive parquet)
+uv run python -m trading.agent.feature_replay [--venue KR|US]   # which features are information: deciles, pick arms, menus, regime
+uv run python -m trading.agent.similar [--build]       # case memory: validate (leave-the-future-out) or write the live index
+uv run python -m trading.agent.exit_eval [--market KR] # exit grid, incl. vol-scaled stops; read a venue ALONE before shipping
 ```
 
 Tests must stay hermetic: fixtures pin `use_testnet`, `allow_orders` and the risk limits rather than
