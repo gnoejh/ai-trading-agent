@@ -57,6 +57,11 @@ class MarketConfig(BaseModel):
     url_prefix: str
     # 국내거래소구분 sent on every order: KRX, NXT or SOR.
     exchange: str = "KRX"
+    # The route on the 모의투자 (mock) host, which does NOT support SOR: every
+    # paper sell after the 2026-09-15 switch to SOR failed with RC9000
+    # "모의투자에서는 해당업무가 제공되지 않습니다" -- 18 stop-losses in one morning,
+    # twelve positions with no working stop. Chosen when `paper(market)`.
+    exchange_paper: str = "KRX"
     state: StateEndpoints
     orders: OrderEndpoints
 

@@ -48,6 +48,12 @@ broker:
         # session. SOR lets the broker pick the venue that is open and better
         # priced, which is the only value correct at every hour of the new day.
         exchange: SOR
+        # 2026-09-16: the MOCK host rejects SOR (RC9000, "not provided in paper
+        # trading") -- 18 KR paper stop-loss sells failed in one morning, twelve
+        # positions with no working stop, the 09-04 failure class again. Paper
+        # orders route KRX; SOR stays for mainnet, where the evening venue
+        # exists. Verified against the paper account the same hour.
+        exchange_paper: KRX
         state:
           # UNVERIFIED AGAINST AN NXT FILL, and the one thing here that could go
           # quiet rather than loud: kt00018/kt00004 take KRX or NXT and offer no

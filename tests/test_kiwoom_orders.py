@@ -71,3 +71,24 @@ def test_cancel_routes_to_the_same_venue_the_order_used(executor):
     """
     body = executor.cancel("0000069", "039030", 41)["body"]
     assert body["dmst_stex_tp"] == executor.exchange == "SOR"
+
+
+def test_paper_orders_route_krx_because_the_mock_host_has_no_sor():
+    """18 KR paper stop-loss sells failed in one morning with RC9000 after the
+    route moved to SOR: the 모의투자 host does not provide it. Paper routes KRX;
+    mainnet keeps SOR, where the evening venue exists. Cancel follows the same
+    field, so a paper cancel can reach a paper order."""
+    cfg = load_config()
+    client = SimpleNamespace(market="KR", store=SimpleNamespace(get=lambda api_id: _Spec()))
+    cfg.broker.kiwoom.use_testnet = True
+    cfg.broker.kiwoom.allow_orders = True
+    cfg.broker.kiwoom.paper_markets = ["KR"]
+    paper = OrderExecutor(client, gate=None, cfg=cfg, dry_run=True)
+    assert paper.exchange == "KRX"
+    assert paper._body(_exit(41.0))["dmst_stex_tp"] == "KRX"
+    assert paper.cancel("1", "039030", 41)["body"]["dmst_stex_tp"] == "KRX"
+
+    cfg.broker.kiwoom.use_testnet = False
+    cfg.broker.kiwoom.allow_orders = False
+    live = OrderExecutor(client, gate=None, cfg=cfg, dry_run=True)
+    assert live.exchange == "SOR"

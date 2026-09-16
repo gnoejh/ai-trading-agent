@@ -145,6 +145,23 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-17 (KR paper exits)** — **The mock host has no SOR, and every KR paper stop since
+  the routing change had failed.** Found in the KR journal while verifying the daily features:
+  **18 `exit_order_failed` rows this morning, 47 since 09-15**, every one `kt10001: RC9000
+  모의투자에서는 해당업무가 제공되지 않습니다` — "not provided in paper trading." The 09-15 change
+  moved KR order routing `KRX → SOR` so evening orders could reach NXT on mainnet; the 모의투자
+  host rejects SOR outright. Zero KR buys had gone through since (the explore roll never
+  reached an order), so the damage was bounded to what was already held: **twelve paper
+  positions with no working stop**, one (024060) already 4% through its stop when found. This
+  is the 09-04 defect's shape exactly — a correct component called with an argument one host
+  cannot serve — and it survived because the change landed after the close both nights and
+  the first live evidence was this morning's failures. Fix: `MarketConfig.exchange_paper: KRX`,
+  chosen by `OrderExecutor` when `paper(market)` is true (the same predicate that already
+  scopes the mock host), SOR kept for mainnet; `cancel` follows the same field. Pinned by a
+  test that builds the executor both ways. Restarted in session so the stops could fire the
+  same hour. **Lesson worth the entry**: a routing value has to be validated against every
+  host it will be sent to, and "paper" is a different host. The `kt00018` positions check in
+  config is now the one remaining unverified NXT assumption. 407 tests.
 - **2026-09-17 (KR parity)** — **KR gets the same information as Binance, and it says the
   opposite thing.** Owner: "proceed." The KR model sleeve is the one that is positive, and its
   screen handed the model 24h change and a flow share. Hourly KR bars exist only in session, so

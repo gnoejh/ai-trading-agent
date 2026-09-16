@@ -42,7 +42,12 @@ class OrderExecutor:
         self.gate = gate
         market_cfg = self.cfg.broker.kiwoom.market(client.market)
         self.orders = market_cfg.orders
-        self.exchange = market_cfg.exchange
+        # Paper and mainnet route differently: the mock host has no SOR.
+        self.exchange = (
+            market_cfg.exchange_paper
+            if self.cfg.broker.kiwoom.paper(client.market)
+            else market_cfg.exchange
+        )
         self.dry_run = self.cfg.agent.dry_run if dry_run is None else dry_run
         self._universe = None
 
