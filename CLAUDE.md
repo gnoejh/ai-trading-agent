@@ -67,7 +67,12 @@ cross-sections before it reached the prompt**, then verified live in the journal
   5d/20d extension"). It still declines on its KR self-record; the `since` row lifts that as
   featured picks resolve.
 
-The gate is unchanged at 4 of 5 — the model's edge +0.27%, CI straddling zero on 129 pairs.
+- **Found the same evening**: the deterministic `sample` ranker froze the KR menu and the
+  symbol-only decide fingerprint then skipped the model all day (1 decision in 33 cycles,
+  the evening session included). The fingerprint now sees prices; the API budget is 9,000
+  KRW with 1,500 held for US, which the shared ceiling had starved on 09-16.
+
+The gate reads 4 of 5 — edge +0.03%, CI −2.02..+2.02 on 162 pairs (22:40 KST).
 Instruments that will move it, all in `/status`: the screen control (from 09-19), the
 model's `since` row (~10 picks on the new menu), the leaderboard and `arm_llm_deep`.
 
@@ -140,7 +145,9 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
   changed with it (rankers to 통합, orders to SOR) and none of it has run against a real
   evening tape — it landed at 21:03 KST on 2026-09-15, after the close. Two things to look at
   on the first evening: does the 15:40–20:00 menu actually differ from the 15:20 one (if the
-  rankers still return a frozen tape, `stex_tp: "3"` is not doing what the workbook says), and
+  rankers still return a frozen tape, `stex_tp: "3"` is not doing what the workbook says —
+  NOTE 09-17: identical menus were NOT evidence either way while the fingerprint was
+  symbols-only under the deterministic `sample` stride; readable from 09-18), and
   the `kt00018` comparison written next to the value in config — a KRX-scoped positions read
   that hides an NXT fill leaves that position with no stop, quietly.
 - **The KR paper account expires 2026-12-01.** That is the hard deadline for a KR verdict.
@@ -155,6 +162,33 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-17 (evening: fingerprint + budget)** — **The KR model was asked ONCE in 33 cycles,
+  and the second opinion starved US.** Found in the 22:40 KST status review. (1) KR decisions
+  per day: 15 (09-15) → 4 (09-16) → 1 (09-17); skips 6 → 32 → 32; zero KR entries in two days.
+  `skip_decide_if_unchanged` fingerprinted the ORDERED SYMBOL TUPLE. Under `rank_by: flow` the
+  KR order jittered every cycle, so the guard only ever let cycles through on ranking noise;
+  the deterministic `sample` stride (09-16) returned a byte-identical 16–18-name menu all day
+  — confirmed from the journalled menus (09-16 00:18→03:48 identical) — so the model was
+  skipped every cycle, the whole 15:40–20:00 evening session included, while every price on
+  the menu moved. Binance never noticed (its menu churns: 4 skips in 43 cycles). Same class as
+  09-04 and the KR SOR outage: a correct guard, an argument whose meaning changed under it.
+  Fix: `loop.menu_fingerprint` = ordered symbols + each name's price bucketed at
+  `agent.fingerprint_price_step_pct` (0.5%, log-spaced); a cycle skips only when no name has
+  moved that much since the last decision, which is the claim the guard always made. 0
+  restores symbols-only. Skip rows carry a `detail`. Cost: a few flash calls/day on KR.
+  **Consequence for the open `stex_tp` check**: an identical evening menu was NOT evidence of
+  a frozen tape — the stride is deterministic either way — and the check was confounded until
+  now; from tomorrow the 15:40 menu is journalled whenever prices move, so the comparison can
+  actually be made. (2) 09-16 API spend hit exactly 6,000 KRW at 19:06 UTC and the last four
+  US cycles died `api budget`; the second opinion is ~88% of spend (v4-pro 3,170 KRW on 42
+  calls vs flash 430 on 40, 09-17). `max_api_krw_per_day` 6,000 → 9,000 and
+  `accounting.api_reserve_krw: {US: 1500}`: `api_ceiling_for(market)` = budget − every OTHER
+  venue's reserve, read by the loop for its own venue (Binance/KR stop at 7,500, US runs to
+  9,000). A reserve that swallows the budget is refused at load, because a 0 ceiling means
+  UNLIMITED downstream. Rendered in `/status` and `/costs`. Also read tonight, unchanged by
+  this entry: CRYPTO · model +0.35%/trip n=93 (30 trips today at +2.38% carry it; +315 USD
+  over the prior 63), KR · model −0.27% n=22, gate 4 of 5 (edge +0.03%, CI −2.02..+2.02,
+  n=162), `ExitReason.TRAIL` seen live (SOLUSDT, stop raised 94.00 → 100.71). 421 tests.
 - **2026-09-17 (trail label)** — **`ExitReason.TRAIL` existed and was never emitted.** Every
   stop hit was journalled `stop_loss`, including RAYUSDT's this morning, which closed ABOVE
   entry on a stop that had ratcheted there. `exit_eval` had separated trails from stops all
@@ -1310,7 +1344,7 @@ that was mostly committed cash, and the daily-loss cap reads the same number.
 
 ```
 uv sync                                   # create/refresh .venv from uv.lock
-uv run pytest                             # 410 tests, no network (httpx MockTransport)
+uv run pytest                             # 421 tests, no network (httpx MockTransport)
 uv run python scripts/wire_test.py        # dry run; --live sends ONE ~$6 order
 uv run pytest tests/test_risk_gate.py -k concentration
 uv run ruff check . --fix && uv run ruff format .

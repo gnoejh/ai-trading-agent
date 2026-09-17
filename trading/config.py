@@ -13,7 +13,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import yaml
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 CONFIG_PATH = Path("config.yaml")
@@ -185,12 +185,40 @@ class AccountingConfig(BaseModel):
     ledger: str = "data/ledger.jsonl"
     slippage_probe: SlippageProbeConfig = Field(default_factory=SlippageProbeConfig)
     max_api_krw_per_day: float = 0.0
+    # KRW of the daily budget held back for a venue, by market. The budget
+    # day is UTC and the US session is its last 6.5 hours, so with one
+    # shared ceiling the tail venue is the only one that ever starves. A
+    # venue's own reserve never lowers its own ceiling.
+    api_reserve_krw: dict[str, float] = Field(default_factory=dict)
     fees: FeeConfig = Field(default_factory=FeeConfig)
     # Venues differ structurally, not just numerically: KR pays a 0.15% transaction
     # tax on sells that Binance does not, so one shared fee model would misprice
     # every break-even on one venue or the other.
     market_fees: dict[str, FeeConfig] = Field(default_factory=dict)
     report_currency: str = "KRW"
+
+    @model_validator(mode="after")
+    def _reserves_fit_inside_the_budget(self):
+        # A ceiling of 0 means UNLIMITED to the loop, so reserves that sum to
+        # the budget or past it would silently un-cap every other venue --
+        # the opposite of what a reserve is for. Refuse the config instead.
+        budget = float(self.max_api_krw_per_day or 0.0)
+        held = sum(float(v) for v in self.api_reserve_krw.values())
+        if budget and held >= budget:
+            raise ValueError(
+                f"api_reserve_krw holds {held:,.0f} of a {budget:,.0f} KRW budget; "
+                "the other venues would have no ceiling at all"
+            )
+        return self
+
+    def api_ceiling_for(self, market: str | None = None) -> float:
+        """The API spend at which THIS venue stops deciding: the daily budget
+        less every OTHER venue's reserve. 0 (no budget) stays 0 = unlimited."""
+        budget = float(self.max_api_krw_per_day or 0.0)
+        if not budget:
+            return 0.0
+        held = sum(float(v) for k, v in self.api_reserve_krw.items() if str(k) != str(market))
+        return max(budget - held, 0.0)
 
     def fees_for(self, market: str | None = None) -> FeeConfig:
         if market and str(market) in self.market_fees:
@@ -563,6 +591,11 @@ class AgentConfig(BaseModel):
     dry_run: bool = True
     loop_interval_s: float = 900.0
     skip_decide_if_unchanged: bool = True
+    # What "unchanged" means. The fingerprint is the ordered menu plus each
+    # name's price bucketed at this relative step; 0 means symbols only (the
+    # pre-2026-09-17 behaviour, which froze KR for two days under the
+    # deterministic `sample` ranker -- see menu_fingerprint in loop.py).
+    fingerprint_price_step_pct: float = 0.5
     # MEASUREMENT IS DECOUPLED FROM EXECUTION: with every slot full the model is
     # still asked, its virtual pick and the shadow pick are still journalled,
     # and only execution is withheld. Before this a full book skipped the

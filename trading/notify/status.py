@@ -179,11 +179,16 @@ class BinanceStatusReporter:
             if budget:
                 used += f" — {day.api_krw / budget:.0%} of {budget:,.0f} KRW budget"
             lines.append(f"  {used}")
+            reserves = self.cfg.accounting.api_reserve_krw
+            if budget and reserves:
+                held = ", ".join(f"{v:,.0f} for {k}" for k, v in sorted(reserves.items()))
+                ceiling = self.cfg.accounting.api_ceiling_for("BINANCE")
+                lines.append(f"  reserved: {held} — Binance stops at {ceiling:,.0f}")
             for model, m in sorted(self.ledger.llm_by_model().items()):
                 lines.append(
                     f"  {model}: {m['calls']} calls · {m['tokens']:,} tokens · {m['krw']:,.1f} KRW"
                 )
-            if budget and day.api_krw >= budget:
+            if budget and day.api_krw >= self.cfg.accounting.api_ceiling_for("BINANCE"):
                 lines.append(
                     "  ⚠️ budget spent — deciding is paused until tomorrow; exits still run"
                 )

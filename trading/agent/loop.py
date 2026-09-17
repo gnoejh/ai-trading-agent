@@ -17,6 +17,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
+import math
 import random
 import re
 import time
@@ -230,6 +231,40 @@ class CycleResult:
         )
 
 
+def menu_fingerprint(
+    candidates: list[dict], price_step_pct: float
+) -> tuple[tuple[str, int | None], ...]:
+    """What a cycle is compared against to decide whether the model is asked.
+
+    The old fingerprint was the ordered tuple of SYMBOLS. That guard only ever
+    let cycles through on ranking jitter: under `rank_by: flow` the KR order
+    shuffled every cycle (15 decisions/day), and the moment the deterministic
+    `sample` stride shipped (2026-09-16) the KR menu was byte-identical all
+    day -- one decision in 33 cycles, the whole evening session included --
+    while every price on it moved. Binance never noticed because its menu
+    churns. So the fingerprint now carries each name's price bucketed at
+    `price_step_pct` (relative, log-spaced): a cycle is skipped only when no
+    name has moved that much since the last decision, which is the claim the
+    guard was always making. A missing price buckets as None (compares
+    equal to itself, so an unpriced menu still dedups). Step 0 restores the
+    symbols-only behaviour.
+    """
+    step = float(price_step_pct or 0.0)
+    out: list[tuple[str, int | None]] = []
+    for c in candidates:
+        bucket: int | None = None
+        price = c.get("price")
+        if step > 0 and price:
+            try:
+                p = float(price)
+                if p > 0:
+                    bucket = math.floor(math.log(p) / math.log1p(step / 100.0))
+            except (TypeError, ValueError):
+                bucket = None
+        out.append((str(c["symbol"]), bucket))
+    return tuple(out)
+
+
 class TradingAgent:
     def __init__(
         self,
@@ -279,7 +314,7 @@ class TradingAgent:
         if self._prior:
             log.info("%s", self._prior.describe())
         self.telegram = notifier or TelegramNotifier()
-        self._last_fingerprint: tuple[str, ...] | None = None
+        self._last_fingerprint: tuple[tuple[str, int | None], ...] | None = None
         # Symbols this process has traded today -- Binance's myTrades needs a
         # symbol, so P&L is only queried where something actually happened.
         self._traded_symbols: set[str] = set()
@@ -986,16 +1021,28 @@ class TradingAgent:
 
         # Two spend guards before the expensive step. A decision cycle costs real
         # money (~47 KRW measured), so it must be worth making.
-        budget = self.cfg.accounting.max_api_krw_per_day
+        # The ceiling is PER VENUE: the budget less what is held for the
+        # others. The budget day is UTC and the US session is its tail, so a
+        # single shared ceiling starved US alone (4 cycles on 2026-09-16).
+        budget = self.cfg.accounting.api_ceiling_for(self.market)
         if budget and self.ledger.day().api_krw >= budget:
             result.errors.append(f"daily API budget {budget:,.0f} KRW exhausted")
-            self.journal.write("cycle_skipped", reason="api budget")
+            self.journal.write("cycle_skipped", reason="api budget", ceiling_krw=budget)
             return result
 
-        fingerprint = tuple(c["symbol"] for c in observation["candidates"])
+        fingerprint = menu_fingerprint(
+            observation["candidates"], self.acfg.fingerprint_price_step_pct
+        )
         if self.acfg.skip_decide_if_unchanged and fingerprint == self._last_fingerprint:
             log.info("candidate set unchanged; skipping the model")
-            self.journal.write("cycle_skipped", reason="unchanged candidates")
+            self.journal.write(
+                "cycle_skipped",
+                reason="unchanged candidates",
+                detail=(
+                    f"{len(fingerprint)} names, no price moved"
+                    f" {self.acfg.fingerprint_price_step_pct:g}%"
+                ),
+            )
             return result
         self._last_fingerprint = fingerprint
 

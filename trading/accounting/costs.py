@@ -377,6 +377,8 @@ class CostLedger:
                 f"  API budget   : {c.api_krw:,.1f} / {budget:,.0f} KRW"
                 f" ({c.api_krw / budget:.0%} used — deciding stops when spent)"
             )
+            for venue, held in sorted(self.acc.api_reserve_krw.items()):
+                lines.append(f"    {held:,.0f} KRW held for {venue}")
         lines += [
             f"  Trading fees : {c.trade_fees_krw:>12,.0f} KRW  {fee_detail}",
             f"  Total cost   : {c.total_cost_krw:>12,.0f} KRW",

@@ -257,7 +257,19 @@ accounting:
   # 2026-09-02: DeepSeek is cheap, the budget must be enough). It stays enforced,
   # not advisory — a runaway 60s loop would still cost ~36,000 KRW/day, and the
   # agent stops deciding when the budget is spent.
-  max_api_krw_per_day: 6000
+  # 2026-09-17: 6,000 -> 9,000 and a reserve for US. The second opinion
+  # (v4-pro, ~3x flash per call) took spend from 3,817 to exactly 6,000 KRW
+  # on 2026-09-16 -- the cap bound at 19:06 UTC and the last four US cycles
+  # died "api budget". US is the venue with the best paired reading and has
+  # no random arm to fall back on, so starving it is a bias, not a saving.
+  # 9,000 KRW is ~$6.50/day against ~114x that in trading fees. The reserve
+  # is what fixes the GEOMETRY: Binance and KR stop at budget - 1,500, US
+  # runs to the full budget. Held all day, including after the US close --
+  # the four hours between 20:00 UTC and the reset are the price of not
+  # wiring session times into the ledger.
+  max_api_krw_per_day: 9000
+  api_reserve_krw:
+    US: 1500
   # Default when a ledger row's market has no entry below. Matches the worse
   # Binance book so an unknown market can never understate its hurdle.
   fees:
@@ -748,6 +760,14 @@ agent:
   # Skip the model entirely when the screen output has not materially changed --
   # re-deciding on an identical candidate set buys nothing and costs tokens.
   skip_decide_if_unchanged: true
+  # 2026-09-17: "unchanged" is symbols AND prices. The old fingerprint was the
+  # ordered symbol list, so under the deterministic `sample` ranker the KR
+  # menu read identical all day and the model was asked ONCE in 33 cycles
+  # (15/day before; the evening session never produced a decision). A cycle
+  # now skips only when no name on the menu has moved this much since the
+  # last decision. 0 = symbols only (the old behaviour). Cost: a few more
+  # flash calls per day on KR in quiet hours, ~50 KRW.
+  fingerprint_price_step_pct: 0.5
   # MEASUREMENT DECOUPLED FROM EXECUTION (2026-09-03): a full book still asks
   # the model and journals the virtual + shadow picks; only execution is
   # withheld. The first epoch day skipped 62 cycles as "no free slots" and
