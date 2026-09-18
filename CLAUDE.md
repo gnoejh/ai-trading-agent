@@ -80,9 +80,12 @@ sleeve has produced.
 - **The model was not being shown a quarter of its menu, or its account at all.** Since
   2026-09-16 on Binance and 09-18 on KR the decide payload overflowed a blind 20,000-char slice:
   19 of 25 candidates arrived, `cash`/`holdings`/`open_orders` did not, and the JSON ended
-  mid-token. Silently — zero of 173 decisions complained. Fixed 09-19 (the payload now fits by
-  construction and the menu is the only thing that gives); **every edge number measured on
-  decisions from 09-16 to 09-19 was taken on a crippled prompt.**
+  mid-token. Silently — zero of 173 decisions complained. **Every edge number measured on
+  decisions from 09-16 to 09-19 was taken on a crippled prompt.** Fixed the same day, in two
+  steps: first the payload was made to fit by trimming the menu, then — on the owner's push that
+  incomplete input must be *solved*, not bounded — trimming was removed entirely and an
+  over-size payload now REFUSES to decide (invariant #4). Verified live 19:46 UTC: 25 of 25
+  candidates, 23,995 chars against a 32,000 ceiling, zero refusals and zero warnings.
 - **Confidence carries nothing.** It looked like it anti-predicted monotonically; the shadow
   moves the same way on the same cycles and the correlation is −0.007 on n=165. Flat, not
   inverted, and not a filter. Run every conditional split against the shadow before
@@ -91,6 +94,13 @@ sleeve has produced.
 
 The gate reads 4 of 5 — edge +0.10%, CI −2.08..+2.19 on 174 pairs; under the contract
 +0.16%, CI −1.13..+1.44.
+
+**The two decisions this section exists to surface**, both deliberately left to the owner and
+both better made on the 09-28 reading than on today's: (1) whether the gate's blocking criterion
+should grade the exit contract rather than the 72h hold, and (2) whether the allocator's
+`edge_score` should read the same. The evidence for both is rendered in `/status` and
+`uv run python -m trading.agent.promotion`; neither was changed on the owner's behalf, because a
+change that hands the model more capital must not be one the agent made for it.
 
 ## Where things stand (2026-09-17, after the overnight build — superseded above)
 
