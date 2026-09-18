@@ -50,14 +50,31 @@ sleeve has produced.
   against −1.03%/trip on 09-13. The random arm still earns 85% of the book's money
   (+6,598.56, +0.81%/trip), so selection is still unproven — but the model is no longer
   destroying value on the venue that matters.
-- **KR is the sleeve that needs a DECISION, not more instruments.** Model −500,294 KRW,
-  −0.25%/trip on n=23, and the arithmetic says why: gross **+429,625 KRW against 929,919 of
-  fees**. The picks are gross-positive and fee-negative, on a menu whose own control still
-  costs 1.94%. The paper account expires **2026-12-01**.
+- **KR's model sleeve loses to its MENU, not to its picks — and not to fees.** Written here
+  first as "gross-positive and fee-negative", which pointed at the wrong thing; decomposed the
+  same day it is unambiguous. Excess vs the KR benchmark, by source:
+
+      model  (picks FROM the menu)                n=109   -1.25%   median -0.76%
+      shadow (a random draw FROM the menu)        n=109   -0.99%   median -0.81%
+      random (drawn from the POOL, outside it)    n= 63   +0.93%   median +0.05%
+
+  **Model ≈ shadow, and both lose ~2pp to a draw from outside the screen.** The model picks
+  about as well as chance *within* the menu it is handed; the menu is what loses. Fees are a
+  red herring — both arms pay the identical 0.280% hurdle, and the gross gap (+0.129%/trip
+  model vs +0.587% random) is the same menu effect measured in money. So the KR lever is the
+  KR SCREEN, which was already changed on 09-16 and has cut the menu penalty 1.94% → 0.62%
+  windowed. Nothing to decide until that reading has n; the thing to watch is the KR `screen
+  control` line, windowed by open date, not the KR sleeve's P&L. The paper account expires
+  **2026-12-01**, which is the real deadline on the whole question.
 - **The whole 174-pair record predates the 09-16 audit.** At a 72h horizon the first
   decisions taken under the regraded calibration, the `sample` menu and the 09-17 features
   resolve from 09-19. The gate is currently describing a model that no longer exists, so
-  read every edge number below as history until that turns over.
+  read every edge number below as history until that turns over. **How long**: on 09-18, the
+  first full day with every fix in force, the three venues took 45/28/17 decisions carrying a
+  shadow pick, and the measured de-overlap yield (9%/36%/24%) puts that at **~18 independent
+  pairs a day** — n=100 around **09-24**, a corpus the size of today's around **09-29**. Read
+  those as an upper bound on speed: KR's yield will FALL as its decision rate rises, because a
+  16-name menu asked 28 times a day repeats itself.
 - **Confidence carries nothing.** It looked like it anti-predicted monotonically; the shadow
   moves the same way on the same cycles and the correlation is −0.007 on n=165. Flat, not
   inverted, and not a filter. Run every conditional split against the shadow before
