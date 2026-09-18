@@ -72,9 +72,17 @@ sleeve has produced.
   read every edge number below as history until that turns over. **How long**: on 09-18, the
   first full day with every fix in force, the three venues took 45/28/17 decisions carrying a
   shadow pick, and the measured de-overlap yield (9%/36%/24%) puts that at **~18 independent
-  pairs a day** — n=100 around **09-24**, a corpus the size of today's around **09-29**. Read
-  those as an upper bound on speed: KR's yield will FALL as its decision rate rises, because a
-  16-name menu asked 28 times a day repeats itself.
+  pairs a day**. Read that as an upper bound on speed: KR's yield will FALL as its decision rate
+  rises, because a 16-name menu asked 28 times a day repeats itself. **Revised the same day**:
+  the decisions from 09-16 onward were ALSO taken on a truncated payload (next bullet), so that
+  corpus is contaminated too and the clock starts at the 09-19 restart — **n=100 informed pairs
+  readable around 2026-09-28**.
+- **The model was not being shown a quarter of its menu, or its account at all.** Since
+  2026-09-16 on Binance and 09-18 on KR the decide payload overflowed a blind 20,000-char slice:
+  19 of 25 candidates arrived, `cash`/`holdings`/`open_orders` did not, and the JSON ended
+  mid-token. Silently — zero of 173 decisions complained. Fixed 09-19 (the payload now fits by
+  construction and the menu is the only thing that gives); **every edge number measured on
+  decisions from 09-16 to 09-19 was taken on a crippled prompt.**
 - **Confidence carries nothing.** It looked like it anti-predicted monotonically; the shadow
   moves the same way on the same cycles and the correlation is −0.007 on n=165. Flat, not
   inverted, and not a filter. Run every conditional split against the shadow before
@@ -230,6 +238,55 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-19 (the model was not being shown the menu, or the account)** — **The 08-30
+  truncation defect, a second time, and this time it was silent.** Owner, unprompted: *"I think
+  model does not get info enough, when it does not perform well. Am I wrong?"* Not wrong —
+  mechanically right. `_decide_payload` ended in a literal `json.dumps(...)[:20000]`. The 08-30
+  incident had already been this bug: the raw positions snapshot pushed the payload past that
+  guard and cut `trade_rules` off the END, and the fix moved the critical fields to the FRONT so
+  truncation would "eat detail, never the contract". **What that left in the tail was `cash`,
+  `holdings`, `open_orders` — and the tail of the candidate list.** Then the 09-17 features
+  tripled the candidate block. Measured from the live journal:
+
+      venue     payload   guard    what the model actually received
+      BINANCE   24,013    20,000   19 of 25 candidates; NO cash, holdings or open orders
+      KR        21,100    20,000   23 of 24 candidates; same loss
+      US        10,293    20,000   everything
+
+  **Binance has been overflowing on 100% of cycles since 2026-09-16** (18% on 09-15), KR since
+  09-18 — the day the fingerprint fix restored its decision rate and the daily features grew its
+  menu back. So the answer to "does the model get enough information" is that **since the night
+  its information was tripled, a quarter of the menu and the entire account state stopped
+  arriving**, and a string slice on JSON cuts mid-token, so what did arrive ended malformed.
+  **Zero of 173 decisions complained** — worse than 08-30, where the model at least said
+  "trade_rules not supplied" because the system prompt names that field by name. Nothing names
+  `cash`. This is the repo's own thesis a fifth time: the components were right, the wiring was
+  not, and no unit test touches a seam.
+  **Fixed by construction, not by a bigger number.** `_fit_payload` serialises, and while the
+  result is over the ceiling it drops candidates from the TAIL (the screen orders the menu, so
+  the lowest-ranked go first) and re-renders. The output is therefore ALWAYS valid JSON, and
+  `trade_rules`, the measured record and the account state are never what gets sacrificed — the
+  menu is the only elastic part, and it degrades gracefully with a WARNING instead of silently.
+  `agent.max_payload_chars: 32000` replaces the literal (invariant #2: it was a hardcoded
+  parameter as well as a bug); at 32,000 all three venues fit today with ~8,000 chars of
+  headroom, and 0 disables the ceiling. Cost: Binance decide prompts go 20,000 → 24,013 chars,
+  about +20% of prompt tokens on the decide and second-opinion calls — a few hundred KRW/day
+  against the 9,000 ceiling. `/costs` is the instrument.
+  **Second defect, found because the first one implied it**: `_shadow_pick`'s docstring says
+  "a random symbol from the same shortlist the model saw", and while the payload was being
+  sliced that was **false** — the shadow drew from all 25 names while the model chose from 19.
+  The gate's only blocking criterion was therefore giving the CONTROL a wider choice set than
+  the arm under test, for three days. It now draws from `_menu_shown`, the menu that survived
+  the ceiling, and falls back to the full list when no payload was built.
+  **What this does to the wait.** Yesterday's note said the first trustworthy pairs resolve from
+  09-19, once decisions taken under the regraded calibration and the new menu came in. That was
+  wrong in one direction: every decision from 09-16 onward was ALSO taken on a truncated
+  payload, so the corpus now resolving is contaminated too. **The clock for a model that can see
+  its own menu and its own account starts at this restart.** At ~18 independent pairs/day and a
+  72h horizon, n=100 informed pairs is readable around **2026-09-28**, not 09-24.
+  Nine tests pin it, the ones that matter being that the payload is always parseable JSON, that
+  `cash`/`holdings`/`trade_rules` survive a squeeze that removes most of the menu, and that the
+  shadow can never draw a name the model was not shown. 443 tests.
 - **2026-09-19 (the gate was grading the wrong event)** — **The one criterion that decides
   mainnet compares a 72h buy-and-hold. Nothing in this system is held that way.** Owner: "find
   any smoking gun or enhance the system to get profit on model." `_pairs` scored model against
@@ -1490,7 +1547,7 @@ that was mostly committed cash, and the daily-loss cap reads the same number.
 
 ```
 uv sync                                   # create/refresh .venv from uv.lock
-uv run pytest                             # 434 tests, no network (httpx MockTransport)
+uv run pytest                             # 443 tests, no network (httpx MockTransport)
 uv run python scripts/wire_test.py        # dry run; --live sends ONE ~$6 order
 uv run pytest tests/test_risk_gate.py -k concentration
 uv run ruff check . --fix && uv run ruff format .

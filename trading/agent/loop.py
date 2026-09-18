@@ -416,60 +416,105 @@ class TradingAgent:
             for s, h in observation["holdings"].items()
             if float(h.get("cost_basis") or 0) > 0
         }
-        return json.dumps(
-            {
-                # Critical fields FIRST: if the payload ever overflows the guard
-                # again, truncation must eat detail, never the contract.
-                #
-                # The payoff structure the pick will actually be held to. Without
-                # this the model is asked "which is good?" when the real question
-                # is "which reaches +X% before -Y% within Z minutes, net of costs?"
-                # -- a different and far more answerable question.
-                "trade_rules": self._trade_rules(),
-                # 0 means UNLIMITED to the gate, but a model shown a bare 0 reads
-                # it as "nothing is allowed" and declines to trade. Observed live
-                # 2026-08-10: "risk limits are all zero, making any order likely to
-                # be rejected". Render the meaning, never the raw sentinel.
-                "limits": _describe_limits(self.cfg.risk),
-                # The system's own measured record (the experience RAG). Renders
-                # only buckets that cleared the sample-size gate; absent entirely
-                # while the store is unfilled -- silence, never fabricated priors.
-                **(
-                    {"measured_record": record}
-                    if (record := experience_block(self.cfg, venue=str(self.market)))
-                    else {}
-                ),
-                **({"fitted_prior": self._prior.describe()} if self._prior else {}),
-                # The market state, once, above the menu: BTC's own path and
-                # breadth. The first question is whether to be long anything;
-                # the menu only ever asked the second.
-                **(
-                    {"market_state": state}
-                    if (
-                        state := next(
-                            (
-                                c.get("market_state")
-                                for c in observation["candidates"]
-                                if c.get("market_state")
-                            ),
-                            None,
-                        )
+        body = {
+            # Critical fields FIRST: if the payload ever overflows the guard
+            # again, truncation must eat detail, never the contract.
+            #
+            # The payoff structure the pick will actually be held to. Without
+            # this the model is asked "which is good?" when the real question
+            # is "which reaches +X% before -Y% within Z minutes, net of costs?"
+            # -- a different and far more answerable question.
+            "trade_rules": self._trade_rules(),
+            # 0 means UNLIMITED to the gate, but a model shown a bare 0 reads
+            # it as "nothing is allowed" and declines to trade. Observed live
+            # 2026-08-10: "risk limits are all zero, making any order likely to
+            # be rejected". Render the meaning, never the raw sentinel.
+            "limits": _describe_limits(self.cfg.risk),
+            # The system's own measured record (the experience RAG). Renders
+            # only buckets that cleared the sample-size gate; absent entirely
+            # while the store is unfilled -- silence, never fabricated priors.
+            **(
+                {"measured_record": record}
+                if (record := experience_block(self.cfg, venue=str(self.market)))
+                else {}
+            ),
+            **({"fitted_prior": self._prior.describe()} if self._prior else {}),
+            # The market state, once, above the menu: BTC's own path and
+            # breadth. The first question is whether to be long anything;
+            # the menu only ever asked the second.
+            **(
+                {"market_state": state}
+                if (
+                    state := next(
+                        (
+                            c.get("market_state")
+                            for c in observation["candidates"]
+                            if c.get("market_state")
+                        ),
+                        None,
                     )
-                    else {}
-                ),
-                "candidates": [
-                    {k: v for k, v in c.items() if k != "market_state"}
-                    for c in observation["candidates"]
-                ],
-                "cash": {k: v for k, v in snap.cash.items() if not isinstance(v, list | dict)},
-                "holdings": held,
-                "unmanaged_balances": len(observation["holdings"]) - len(held),
-                "open_orders": snap.open_orders,
-                **({"quotes": compact_quotes} if compact_quotes else {}),
-            },
-            ensure_ascii=False,
-            default=str,
-        )[:20000]
+                )
+                else {}
+            ),
+            "candidates": [
+                {k: v for k, v in c.items() if k != "market_state"}
+                for c in observation["candidates"]
+            ],
+            "cash": {k: v for k, v in snap.cash.items() if not isinstance(v, list | dict)},
+            "holdings": held,
+            "unmanaged_balances": len(observation["holdings"]) - len(held),
+            "open_orders": snap.open_orders,
+            **({"quotes": compact_quotes} if compact_quotes else {}),
+        }
+        return self._fit_payload(body)
+
+    def _fit_payload(self, body: dict) -> str:
+        """Serialise the decide payload so that it FITS -- never a blind slice.
+
+        The old guard was `json.dumps(...)[:20000]`. A string slice on JSON cuts
+        mid-token, so the model was handed malformed JSON; and it removes
+        whatever serialises LAST, which after the 08-30 reordering is `cash`,
+        `holdings` and `open_orders`. Measured 2026-09-18, the Binance payload
+        was 24,013 chars against that 20,000 guard: **every cycle since
+        2026-09-16 lost 6 of its 25 candidates and its entire account state**,
+        with no warning in the journal and no complaint from the model -- which
+        is worse than the 08-30 incident, where the model at least said
+        "trade_rules not supplied" because the system prompt named the field.
+
+        The menu is the only elastic part of the payload, so it is what gives:
+        candidates are dropped from the TAIL (the screen orders them, so the
+        lowest-ranked go first) until the whole thing fits. The result is always
+        valid JSON, and `trade_rules`, the measured record and the account state
+        are never the things sacrificed.
+
+        The trimmed menu is recorded on `self._menu_shown` because the SHADOW
+        must draw from what the model actually saw. Drawing from the full list
+        while the model chose from a subset makes the gate's own comparison
+        unfair to the model -- which is exactly what has been happening.
+        """
+        cap = int(self.acfg.max_payload_chars or 0)
+
+        def render(b: dict) -> str:
+            return json.dumps(b, ensure_ascii=False, default=str)
+
+        text = render(body)
+        self._menu_shown = [c.get("symbol") for c in body.get("candidates", [])]
+        if cap <= 0 or len(text) <= cap:
+            return text
+
+        candidates = list(body.get("candidates") or [])
+        while candidates and len(text) > cap:
+            candidates.pop()
+            body = {**body, "candidates": candidates}
+            text = render(body)
+        self._menu_shown = [c.get("symbol") for c in candidates]
+        log.warning(
+            "decide payload over %d chars; menu trimmed to %d candidates (%d chars)",
+            cap,
+            len(candidates),
+            len(text),
+        )
+        return text
 
     def _trade_rules(self) -> dict:
         return build_trade_rules(self.cfg, str(self.market), self.ledger)
@@ -815,7 +860,18 @@ class TradingAgent:
         baseline resolved over the identical menu and horizon.
         """
         held = self._managed_symbols(observation["holdings"], observation["prices"])
-        symbols = [c["symbol"] for c in observation["candidates"] if c["symbol"] not in held]
+        # `_menu_shown` is the menu that SURVIVED the payload ceiling. Drawing
+        # from the full list while the model chose from a trimmed one would
+        # give the control a wider choice set than the arm under test, which
+        # biases the gate's only blocking criterion against the model. None
+        # means the payload was never built (no decide this cycle), so the full
+        # list is the honest fallback.
+        shown = getattr(self, "_menu_shown", None)
+        offered = [c["symbol"] for c in observation["candidates"]]
+        if shown:
+            allowed = set(shown)
+            offered = [s for s in offered if s in allowed]
+        symbols = [s for s in offered if s not in held]
         return self._rng.choice(symbols) if symbols else None
 
     def run_explore(self, observation: dict, free_slots: int) -> int:

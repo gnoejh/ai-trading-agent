@@ -775,6 +775,17 @@ agent:
   # stalled exactly while the book was busiest. Costs one decide per cycle
   # (~25 KRW), inside the daily budget.
   decide_when_full: true
+  # The decide payload's ceiling, in characters. Was a LITERAL 20000 and a blind
+  # `[:20000]` string slice in loop.py -- which cuts JSON mid-token and removes
+  # whatever serialises LAST. Measured 2026-09-18: the 09-17 features tripled the
+  # candidate block, Binance reached 24,013 chars, and so from 2026-09-16 EVERY
+  # Binance cycle silently lost 6 of its 25 candidates plus its cash, holdings
+  # and open orders. The payload now fits by construction (the menu is trimmed
+  # from the tail, lowest-ranked first) so the JSON is always valid and the
+  # account state always arrives; this number only decides how much menu
+  # survives. 32000 clears today's 24,013 with room for a richer measured_record.
+  # Raising it costs prompt tokens on every decide; 0 disables the ceiling.
+  max_payload_chars: 32000
   # Kiwoom quotes are one call per symbol; the screen and the observe step
   # want the same names within seconds, so a quote is reused this long.
   quote_cache_s: 60

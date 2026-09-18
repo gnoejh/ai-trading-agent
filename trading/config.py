@@ -602,6 +602,18 @@ class AgentConfig(BaseModel):
     # decide call outright and model-vs-random stopped accumulating exactly
     # when the book was busiest (62 skipped cycles on the first epoch day).
     decide_when_full: bool = True
+    # The decide payload's size ceiling, in characters. It was a LITERAL 20000
+    # in loop.py and a blind string slice, which is two bugs: a hardcoded
+    # parameter (invariant #2), and a truncation that cuts mid-token and eats
+    # whatever serialises LAST. The 09-17 features tripled the candidate block
+    # and pushed Binance to ~24,000 chars, so from 2026-09-16 every Binance
+    # cycle silently lost 6 of 25 candidates AND its cash, holdings and open
+    # orders -- the fields the 08-30 reordering had moved to the end precisely
+    # because they were thought expendable. The payload now FITS BY
+    # CONSTRUCTION (candidates are dropped from the tail, lowest-ranked first,
+    # until it fits) so the JSON is always valid and the account state always
+    # arrives; this ceiling only decides how much menu survives.
+    max_payload_chars: int = 32000
     # Kiwoom quotes cost one call per symbol; the screen and the observe step
     # ask for the same names seconds apart, so a quote is reused this long.
     quote_cache_s: float = 60.0
