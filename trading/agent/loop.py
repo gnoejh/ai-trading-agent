@@ -134,6 +134,36 @@ Reply with JSON only:
 - Never propose selling more than the reported holding."""
 
 
+def _keep(value: object, what: str, cap: int) -> str:
+    """The model's own words, kept whole unless they are pathological.
+
+    `commentary` was sliced at 1,000 chars and each intent's `reason` at 500 --
+    silently, into the append-only journal that is the permanent record of what
+    the model said, and the thing every later diagnosis reads. (The 2026-09-19
+    payload investigation read exactly this field to work out what the model
+    could see; it had been reading a clipped copy.)
+
+    Owner's rule, 2026-09-19: **neither the model's input nor its output may be
+    truncated.** The cap survives only as a bound on a pathological reply -- it
+    is generous, it lives in config, and it SAYS SO when it bites, so this can
+    never again be a thing nobody knew was happening. 0 disables it.
+
+    Module-level, not a method: `_parse` is deliberately callable unbound (the
+    replay harness and two tests pass a stub), so anything it needs must come
+    through its arguments rather than off `self`.
+    """
+    text = str(value or "")
+    if cap <= 0 or len(text) <= cap:
+        return text
+    log.warning(
+        "%s truncated: %d chars over the %d cap -- the journal no longer has all of it",
+        what,
+        len(text) - cap,
+        cap,
+    )
+    return text[:cap]
+
+
 def build_trade_rules(cfg: AppConfig, market: str, ledger: CostLedger) -> dict:
     """The exit contract every pick is judged by, in the model's terms.
 
@@ -611,6 +641,7 @@ class TradingAgent:
         model's calibration: a stated 0.55 that reaches its target 30% of the
         time is a measured fact the prompt feeds back.
         """
+        cap = int(getattr(self.acfg, "max_model_text_chars", 0) or 0)
         match = _JSON.search(raw or "")
         if not match:
             log.warning("decide: no JSON in model reply")
@@ -646,7 +677,7 @@ class TradingAgent:
                         # carries no price, so supply the screened price as the
                         # reference — without this every market order is rejected.
                         reference_price=prices.get(symbol),
-                        reason=str(item.get("reason", ""))[:500],
+                        reason=_keep(item.get("reason", ""), "intent reason", cap),
                         confidence=float(item.get("confidence", 0.0)),
                     )
                 )
@@ -668,7 +699,8 @@ class TradingAgent:
                     best_conf = None
             elif candidate:
                 log.warning("decide: dropping best_candidate %s that was not offered", candidate)
-        return intents, str(payload.get("commentary", ""))[:1000], best, best_conf
+        commentary = _keep(payload.get("commentary", ""), "commentary", cap)
+        return intents, commentary, best, best_conf
 
     # -- one cycle ------------------------------------------------------------
 

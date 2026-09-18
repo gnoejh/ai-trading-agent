@@ -88,12 +88,27 @@ class LLMClient:
         then sees "" and reads it as "the model declined", which in a trading loop
         is journalled as a considered no-trade. It is not -- it is silence.
 
-        Returns a reason string when the reply is empty for a diagnosable cause.
+        A PARTIAL answer is the same failure wearing a disguise. `finish_reason
+        == "length"` with non-empty content means the reply was cut mid-token:
+        the JSON will not parse, `_parse` finds nothing, and the cycle reports
+        "0 intents" -- which in the journal is indistinguishable from a
+        considered decision not to trade. Measured 2026-09-19 on the ledger:
+        **30 of 1,724 v4-flash calls (1.7%) ended at the 32,768 cap**, and this
+        function waved through every one of them that had emitted any text,
+        because it returned None before it ever looked at `finish_reason`.
+
+        Returns a reason string when the reply is empty OR incomplete.
         """
-        if (message.content or "").strip():
+        finish = getattr(choice, "finish_reason", None)
+        content = (message.content or "").strip()
+        if content:
+            # Non-empty but CUT. Not a refusal, not an answer -- silence with a
+            # prefix, and the owner's rule is that neither the model's input nor
+            # its output may be truncated.
+            if finish == "length":
+                return f"answer cut off at the token cap ({len(content)} chars, finish={finish})"
             return None
         reasoning = getattr(message, "reasoning_content", None) or ""
-        finish = getattr(choice, "finish_reason", None)
         if reasoning:
             return f"empty content after {len(reasoning)} chars of reasoning (finish={finish})"
         return f"empty content (finish={finish})"

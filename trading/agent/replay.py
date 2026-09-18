@@ -102,19 +102,35 @@ class Replayer:
         self.summary_path = Path(self.cfg.score.replay_summary)
 
     def _payload(self, menu: list[dict]) -> str:
-        return json.dumps(
-            {
-                "trade_rules": build_trade_rules(self.cfg, "BINANCE", self.ledger),
-                "limits": _describe_limits(self.cfg.risk),
-                "candidates": menu,
-                "cash": {"note": "historical replay — selection is measured, nothing is traded"},
-                "holdings": {},
-                "unmanaged_balances": 0,
-                "open_orders": {},
-            },
-            ensure_ascii=False,
-            default=str,
-        )[:20000]
+        body = {
+            "trade_rules": build_trade_rules(self.cfg, "BINANCE", self.ledger),
+            "limits": _describe_limits(self.cfg.risk),
+            "candidates": menu,
+            "cash": {"note": "historical replay — selection is measured, nothing is traded"},
+            "holdings": {},
+            "unmanaged_balances": 0,
+            "open_orders": {},
+        }
+        # The SAME defect loop.py carried until 2026-09-19: a blind
+        # `json.dumps(...)[:20000]` cuts JSON mid-token and removes whatever
+        # serialises last. This module feeds the gate's "backtest prior" line,
+        # so a silently shortened menu here is a silently wrong prior there.
+        # Fits by construction: the menu is the only thing that gives.
+        cap = int(self.cfg.agent.max_payload_chars or 0)
+
+        def render(b: dict) -> str:
+            return json.dumps(b, ensure_ascii=False, default=str)
+
+        text = render(body)
+        if cap <= 0 or len(text) <= cap:
+            return text
+        menu = list(body.get("candidates") or [])
+        while menu and len(text) > cap:
+            menu.pop()
+            body = {**body, "candidates": menu}
+            text = render(body)
+        log.warning("replay payload over %d chars; menu trimmed to %d", cap, len(menu))
+        return text
 
     def run(
         self,
@@ -174,7 +190,11 @@ class Replayer:
                 raw = self.llm.ask(
                     self._payload(menu), system=_SYSTEM, tier=self.cfg.agent.tiers.decide
                 )
-                stub = SimpleNamespace(market="BINANCE")
+                # `_parse` keeps the model's words whole up to a configured
+                # bound, so the stub carries the same config the live agent
+                # reads -- a replay that silently clipped commentary would
+                # not be replaying the same thing.
+                stub = SimpleNamespace(market="BINANCE", acfg=self.cfg.agent)
                 intents, _, best, _conf = TradingAgent._parse(
                     stub, raw, {m["symbol"] for m in menu}, {}
                 )

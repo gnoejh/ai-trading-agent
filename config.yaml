@@ -805,6 +805,12 @@ agent:
   # survives. 32000 clears today's 24,013 with room for a richer measured_record.
   # Raising it costs prompt tokens on every decide; 0 disables the ceiling.
   max_payload_chars: 32000
+  # The model's OWN WORDS in the journal. Were hardcoded slices of 1,000 chars
+  # (commentary) and 500 (each intent's reason) -- in the permanent record that
+  # every later diagnosis reads, silently. Owner's rule 2026-09-19: neither the
+  # model's input nor its output may be truncated. This remains a bound against
+  # a pathological reply, but it is generous and it LOGS when it bites. 0 = off.
+  max_model_text_chars: 8000
   # Kiwoom quotes are one call per symbol; the screen and the observe step
   # want the same names within seconds, so a quote is reused this long.
   quote_cache_s: 60

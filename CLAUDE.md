@@ -238,6 +238,40 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-19 (truncation, everywhere it was hiding)** — **Owner, stating the principle rather
+  than the bug: *"The basic is that the input and output of the model shouldn't be truncated."***
+  Right, and broader than the payload defect fixed an hour earlier. An audit of every `[:N]` in
+  the model path found **four more violations, two of them on the OUTPUT side**, and the rule is
+  now **invariant #4**.
+  **(1) `replay.py` carried the identical `json.dumps(...)[:20000]`** that loop.py had — the same
+  bug, the same shape, in the module that produces the gate's `backtest prior` line. A silently
+  shortened menu there is a silently wrong prior in `/status`. Fixed the same way: fits by
+  construction, the menu is the only thing that gives, and it logs.
+  **(2) `LLMClient._truncated` could not see a CUT-OFF reply.** It opened with `if
+  (message.content or "").strip(): return None` — so it consulted `finish_reason` **only when the
+  content was empty**. A reply that stops mid-JSON at the token cap has non-empty content, so it
+  was waved through as a complete answer; `_parse` then finds no valid JSON, logs one warning and
+  returns 0 intents, which the journal records as a considered decline. Measured on the ledger:
+  **30 of 1,724 v4-flash calls (1.7%) ended at the 32,768 cap.** Now `finish_reason == "length"`
+  is truncation whatever the content, and takes the existing fallback-tier path. Stated honestly:
+  the *fully* silent journal rows (no pick, no verdict, no commentary) are **37, and all of them
+  are from 08-10/08-11**, before the virtual pick was required — so this defect's live cost is
+  bounded by that 1.7%, not by anything visible in the decision record. The hole was real; its
+  measured damage is small.
+  **(3) The model's own words were clipped before the journal saw them** — `commentary` at 1,000
+  chars, each intent's `reason` at 500, both hardcoded. That is the permanent record of what the
+  model said and the thing every later diagnosis reads; **the payload investigation earlier today
+  read exactly this field to work out what the model could see, and was reading a clipped copy.**
+  Now `agent.max_model_text_chars: 8000`, in config (invariant #2), and a cap that bites **logs**.
+  `_keep` is module-level rather than a method because `_parse` is deliberately callable unbound —
+  the replay harness and two tests pass a stub — so what it needs comes through its arguments.
+  **What is deliberately still bounded**: `max_payload_chars` (32,000, the menu gives first),
+  `max_model_text_chars` (8,000), and each tier's `max_tokens` (32,768 everywhere except
+  `fast_nothink`, which has no reasoning to pay for). Invariant #4 does not forbid a bound; it
+  forbids a SILENT one, and it forbids the bound landing on the contract, the account state or
+  the answer. **Verified live at 19:23 UTC**: the first Binance decide after the payload fix
+  carried all **25 of 25 candidates** and its account state, 23,975 chars against the 32,000
+  ceiling, zero trim warnings. 452 tests.
 - **2026-09-19 (the model was not being shown the menu, or the account)** — **The 08-30
   truncation defect, a second time, and this time it was silent.** Owner, unprompted: *"I think
   model does not get info enough, when it does not perform well. Am I wrong?"* Not wrong —
@@ -1518,6 +1552,16 @@ These are decisions, not preferences. Violating one is a bug even if the code ru
 3. **The model proposes, deterministic code disposes.** An LLM must never be the last thing before an
    order. Order endpoints are refused unless `allow_orders` is explicitly enabled, and the risk gate
    belongs in front of that switch.
+4. **Neither the model's input nor its output may be truncated** (owner, 2026-09-19). Not the
+   payload, not the menu, not the reply, not the commentary the journal keeps. A bound may exist
+   as a guard against a pathological case, but then it must (a) live in config, never a literal,
+   (b) shorten something the system can afford to lose — never the contract, the account state or
+   the answer — and (c) **say so in the log when it bites.** The reason is the failure mode this
+   repo has now paid for three times: a shortened input and a cut-off reply both surface as "0
+   intents", which in the journal is indistinguishable from a considered decision not to trade.
+   Silence that looks like judgement is the worst failure this system has. Pinned in
+   `tests/test_no_truncation.py`, including a grep that fails if a blind `[:N]` slice reappears
+   anywhere in the model path.
 
 ## Economics — the thing that decides whether this works
 
@@ -1547,7 +1591,7 @@ that was mostly committed cash, and the daily-loss cap reads the same number.
 
 ```
 uv sync                                   # create/refresh .venv from uv.lock
-uv run pytest                             # 443 tests, no network (httpx MockTransport)
+uv run pytest                             # 452 tests, no network (httpx MockTransport)
 uv run python scripts/wire_test.py        # dry run; --live sends ONE ~$6 order
 uv run pytest tests/test_risk_gate.py -k concentration
 uv run ruff check . --fix && uv run ruff format .

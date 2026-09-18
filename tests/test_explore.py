@@ -467,7 +467,10 @@ def test_parse_extracts_best_candidate_from_the_menu(cfg):
 
     from trading.agent.loop import TradingAgent
 
-    stub = SimpleNamespace(market="BINANCE")
+    # `_parse` keeps the model's own words whole up to a configured bound
+    # (2026-09-19), so the stub standing in for the agent carries the config
+    # the real one reads. Pinned from the fixture, never from config.yaml.
+    stub = SimpleNamespace(market="BINANCE", acfg=cfg.agent)
     raw = (
         '{"intents": [], "best_candidate": {"symbol": "BBBUSDT", "confidence": 0.4},'
         ' "commentary": "declining"}'

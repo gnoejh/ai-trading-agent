@@ -614,6 +614,13 @@ class AgentConfig(BaseModel):
     # until it fits) so the JSON is always valid and the account state always
     # arrives; this ceiling only decides how much menu survives.
     max_payload_chars: int = 32000
+    # The model's OWN WORDS, kept whole. `commentary` was sliced at 1,000 chars
+    # and each intent's `reason` at 500 -- silently, in the append-only journal
+    # that is the permanent record of what the model said and the thing every
+    # later diagnosis reads. Generous, config-driven (invariant #2) and LOUD:
+    # a slice that bites now logs, so it can never again be a thing nobody knew
+    # was happening. 0 means no cap at all.
+    max_model_text_chars: int = 8000
     # Kiwoom quotes cost one call per symbol; the screen and the observe step
     # ask for the same names seconds apart, so a quote is reused this long.
     quote_cache_s: float = 60.0
