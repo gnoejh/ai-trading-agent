@@ -37,7 +37,13 @@ from types import SimpleNamespace
 
 from trading.accounting.costs import CostLedger
 from trading.agent.backfill import FLOW_HOURS, features_at, fetch_hourly, resolve_forward
-from trading.agent.loop import _SYSTEM, TradingAgent, _describe_limits, build_trade_rules
+from trading.agent.loop import (
+    _SYSTEM,
+    IncompletePayload,
+    TradingAgent,
+    _describe_limits,
+    build_trade_rules,
+)
 from trading.config import AppConfig, config
 from trading.llm.client import LLMClient
 
@@ -122,14 +128,14 @@ class Replayer:
             return json.dumps(b, ensure_ascii=False, default=str)
 
         text = render(body)
-        if cap <= 0 or len(text) <= cap:
-            return text
-        menu = list(body.get("candidates") or [])
-        while menu and len(text) > cap:
-            menu.pop()
-            body = {**body, "candidates": menu}
-            text = render(body)
-        log.warning("replay payload over %d chars; menu trimmed to %d", cap, len(menu))
+        if cap > 0 and len(text) > cap:
+            # Same rule as the live loop: a replayed decision taken through a
+            # shortened menu is a measurement of something else, and this module
+            # feeds the gate's `backtest prior`. Skip the section, never shorten it.
+            raise IncompletePayload(
+                f"replay payload is {len(text)} chars against a {cap} ceiling "
+                f"({len(body.get('candidates') or [])} candidates)"
+            )
         return text
 
     def run(
@@ -187,9 +193,12 @@ class Replayer:
                     # A pick from a near-empty menu measures nothing: with two
                     # names, half of all pairs are forced ties.
                     continue
-                raw = self.llm.ask(
-                    self._payload(menu), system=_SYSTEM, tier=self.cfg.agent.tiers.decide
-                )
+                try:
+                    prompt = self._payload(menu)
+                except IncompletePayload as exc:
+                    log.warning("skipping section: %s", exc)
+                    continue
+                raw = self.llm.ask(prompt, system=_SYSTEM, tier=self.cfg.agent.tiers.decide)
                 # `_parse` keeps the model's words whole up to a configured
                 # bound, so the stub carries the same config the live agent
                 # reads -- a replay that silently clipped commentary would

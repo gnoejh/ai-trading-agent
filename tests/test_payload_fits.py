@@ -4,7 +4,7 @@ This is the 2026-08-30 defect a second time. Then, the raw positions snapshot
 pushed the payload past a blind `json.dumps(...)[:20000]` and cut `trade_rules`
 off the END; the fix moved the critical fields to the FRONT so truncation would
 "eat detail, never the contract". What that left in the tail was `cash`,
-`holdings` and `open_orders` -- and the tail of the candidate list.
+`holdings`, `open_orders` -- and the tail of the candidate list.
 
 Then the 09-17 features tripled the candidate block. Measured 2026-09-18 on the
 live journal:
@@ -18,12 +18,18 @@ Zero of 173 decisions complained, because nothing in the system prompt names
 the missing fields the way it named `trade_rules`. A blind slice on JSON also
 cuts mid-token, so the model was parsing malformed input.
 
-Two things are pinned here. (1) The payload FITS BY CONSTRUCTION: always valid
-JSON, the account state and the contract always present, the menu the only
-thing that gives. (2) The SHADOW draws from the menu the model actually saw --
-its docstring has always claimed "the same shortlist the model saw", and while
-the payload was being sliced that was false, giving the gate's control a wider
-choice set than the arm under test.
+**The first fix trimmed the menu to fit, and that was half a fix** (owner, the
+same day: incomplete input and output must be *solved*, not bounded). A trimmed
+prompt still produces a decision row, a virtual pick and a paired observation --
+a measurement taken through a prompt nobody can reconstruct, flowing into the
+corpus that decides mainnet. This system exists to measure, so a decision made
+on incomplete input is worse than no decision.
+
+So an over-size payload is now REFUSED, and the refusal takes the same path an
+incomplete reply already takes (`LLMNoAnswer` -> `decide_failed`): no decision
+row, no observation, no pair, and the error on Telegram. With ~8,000 chars of
+headroom it should never fire; if it does, that is a config fault to fix rather
+than a condition to ride out.
 """
 
 from __future__ import annotations
@@ -32,6 +38,7 @@ import json
 
 import pytest
 
+from trading.agent.loop import IncompletePayload
 from trading.config import load_config
 
 
@@ -79,44 +86,16 @@ def _body(n_candidates: int, per_candidate_chars: int = 600) -> dict:
     }
 
 
-def test_the_payload_is_always_valid_json(cfg):
-    """A blind string slice cuts mid-token. This must never produce one."""
-    cfg.agent.max_payload_chars = 4000
-    text = _Agent(cfg)._fit_payload(_body(40))
-    json.loads(text)  # raises if the old slice behaviour came back
+# -- a payload that fits goes whole -----------------------------------------
 
 
-def test_the_account_state_survives_a_squeeze(cfg):
-    """cash / holdings / open_orders are what the old tail-slice removed."""
-    cfg.agent.max_payload_chars = 4000
-    body = json.loads(_Agent(cfg)._fit_payload(_body(40)))
-    assert body["cash"] == {"USDT": 1234.5}
-    assert body["holdings"] == {"BTCUSDT": {"quantity": 1.0}}
-    assert "open_orders" in body
-    assert body["unmanaged_balances"] == 3
-
-
-def test_the_contract_survives_a_squeeze(cfg):
-    """The 08-30 lesson: truncation must never reach `trade_rules`."""
-    cfg.agent.max_payload_chars = 4000
-    body = json.loads(_Agent(cfg)._fit_payload(_body(40)))
-    assert body["trade_rules"]["stop_pct"] == 8.0
-    assert body["measured_record"] == {"buckets": ["..."]}
-
-
-def test_the_menu_is_what_gives_and_it_gives_from_the_tail(cfg):
-    """The screen orders the menu, so the lowest-ranked names go first."""
-    cfg.agent.max_payload_chars = 4000
-    body = json.loads(_Agent(cfg)._fit_payload(_body(40)))
-    shown = [c["symbol"] for c in body["candidates"]]
-    assert 0 < len(shown) < 40, "some menu must survive, and some must be cut"
-    assert shown == [f"C{i}USDT" for i in range(len(shown))], "cut from the tail"
-
-
-def test_a_payload_that_fits_is_untouched(cfg):
+def test_a_payload_that_fits_is_sent_whole_and_is_valid_json(cfg):
     cfg.agent.max_payload_chars = 32000
     body = json.loads(_Agent(cfg)._fit_payload(_body(5)))
     assert len(body["candidates"]) == 5
+    assert body["cash"] == {"USDT": 1234.5}
+    assert body["holdings"] == {"BTCUSDT": {"quantity": 1.0}}
+    assert body["trade_rules"]["stop_pct"] == 8.0
 
 
 def test_zero_disables_the_ceiling(cfg):
@@ -125,13 +104,35 @@ def test_zero_disables_the_ceiling(cfg):
     assert len(body["candidates"]) == 40
 
 
+# -- a payload that does not fit is refused, not shortened ------------------
+
+
+def test_an_oversize_payload_is_refused_rather_than_trimmed(cfg):
+    """The half-fix trimmed the menu and asked anyway. That still contaminates
+    the corpus with a decision taken on a prompt nobody can reconstruct."""
+    cfg.agent.max_payload_chars = 4000
+    with pytest.raises(IncompletePayload):
+        _Agent(cfg)._fit_payload(_body(40))
+
+
+def test_the_refusal_says_what_to_change(cfg):
+    """It should never fire, so when it does it must be actionable rather than
+    merely alarming."""
+    cfg.agent.max_payload_chars = 4000
+    with pytest.raises(IncompletePayload) as exc:
+        _Agent(cfg)._fit_payload(_body(40))
+    message = str(exc.value)
+    assert "4000" in message, "the ceiling it hit"
+    assert "40 candidates" in message, "the menu size that hit it"
+    assert "max_payload_chars" in message, "the knob to turn"
+
+
 def test_the_live_ceiling_clears_the_live_payload(cfg):
     """A regression guard on the CONFIG, not the code.
 
-    The measured Binance payload was 24,013 chars. If a future feature pushes
-    it past the ceiling again the menu silently shrinks, which is graceful but
-    still a loss -- so the shipped ceiling must keep real headroom over the
-    largest payload this repo has measured.
+    The measured Binance payload was 24,013 chars. Since an over-size payload now
+    REFUSES to decide, a ceiling set too close to the real payload does not
+    degrade quietly -- it stops the venue deciding. Keep real headroom.
     """
     assert cfg.agent.max_payload_chars >= 28000, (
         "the measured live payload is ~24,000 chars; leave headroom"
@@ -141,20 +142,21 @@ def test_the_live_ceiling_clears_the_live_payload(cfg):
 # -- the control must not get a wider menu than the arm under test ----------
 
 
-def test_the_shadow_draws_only_from_what_the_model_saw(cfg):
-    """Its docstring has always claimed this. While the payload was sliced it
-    was false, and the bias ran against the model in the gate's own criterion."""
-    cfg.agent.max_payload_chars = 4000
+def test_the_shadow_draws_only_from_what_was_sent(cfg):
+    """`_shadow_pick`'s docstring has always claimed "the same shortlist the
+    model saw". While the payload was being sliced that was false, and the bias
+    ran against the model inside the gate's own blocking criterion."""
+    cfg.agent.max_payload_chars = 32000
     agent = _Agent(cfg)
+    sent = json.loads(agent._fit_payload(_body(5)))
+    allowed = {c["symbol"] for c in sent["candidates"]}
+
+    # The observation carries MORE names than the payload did.
     observation = {
         "candidates": [{"symbol": f"C{i}USDT"} for i in range(40)],
         "holdings": {},
         "prices": {},
     }
-    shown = json.loads(agent._fit_payload(_body(40)))["candidates"]
-    allowed = {c["symbol"] for c in shown}
-    assert len(allowed) < 40, "the fixture must actually trim, or this proves nothing"
-
     for _ in range(50):
         assert agent._shadow_pick(observation) in allowed
 
@@ -169,3 +171,37 @@ def test_the_shadow_falls_back_to_the_full_menu_when_no_payload_was_built(cfg):
         "prices": {},
     }
     assert agent._shadow_pick(observation) in {"AUSDT", "BUSDT"}
+
+
+def test_a_refused_payload_leaves_no_stale_menu_behind(cfg):
+    """After a refusal there IS no menu the model saw, so `_menu_shown` must not
+    keep pointing at the previous cycle's."""
+    agent = _Agent(cfg)
+    cfg.agent.max_payload_chars = 32000
+    agent._fit_payload(_body(5))
+    assert agent._menu_shown == [f"C{i}USDT" for i in range(5)]
+
+    cfg.agent.max_payload_chars = 4000
+    with pytest.raises(IncompletePayload):
+        agent._fit_payload(_body(40))
+    assert agent._menu_shown is None
+
+
+def test_the_ceiling_warns_before_it_refuses(cfg, caplog):
+    """A refusal stops the venue deciding, so it must never be the first anyone
+    hears of the payload growing. `measured_record` grows as buckets fill."""
+    import logging
+
+    agent = _Agent(cfg)
+    body = _body(5)
+    size = len(json.dumps(body))
+    cfg.agent.max_payload_chars = int(size / 0.95)  # inside the last 10%
+    with caplog.at_level(logging.WARNING):
+        agent._fit_payload(body)
+    assert any("within 10%" in r.getMessage() for r in caplog.records)
+
+    caplog.clear()
+    cfg.agent.max_payload_chars = size * 10  # comfortable
+    with caplog.at_level(logging.WARNING):
+        agent._fit_payload(body)
+    assert not caplog.records, "a comfortable payload must stay quiet"

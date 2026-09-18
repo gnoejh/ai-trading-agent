@@ -134,6 +134,26 @@ Reply with JSON only:
 - Never propose selling more than the reported holding."""
 
 
+class IncompletePayload(RuntimeError):
+    """The decide payload could not be sent whole, so no decision was asked for.
+
+    Invariant #4 says the model's input may not be truncated. Trimming the menu
+    and asking anyway satisfies the letter of that and breaks its purpose: the
+    reply would be journalled as an ordinary decision, open a virtual pick, and
+    flow into the paired corpus that decides mainnet -- a measurement taken
+    through a prompt nobody can reconstruct. This system exists to measure, so a
+    decision made on incomplete input is worse than no decision.
+
+    Raised rather than degraded, and it takes the SAME path an incomplete reply
+    already takes (`LLMNoAnswer` -> `decide_failed`): the cycle produces no
+    decision row, no observation and no pair, and the error surfaces in
+    `result.errors` and on Telegram. It should never fire in normal running --
+    the ceiling carries ~8,000 chars of headroom over the largest measured
+    payload -- so if it does, it is a configuration fault to fix, not a
+    condition to ride out.
+    """
+
+
 def _keep(value: object, what: str, cap: int) -> str:
     """The model's own words, kept whole unless they are pathological.
 
@@ -511,39 +531,43 @@ class TradingAgent:
         is worse than the 08-30 incident, where the model at least said
         "trade_rules not supplied" because the system prompt named the field.
 
-        The menu is the only elastic part of the payload, so it is what gives:
-        candidates are dropped from the TAIL (the screen orders them, so the
-        lowest-ranked go first) until the whole thing fits. The result is always
-        valid JSON, and `trade_rules`, the measured record and the account state
-        are never the things sacrificed.
+        **It does not trim.** Shortening the menu and asking anyway would keep
+        the JSON valid and still put a measurement into the corpus that was
+        taken through a prompt nobody can reconstruct -- and this system exists
+        to measure. An over-size payload is therefore refused
+        (`IncompletePayload`), which takes the same path an incomplete REPLY
+        already takes: no decision row, no observation, no pair, and the error
+        on Telegram. With ~8,000 chars of headroom over the largest measured
+        payload it should never fire; if it does, the fix is the config or the
+        menu size, not a quieter failure.
 
-        The trimmed menu is recorded on `self._menu_shown` because the SHADOW
-        must draw from what the model actually saw. Drawing from the full list
-        while the model chose from a subset makes the gate's own comparison
-        unfair to the model -- which is exactly what has been happening.
+        `self._menu_shown` records the menu that was sent, because the SHADOW
+        must draw from what the model actually saw -- the gate's control may
+        never have a wider choice set than the arm under test.
         """
         cap = int(self.acfg.max_payload_chars or 0)
-
-        def render(b: dict) -> str:
-            return json.dumps(b, ensure_ascii=False, default=str)
-
-        text = render(body)
-        self._menu_shown = [c.get("symbol") for c in body.get("candidates", [])]
-        if cap <= 0 or len(text) <= cap:
-            return text
-
-        candidates = list(body.get("candidates") or [])
-        while candidates and len(text) > cap:
-            candidates.pop()
-            body = {**body, "candidates": candidates}
-            text = render(body)
+        text = json.dumps(body, ensure_ascii=False, default=str)
+        candidates = body.get("candidates") or []
+        if cap > 0 and len(text) > cap:
+            self._menu_shown = None
+            raise IncompletePayload(
+                f"decide payload is {len(text)} chars against a {cap} ceiling "
+                f"({len(candidates)} candidates); refusing to ask on a partial prompt "
+                f"— raise agent.max_payload_chars or lower screen.candidates"
+            )
+        # A refusal stops the venue deciding, so it must never be the first
+        # anyone hears of the payload growing. `measured_record` grows as
+        # buckets fill and the menu grows with the screen, so the headroom is
+        # a moving number worth watching from well before it runs out.
+        if cap > 0 and len(text) > cap * 0.9:
+            log.warning(
+                "decide payload %d chars is within 10%% of the %d ceiling "
+                "(%d candidates); raise agent.max_payload_chars before it refuses",
+                len(text),
+                cap,
+                len(candidates),
+            )
         self._menu_shown = [c.get("symbol") for c in candidates]
-        log.warning(
-            "decide payload over %d chars; menu trimmed to %d candidates (%d chars)",
-            cap,
-            len(candidates),
-            len(text),
-        )
         return text
 
     def _trade_rules(self) -> dict:

@@ -265,13 +265,26 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
   Now `agent.max_model_text_chars: 8000`, in config (invariant #2), and a cap that bites **logs**.
   `_keep` is module-level rather than a method because `_parse` is deliberately callable unbound —
   the replay harness and two tests pass a stub — so what it needs comes through its arguments.
-  **What is deliberately still bounded**: `max_payload_chars` (32,000, the menu gives first),
-  `max_model_text_chars` (8,000), and each tier's `max_tokens` (32,768 everywhere except
-  `fast_nothink`, which has no reasoning to pay for). Invariant #4 does not forbid a bound; it
-  forbids a SILENT one, and it forbids the bound landing on the contract, the account state or
-  the answer. **Verified live at 19:23 UTC**: the first Binance decide after the payload fix
-  carried all **25 of 25 candidates** and its account state, 23,975 chars against the 32,000
-  ceiling, zero trim warnings. 452 tests.
+  **(4) And then the owner pushed it further, correctly: *"the pathological problem, incomplete
+  input and output must be solved. Otherwise the system is meaningless."*** The fix above was
+  half a fix. It trimmed the menu to fit, logged, and **asked anyway** — so the reply was still
+  journalled as an ordinary decision, still opened a virtual pick, and still flowed into the
+  paired corpus that decides mainnet, as a measurement taken through a prompt nobody can
+  reconstruct. The OUTPUT side already had this right (`LLMNoAnswer` → `decide_failed` → no
+  decision row, no observation, no pair); the input side did not. Now it does: an over-size
+  payload raises **`IncompletePayload`** and takes that identical path. No trimming anywhere,
+  live or in `replay.py` (which skips the section instead). **What is still bounded, and why
+  that is consistent**: `max_payload_chars` (32,000) is now an ASSERTION that should never fire
+  rather than a degradation — it warns at 90% so a refusal is never a surprise, and its message
+  names the knob to turn; `max_model_text_chars` (8,000) bounds a pathological reply and logs;
+  each tier's `max_tokens` stays 32,768. Invariant #4 forbids a SILENT bound and forbids
+  degrading through one — not a bound as such.
+  **The distinction worth keeping**: a candidate that carries `None` for `funding_rate_pct` or
+  `similar_setups` is NOT incomplete input in this sense. That is the repo's own rule — silence
+  over fabricated priors — and it stays. What is forbidden is data the system HAD and dropped.
+  **Verified live at 19:23 UTC**: the first Binance decide after the payload fix carried all
+  **25 of 25 candidates** and its account state, 23,975 chars against the 32,000 ceiling, zero
+  warnings. 452 tests.
 - **2026-09-19 (the model was not being shown the menu, or the account)** — **The 08-30
   truncation defect, a second time, and this time it was silent.** Owner, unprompted: *"I think
   model does not get info enough, when it does not perform well. Am I wrong?"* Not wrong —
@@ -1553,15 +1566,22 @@ These are decisions, not preferences. Violating one is a bug even if the code ru
    order. Order endpoints are refused unless `allow_orders` is explicitly enabled, and the risk gate
    belongs in front of that switch.
 4. **Neither the model's input nor its output may be truncated** (owner, 2026-09-19). Not the
-   payload, not the menu, not the reply, not the commentary the journal keeps. A bound may exist
-   as a guard against a pathological case, but then it must (a) live in config, never a literal,
-   (b) shorten something the system can afford to lose — never the contract, the account state or
-   the answer — and (c) **say so in the log when it bites.** The reason is the failure mode this
-   repo has now paid for three times: a shortened input and a cut-off reply both surface as "0
-   intents", which in the journal is indistinguishable from a considered decision not to trade.
-   Silence that looks like judgement is the worst failure this system has. Pinned in
-   `tests/test_no_truncation.py`, including a grep that fails if a blind `[:N]` slice reappears
-   anywhere in the model path.
+   payload, not the menu, not the reply, not the commentary the journal keeps. **An incomplete
+   prompt or an incomplete reply does not produce a decision — it produces a refusal.** Both
+   paths end the same way: `IncompletePayload` on the way in and `LLMNoAnswer` on the way out
+   both reach `decide_failed`, so the cycle writes no decision row, no virtual pick, no
+   observation and no pair, and the error surfaces on Telegram. Trimming to fit was the first
+   fix and it was half of one: a shortened prompt still puts a measurement into the corpus that
+   decides mainnet, taken through a prompt nobody can reconstruct. **This system exists to
+   measure, so a decision made on incomplete input is worse than no decision.** A size ceiling
+   still exists, but only as an assertion that should never fire: it lives in config (never a
+   literal), it warns at 90% so a refusal is never the first anyone hears of it, and when it
+   fires the message names the knob to turn. The failure this prevents is the one the repo has
+   now paid for three times — a shortened input and a cut-off reply both surface as "0 intents",
+   which in the journal is indistinguishable from a considered decision not to trade. Silence
+   that looks like judgement is the worst failure this system has. Pinned in
+   `tests/test_no_truncation.py` and `tests/test_payload_fits.py`, including a grep that fails
+   if a blind `[:N]` slice reappears anywhere in the model path.
 
 ## Economics — the thing that decides whether this works
 
