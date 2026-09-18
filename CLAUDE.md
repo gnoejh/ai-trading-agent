@@ -24,10 +24,50 @@ an artifact of overlapping observations (2026-09-16) — the model is *indisting
 chance, not inverted. Unproven is still unproven, so nothing about the prohibition changes; but
 do not repeat the inverted claim as fact. Note the gap it closes by
 hand: the gate's two profit criteria are computed over ALL closed round trips with no arm
-attribution, so they can read green on money the RANDOM arm earned (they do today). Only the
-shadow/CI criterion currently separates that from a green gate.
+attribution, so they can read green on money the RANDOM arm earned. Only the shadow/CI
+criterion currently separates that from a green gate. **Updated 2026-09-19**: the model's
+CRYPTO sleeve is now positive on its own (+1,204.63 USD, +0.36%/trip, n=135), so the criteria
+are no longer green *purely* on the dice's money — but the random arm still earns 85% of it,
+and the criteria still cannot tell you that. The structural gap is unchanged; only the
+parenthetical "(they do today)" was retired.
 
-## Where things stand (2026-09-17, after the overnight build)
+## Where things stand (2026-09-19)
+
+The 09-17 build gave the model its information; 09-19 found that the instrument judging it
+was pointed at the wrong event. Nothing about the prohibition changes — the edge is still
+unproven — but three readings moved, and one of them is the first good news the model
+sleeve has produced.
+
+- **The gate was grading a 72h buy-and-hold.** Every real position leaves on the trail,
+  stop, target or time stop. Measured on the traded event instead, the same corpus reads
+  model **+0.64%** vs random +0.30% on Binance (raw: −1.11% vs −0.92%), and the interval is
+  **40% narrower** — ~2.8x fewer observations for the same precision on the gate's slowest
+  criterion. It agrees with the realised sleeve to 0.02pp where the raw measure missed by
+  1.5pp. Shipped as a rendered reading beside the criterion, **not** as the criterion:
+  swapping what the gate grades, and pointing the allocator's `edge_score` at it, are owner
+  calls and are the two open decisions this section exists to surface.
+- **The model's Binance sleeve is profitable**: +1,204.63 USD net, **+0.36%/trip on n=135**,
+  against −1.03%/trip on 09-13. The random arm still earns 85% of the book's money
+  (+6,598.56, +0.81%/trip), so selection is still unproven — but the model is no longer
+  destroying value on the venue that matters.
+- **KR is the sleeve that needs a DECISION, not more instruments.** Model −500,294 KRW,
+  −0.25%/trip on n=23, and the arithmetic says why: gross **+429,625 KRW against 929,919 of
+  fees**. The picks are gross-positive and fee-negative, on a menu whose own control still
+  costs 1.94%. The paper account expires **2026-12-01**.
+- **The whole 174-pair record predates the 09-16 audit.** At a 72h horizon the first
+  decisions taken under the regraded calibration, the `sample` menu and the 09-17 features
+  resolve from 09-19. The gate is currently describing a model that no longer exists, so
+  read every edge number below as history until that turns over.
+- **Confidence carries nothing.** It looked like it anti-predicted monotonically; the shadow
+  moves the same way on the same cycles and the correlation is −0.007 on n=165. Flat, not
+  inverted, and not a filter. Run every conditional split against the shadow before
+  believing it — that is what killed this one and the "model does worse when it trades" one
+  the same hour.
+
+The gate reads 4 of 5 — edge +0.10%, CI −2.08..+2.19 on 174 pairs; under the contract
++0.16%, CI −1.13..+1.44.
+
+## Where things stand (2026-09-17, after the overnight build — superseded above)
 
 The 09-16 audit (next section) fixed the measurements. The overnight work of 09-17 gave the
 model the information an expert would want, **each piece validated over six months of
@@ -125,11 +165,22 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
   (`screen.US.daily_features`), pending `feature_replay --venue US`.
 - **API spend roughly doubled with the second opinion** (≈2,800 KRW by 05:00 on a 6,000 cap).
   Inside the ceiling; watch `/costs` for a day before assuming it stays there.
-- **The screen change needs its first reading (~72h, so from 2026-09-19).** Both venues now
-  run `rank_by: sample` with the change band off. The instrument is the `screen control` line
-  in `/status` and `uv run python -m trading.agent.promotion`: if the menu's excess does not
-  move toward the pool's, revert `rank_by: sample` → `flow` and the change bands, and the
-  2026-09-16 diagnosis was wrong.
+- **The screen change got its first reading (2026-09-19) and it is provisionally GOOD — keep
+  `rank_by: sample`.** Both venues run it with the change band off. Note the rendered `screen
+  control` line pools the WHOLE epoch and therefore cannot speak to a change made inside it;
+  the reading has to be windowed by observation open date, which is a few lines of script, not
+  a config knob. Windowed on observations opened after the change:
+
+      venue     menu (a random draw)      pool (drawn outside)     screen costs
+      BINANCE   n= 25  +2.56% (med +0.57) n= 23  +1.13% (med +1.46)   -1.44%
+      KR        n= 18  -0.96% (med -1.06) n= 17  -1.58% (med -0.82)   -0.62%
+
+  The 3-4% penalty is **gone on both venues** — the menu now matches or beats the pool, which
+  is what `sample` was shipped to do. Not proven: n is 25 and 18, and on Binance the MEDIAN
+  still favours the pool (+0.57% vs +1.46%), so the mean is carried by a few names in a rising
+  tape (the universe read +3.15% over the same window). Direction right, size unproven, no
+  revert warranted. Re-read in a week, windowed the same way; if the medians do not follow the
+  means, the change is cosmetic and the 09-16 diagnosis was incomplete rather than wrong.
 - **The screen was measurably destructive; the correction is shipped, not proven.** A RANDOM draw from
   the screen's menu loses 3.93% to a random draw outside it on Binance, 2.98% on KR
   (`screen control` lines in `/status` and `uv run python -m trading.agent.promotion`). Dropping
@@ -226,9 +277,20 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
   (the rendered line pools the whole epoch and cannot speak to the 09-16 change): post-change the
   Binance menu reads +2.56% against the pool's +1.13% and KR −0.96% against −1.58% — the 3-4%
   penalty is gone on both venues, n=25 and n=18, medians still favouring the pool. Direction
-  right, not proven; keep `rank_by: sample`, no revert warranted. **Takes effect on the next
-  service restart** (the running process holds the old code); until then resolve rows carry no
-  `contract_return_pct` and every pair reads `endpoints`. 434 tests.
+  right, not proven; keep `rank_by: sample`, no revert warranted.
+  **Verified live at 18:44 UTC**, on the first scorer pass after the restart — and the first
+  batch contains the defect itself, in one row:
+
+      arm_change_high:US:LITE   runup +11.81%   forward_return_pct -0.21%   outcome "stop"
+                                contract_return_pct +0.95%   contract_exit "trail"
+
+  The name ran up 11.8%, the trail ratcheted behind it and the position left **in profit**. The
+  raw measure — the one the gate grades — called that same position -0.21%, and `outcome` called
+  it a stop-out. A 1.2pp error on one observation, in the direction that makes every arm look
+  worse than it was, which is what 40% of the interval's width was made of. (`outcome` and
+  `contract_exit` disagreeing is by design: `outcome` is `target_before_stop` against the
+  INITIAL levels, `contract_exit` knows the stop moved — the same distinction the 09-17 TRAIL
+  entry drew.) 434 tests.
 - **2026-09-17 (evening: fingerprint + budget)** — **The KR model was asked ONCE in 33 cycles,
   and the second opinion starved US.** Found in the 22:40 KST status review. (1) KR decisions
   per day: 15 (09-15) → 4 (09-16) → 1 (09-17); skips 6 → 32 → 32; zero KR entries in two days.
