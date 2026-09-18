@@ -267,9 +267,28 @@ accounting:
   # runs to the full budget. Held all day, including after the US close --
   # the four hours between 20:00 UTC and the reset are the price of not
   # wiring session times into the ledger.
-  max_api_krw_per_day: 9000
+  # 2026-09-19: 9,000 -> 13,000. Owner's call, and the same reasoning as 09-02
+  # ("DeepSeek is cheap, the budget must be enough"): API spend is ~0.4% of the
+  # gate's P&L while trading fees are ~114x larger, so starving the DECIDE call
+  # to save a few hundred KRW is the expensive mistake. Measured the day it was
+  # raised: spend ran 6,000 (09-16) -> 7,329 (09-17) -> 8,223 (09-18) against a
+  # Binance ceiling of 7,500, and Binance had already lost 18-23% of its cycles
+  # to "api budget" on two of those days. The 09-19 payload fix adds ~20% of
+  # prompt tokens on top, projecting ~9,900/day. 13,000 clears that with room.
+  # The driver is the SECOND OPINION, not the decide call: v4-pro costs 72.6
+  # KRW/call against flash's 11.2 and was 87% of 09-18's spend (7,189 of 8,223).
+  # If this needs cutting later, throttle that before touching the decide call --
+  # and read `arm_llm_deep`'s CONTRACT column first, which currently reads
+  # -0.55% (CI -5.43..+3.69) against its raw +2.03%.
+  max_api_krw_per_day: 13000
   api_reserve_krw:
-    US: 1500
+    # Raised 1,500 -> 2,500 with the budget, because a decide CYCLE got more
+    # expensive, not just more numerous: flash + the v4-pro second opinion is
+    # ~84 KRW today and ~100 after the payload fix, and US runs ~19 decisions a
+    # day = ~1,900. A 1,500 reserve no longer covers the session it exists to
+    # protect -- and US sits at the tail of the UTC day, so it is the venue that
+    # starves first (observed 09-02 and again 09-16).
+    US: 2500
   # Default when a ledger row's market has no entry below. Matches the worse
   # Binance book so an unknown market can never understate its hurdle.
   fees:
