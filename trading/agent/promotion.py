@@ -207,6 +207,39 @@ def render(cfg: AppConfig | None = None) -> str:
             f"the screen costs {-cell['menu_minus_pool_pct']:+.2f}% vs not screening"
         )
 
+    # THE SAME PAIRED COMPARISON, UNDER THE EXIT CONTRACT (2026-09-19). The
+    # criterion above grades a 72h buy-and-hold. Nothing here is traded that
+    # way -- the trail, stop, target and time stop close every real position,
+    # and the audit found the contract is where the profit comes from. So the
+    # criterion has been grading an event the system does not trade, which is
+    # *Research findings* trap #5 inside the gate itself.
+    #
+    # Rendered, NOT substituted. Changing what the gate grades is the owner's
+    # call, and this reading is the evidence for that call rather than a
+    # decision taken on the owner's behalf. Two things to read in it: whether
+    # the edge changes SIGN (it does on Binance), and how much narrower the
+    # interval is (~40% on the corpus this shipped against) -- the stop
+    # truncates the left tail that made the raw comparison noisy, so the same
+    # bar is reached on roughly a third of the observations.
+    contract = store.get("model_vs_shadow_contract") or {}
+    if contract.get("n"):
+        prov = ", ".join(f"{k} {v}" for k, v in (contract.get("measured") or {}).items())
+        lines.append(
+            f"  ℹ️ under the EXIT CONTRACT (not the criterion): n={contract['n']} "
+            f"model {contract['model_avg_pct']:+.2f}% vs random {contract['shadow_avg_pct']:+.2f}% "
+            f"(edge {contract['mean_diff_pct']:+.2f}%, CI {contract['ci_low']:+.2f}.."
+            f"{contract['ci_high']:+.2f}, wins {contract['model_wins']}/{contract['n']})"
+            + (f" [{prov}]" if prov else "")
+        )
+        for venue, cell in sorted((store.get("model_vs_shadow_contract_by_venue") or {}).items()):
+            if not cell.get("n"):
+                continue
+            lines.append(
+                f"     ↳ {venue}: n={cell['n']} model {cell['model_avg_pct']:+.2f}% vs "
+                f"random {cell['shadow_avg_pct']:+.2f}% "
+                f"(CI {cell['ci_low']:+.2f}..{cell['ci_high']:+.2f})"
+            )
+
     # The selector leaderboard (2026-09-16). Not a criterion: the gate asks
     # whether THE MODEL beats chance, and only the model can open it. But if a
     # deterministic rule beats chance and the model does not, that is the
@@ -215,9 +248,16 @@ def render(cfg: AppConfig | None = None) -> str:
         ci = ""
         if row.get("ci_low") is not None:
             ci = f", CI {row['ci_low']:+.2f}..{row['ci_high']:+.2f}"
+        contract_note = ""
+        if row.get("contract_mean_diff_pct") is not None and row.get("contract_ci_low") is not None:
+            contract_note = (
+                f" | contract {row['contract_mean_diff_pct']:+.2f}% "
+                f"CI {row['contract_ci_low']:+.2f}..{row['contract_ci_high']:+.2f}"
+            )
         lines.append(
             f"  ℹ️ selector {row['selector']:<16} n={row['n']:<4} "
             f"edge {row['mean_diff_pct']:+.2f}%{ci}, wins {row['model_wins']}/{row['n']}"
+            + contract_note
         )
 
     if result["ready"]:

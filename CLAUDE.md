@@ -162,6 +162,73 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-19 (the gate was grading the wrong event)** — **The one criterion that decides
+  mainnet compares a 72h buy-and-hold. Nothing in this system is held that way.** Owner: "find
+  any smoking gun or enhance the system to get profit on model." `_pairs` scored model against
+  shadow on `forward_return_pct`, the raw return at the horizon; every real position leaves on
+  the trail, the stop, the target or the time stop, and the 09-16 audit had already found the
+  exit contract is where the profit comes from. So the gate measured one strategy while the
+  account ran another — ***Research findings* trap #5, "grade what you asked", one level up,
+  inside the gate itself**, exactly as trap #2 had been found living there three days earlier.
+  **The corroboration is the money**: on Binance the model's picks read **+0.64%/trip gross**
+  under the contract against a realised sleeve of **+0.36%/trip net** on a ~0.30% round trip —
+  they agree to 0.02pp — while the raw measurement read **−1.11%** for those same picks. The
+  instrument that disagrees with the P&L is the broken one. Same arms, same de-overlap, same
+  bar, only the measured event changed:
+
+      measure          n     model    random    edge     95% CI            width
+      raw 72h hold    174   -1.01%   -1.11%   +0.10%   -2.08..+2.19       4.27pp
+      exit contract   174   -0.09%   -0.26%   +0.16%   -1.13..+1.44       2.56pp
+        BINANCE        78   +0.64%   +0.30%   +0.34%   -2.39..+3.09
+        KR             47   -1.03%   -1.21%   +0.18%   -0.93..+1.42
+        US             49   -0.36%   -0.23%   -0.13%   -1.26..+0.95
+
+  **The interval is 40% narrower on the identical corpus** — the stop truncates precisely the
+  left tail that made the raw comparison noisy — which is ~2.8x fewer observations for the same
+  precision on the gate's slowest criterion. And Binance flips sign. **It is not a softer bar,
+  and the proof is that it does not open the gate**: the edge still straddles zero, and a test
+  pins that a green contract reading leaves the raw criterion red. **Rendered, NOT substituted**
+  — swapping what the gate grades, and pointing the allocator's `edge_score` at it, are the
+  owner's calls; this entry is the evidence for them, not the decision. **Shipped**:
+  `simulate` (exit_eval's own replay, so the TRAIL is modelled by the same function the grid and
+  the supervisor use — one definition, three readers) runs at resolve time and stores
+  `contract_return_pct` / `contract_exit`; `contract_return_pct()` reads that when present and
+  otherwise reconstructs from the stored `outcome` (which does walk the real bars in order) plus
+  the plan's levels, labelled `endpoints` — that fallback does NOT model the trail, so it
+  understates every arm and is a LOWER bound, but it made the whole existing corpus readable
+  today instead of after a re-resolve. `_pairs` takes a measurement function and **refuses a
+  pair whose two sides have different provenance**, counting the drops, because a comparison
+  measured one way on one side is not a comparison. The leaderboard carries both columns.
+  **What the second column immediately corrected**: `arm_llm_deep` — the v4-pro second opinion,
+  and the ONE row whose raw CI excludes zero (+2.03%, CI +0.11..+4.33, n=9) — reads **−0.55%,
+  CI −5.43..+3.69 under the contract**. The stronger model's apparent edge is in a hold this
+  system does not trade. At n=9 neither column means much; the point is that the raw column was
+  about to be over-read.
+  **Two other things found and NOT shipped, because their controls killed them.** (1) The
+  model's stated confidence looked like it anti-predicted, monotonically (contract edge +0.37%
+  in the 0.00–0.35 band against −2.60% at 0.55+). It does not: the SHADOW moves the same way
+  across those same cycles (−1.21%, +2.20%, −1.11%, +0.72%), the correlation of confidence with
+  the contract return is **−0.007 on n=165**, and the top band holds 12 independent
+  observations. Confidence is uninformative — flat, not inverted, and not a filter. The band
+  table was reading the market, not the model; the shadow is what says so, which is the same
+  control-group lesson as trap #4. (2) The model appears to do worse on cycles where it actually
+  trades (edge −1.32% proposing vs +0.05% declining) — same confound, same verdict, not acted on.
+  **Read while doing it, and it changes the standing note under *The goal***: the model's CRYPTO
+  sleeve is **positive on its own now** — +1,204.63 USD net, **+0.36%/trip on n=135**, against
+  −1.03%/trip on 09-13 — so the gate's profit criteria are no longer green purely on the dice's
+  money, though the random arm still earns 85% of it (+6,598.56, +0.81%/trip). KR model is the
+  negative sleeve (−500,294 KRW, −0.25%/trip, n=23) and its arithmetic says why: **gross
+  +429,625 KRW against 929,919 KRW of fees** — the picks are gross-positive and fee-negative on
+  a menu whose own control still costs 1.94%. **And every one of the 174 pairs predates the
+  09-16 audit**: at a 72h horizon the first decisions taken under the regraded calibration, the
+  `sample` menu and the 09-17 features resolve from today. The gate is currently describing a
+  model that no longer exists. **Windowed the screen control by open date** while checking that
+  (the rendered line pools the whole epoch and cannot speak to the 09-16 change): post-change the
+  Binance menu reads +2.56% against the pool's +1.13% and KR −0.96% against −1.58% — the 3-4%
+  penalty is gone on both venues, n=25 and n=18, medians still favouring the pool. Direction
+  right, not proven; keep `rank_by: sample`, no revert warranted. **Takes effect on the next
+  service restart** (the running process holds the old code); until then resolve rows carry no
+  `contract_return_pct` and every pair reads `endpoints`. 434 tests.
 - **2026-09-17 (evening: fingerprint + budget)** — **The KR model was asked ONCE in 33 cycles,
   and the second opinion starved US.** Found in the 22:40 KST status review. (1) KR decisions
   per day: 15 (09-15) → 4 (09-16) → 1 (09-17); skips 6 → 32 → 32; zero KR entries in two days.
@@ -1344,7 +1411,7 @@ that was mostly committed cash, and the daily-loss cap reads the same number.
 
 ```
 uv sync                                   # create/refresh .venv from uv.lock
-uv run pytest                             # 421 tests, no network (httpx MockTransport)
+uv run pytest                             # 434 tests, no network (httpx MockTransport)
 uv run python scripts/wire_test.py        # dry run; --live sends ONE ~$6 order
 uv run pytest tests/test_risk_gate.py -k concentration
 uv run ruff check . --fix && uv run ruff format .
@@ -1700,6 +1767,19 @@ each with its own methodology lesson:
   P(+17% target before stop), so a calibrated model read as overconfident by construction and
   self-censored. **Trap #5, new**: a feedback loop grading a different event from the one it
   requests will drive the agent away from the behaviour it exists to encourage.
+
+**Measured 2026-09-19.** Trap #5 again, and it was inside the gate:
+
+- **Grade the event you TRADE, not the one that is easy to store.** The gate's blocking
+  criterion compared a 72h buy-and-hold; every real position leaves on the trail, stop,
+  target or time stop. Measured on the traded event the same corpus reads model +0.64% vs
+  random +0.30% on Binance (raw: −1.11% vs −0.92%) and the interval is **40% narrower** —
+  and it agrees with the realised sleeve to 0.02pp, which the raw measure misses by 1.5pp.
+  The tell that an instrument is wrong is that it disagrees with the money.
+- **A control kills more hypotheses than it confirms.** Stated confidence looked like it
+  anti-predicted, monotonically across four bands. The shadow moved the same way on the same
+  cycles; the correlation is −0.007 on n=165. The pattern was the market's, not the model's.
+  Run every conditional split against the shadow before believing it.
 
 Still open: whether ANY selector beats chance — five deterministic arms and a second LLM now
 run against the same shadow, for free, and the leaderboard in `/status` is the answer as it

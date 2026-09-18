@@ -51,8 +51,10 @@ import logging
 import random
 import statistics
 import time
+from collections.abc import Callable
 from pathlib import Path
 
+from trading.agent.exit_eval import simulate
 from trading.agent.prices import price_source
 from trading.config import AppConfig, config
 from trading.risk.exits import ExitPolicy
@@ -199,6 +201,59 @@ def profitable(row: dict) -> bool | None:
         return True
     if outcome == "time":
         return _is_true(row.get("cleared_hurdle"))
+    return None
+
+
+CONTRACT_EXACT = "replay"
+CONTRACT_APPROX = "endpoints"
+
+
+def contract_return_pct(row: dict) -> tuple[float, str] | None:
+    """What this observation would have EARNED under the live exit contract.
+
+    The gate's blocking criterion compares `forward_return_pct` -- the raw
+    buy-and-hold return at the horizon. Nothing in this system is traded that
+    way. Every real position leaves on the trail, the stop, the target or the
+    time stop, and the 2026-09-16 audit found the exit contract is where the
+    profit comes from. So the one criterion that decides mainnet was grading an
+    event the system does not trade: *Research findings* trap #5, one level up,
+    inside the gate itself.
+
+    It is not a softer bar -- both arms get the identical contract, and on the
+    corpus this was built against it does NOT open the gate (edge +0.16%, CI
+    -1.16..+1.43). What it does is measure the traded event and cut the
+    interval's width by ~40%, because the stop truncates exactly the left tail
+    that made the raw comparison noisy. The corroboration is that it reproduces
+    the money: Binance model picks read +0.64%/trip gross here against a
+    realised sleeve of +0.36%/trip net on a ~0.30% round trip, while the raw
+    measurement read -1.11% for the same picks.
+
+    Two provenances, and a pair must never mix them:
+
+    * ``replay``    -- `contract_return_pct` stored at resolve time by
+      `simulate`, the same function the exit grid runs, so the TRAIL is
+      modelled. Correct, and only on rows resolved since this shipped.
+    * ``endpoints`` -- reconstructed from the stored `outcome` (which does walk
+      the real bars in order) plus the plan's levels. The trail is NOT
+      modelled, so a ratcheted exit is scored at the horizon close. That
+      understates every arm's result and is a LOWER bound on the contract, not
+      the contract.
+    """
+    stored = row.get("contract_return_pct")
+    if stored is not None:
+        with contextlib.suppress(TypeError, ValueError):
+            return float(stored), CONTRACT_EXACT
+    outcome = row.get("outcome")
+    if outcome == "target" and row.get("target_pct") is not None:
+        with contextlib.suppress(TypeError, ValueError):
+            return float(row["target_pct"]), CONTRACT_APPROX
+    if outcome == "stop" and row.get("stop_pct") is not None:
+        with contextlib.suppress(TypeError, ValueError):
+            return -float(row["stop_pct"]), CONTRACT_APPROX
+    if row.get("forward_return_pct") is None:
+        return None
+    with contextlib.suppress(TypeError, ValueError):
+        return float(row["forward_return_pct"]), CONTRACT_APPROX
     return None
 
 
@@ -614,10 +669,25 @@ class ExperienceScorer:
         # The live exit contract's levels, from the SAME arithmetic the
         # supervisor runs, so "reached the target before the stop" is graded
         # against what the position would actually have been held to.
-        plan = ExitPolicy(self.cfg, self.ledger, market=venue).plan_for("obs", entry, 1.0)
+        policy = ExitPolicy(self.cfg, self.ledger, market=venue)
+        plan = policy.plan_for("obs", entry, 1.0)
         target_pct = plan.target / entry - 1
         stop_pct = 1 - plan.stop / entry
         outcome = window.target_before_stop(entry, target_pct, stop_pct)
+        # What the contract would have EARNED on this path -- the traded event,
+        # not the hold-to-horizon one. `simulate` is the exit grid's own replay,
+        # so the trail is modelled here exactly as it is there and as the
+        # supervisor runs it live: one definition, three readers.
+        contract_pct: float | None = None
+        contract_exit: str | None = None
+        try:
+            sim = simulate(window, entry, opened, policy, horizon.total_seconds() / 60)
+            contract_pct = round((float(sim["exit_price"]) / entry - 1) * 100, 4)
+            contract_exit = str(sim["reason"])
+        except (ArithmeticError, TypeError, ValueError, KeyError):
+            # A replay that cannot run must leave the field ABSENT, never 0.0 --
+            # aggregation falls back to the endpoint reconstruction and says so.
+            log.debug("contract replay failed for %s", rec.get("id"), exc_info=True)
         bench = self._benchmark_return(venue, str(book), opened, horizon)
         forward_pct = round(forward * 100, 4)
         return {
@@ -634,6 +704,8 @@ class ExperienceScorer:
             "stop_pct": round(stop_pct * 100, 4),
             "outcome": outcome,
             "cleared_target": outcome == "target",
+            "contract_return_pct": contract_pct,
+            "contract_exit": contract_exit,
             "benchmark_return_pct": bench,
             "excess_return_pct": round(forward_pct - bench, 4) if bench is not None else None,
             "bars": len(window.bars),
@@ -687,7 +759,12 @@ class ExperienceScorer:
             "cleared_target": sum(1 for m in targeted if _is_true(m.get("cleared_target"))),
         }
 
-    def _pairs(self, model: list[dict], shadow: list[dict]) -> dict:
+    def _pairs(
+        self,
+        model: list[dict],
+        shadow: list[dict],
+        value: Callable[[dict], tuple[float, str] | None] | None = None,
+    ) -> dict:
         """Paired model-vs-shadow: same decision, same venue, both resolved.
 
         **Pairs are DE-OVERLAPPED before anything is computed from them**, and
@@ -715,6 +792,13 @@ class ExperienceScorer:
         visible rather than silently absorbed.
         """
 
+        def raw(r: dict) -> tuple[float, str] | None:
+            if r.get("forward_return_pct") is None:
+                return None
+            return float(r["forward_return_pct"]), "hold"
+
+        value = value or raw
+
         def key(r):
             return (str(r.get("venue") or "BINANCE"), r.get("decision_ts"))
 
@@ -725,6 +809,8 @@ class ExperienceScorer:
         pairs: list[tuple[float, float]] = []
         n_raw = len(candidates)
         last: dict[tuple[str, str], dt.datetime] = {}
+        mixed = 0
+        provenance: dict[str, int] = {}
         for k in candidates:
             when = _parse_ts(str(k[1] or ""))
             rows = {"model": m[k], "shadow": s[k]}
@@ -733,10 +819,20 @@ class ExperienceScorer:
                 mark in last and when - last[mark] < horizon for mark in marks.values()
             ):
                 continue
+            left, right = value(m[k]), value(s[k])
+            if left is None or right is None:
+                continue
+            # A pair measured one way on one side and another way on the other
+            # is not a comparison. Drop it and COUNT it, rather than let the
+            # two provenances average into a number nothing produced.
+            if left[1] != right[1]:
+                mixed += 1
+                continue
             if when is not None:
                 for mark in marks.values():
                     last[mark] = when
-            pairs.append((float(m[k]["forward_return_pct"]), float(s[k]["forward_return_pct"])))
+            provenance[left[1]] = provenance.get(left[1], 0) + 1
+            pairs.append((left[0], right[0]))
         diffs = [a - b for a, b in pairs]
         n = len(pairs)
         ci = bootstrap_ci(
@@ -756,6 +852,8 @@ class ExperienceScorer:
             "ci_low": ci[0] if ci else None,
             "ci_high": ci[1] if ci else None,
             "ci_level": self.scfg.ci_level,
+            "measured": dict(sorted(provenance.items())),
+            "mixed_provenance_dropped": mixed,
         }
 
     def _screen_control(self, rows: list[dict]) -> dict:
@@ -1006,6 +1104,25 @@ class ExperienceScorer:
             if pv["n"]:
                 pairs_by_venue[venue] = pv
 
+        # THE SAME COMPARISON, UNDER THE CONTRACT THE SYSTEM ACTUALLY TRADES.
+        # Identical arms, identical de-overlap, identical bar -- only the
+        # measured event changes, from "hold 72h" to "hold under stop, target,
+        # trail and time stop". See `contract_return_pct` for why that is a
+        # correction and not a softer bar. Rendered beside the criterion, never
+        # as the criterion: swapping what the gate grades is the owner's call.
+        contract_summary = self._pairs(model_raw, shadow_raw, value=contract_return_pct)
+        contract_by_venue = {}
+        for venue in sorted(
+            {r.get("venue") for r in model_raw} | {r.get("venue") for r in shadow_raw}
+        ):
+            pv = self._pairs(
+                [r for r in model_raw if r.get("venue") == venue],
+                [r for r in shadow_raw if r.get("venue") == venue],
+                value=contract_return_pct,
+            )
+            if pv["n"]:
+                contract_by_venue[venue] = pv
+
         # THE LEADERBOARD. Every selector -- the LLM included, as `model` --
         # paired against the same shadow with the same de-overlap rule. Sorted
         # by the CI's LOWER bound, because a point estimate at n~100 is luck
@@ -1016,7 +1133,17 @@ class ExperienceScorer:
                 continue
             pv = self._pairs(source_rows, shadow_raw)
             if pv["n"]:
-                leaderboard.append({"selector": source, **pv})
+                contract = self._pairs(source_rows, shadow_raw, value=contract_return_pct)
+                leaderboard.append(
+                    {
+                        "selector": source,
+                        **pv,
+                        "contract_mean_diff_pct": contract.get("mean_diff_pct"),
+                        "contract_ci_low": contract.get("ci_low"),
+                        "contract_ci_high": contract.get("ci_high"),
+                        "contract_n": contract.get("n"),
+                    }
+                )
         leaderboard.sort(
             key=lambda r: r["ci_low"] if r.get("ci_low") is not None else -1e9, reverse=True
         )
@@ -1043,6 +1170,8 @@ class ExperienceScorer:
             "buckets": buckets,
             "model_vs_shadow": pair_summary,
             "model_vs_shadow_by_venue": pairs_by_venue,
+            "model_vs_shadow_contract": contract_summary,
+            "model_vs_shadow_contract_by_venue": contract_by_venue,
             "calibration": self._calibration(model_rows),
             "calibration_since": calibration_since,
             "screen_control": self._screen_control(rows),
