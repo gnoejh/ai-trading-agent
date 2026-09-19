@@ -842,10 +842,12 @@ class ScoreConfig(BaseModel):
         }
     )
     feature_replay_output: str = "data/feature_replay.json"
-    # Case-based retrieval (agent/similar.py). `similar_k` 0 keeps
-    # `similar_setups` out of the prompt; set it only after validate() shows a
-    # decile spread whose CI excludes zero.
+    # Case-based retrieval (agent/similar.py). The default stays off; each
+    # independent venue opts in only after its own experience index validates.
     similar_k: int = 0
+    similar_k_by_venue: dict[str, int] = Field(
+        default_factory=lambda: {"BINANCE": 30, "KR": 0, "US": 0}
+    )
     similar_features: list[str] = Field(
         default_factory=lambda: [
             "change_pct",
@@ -862,6 +864,13 @@ class ScoreConfig(BaseModel):
         default_factory=lambda: ["backtest", "universe", "random", "shadow"]
     )
     similar_index: str = "data/similar_index.json"
+    similar_index_by_venue: dict[str, str] = Field(
+        default_factory=lambda: {
+            "BINANCE": "data/similar_index.json",
+            "KR": "data/similar_index_KR.json",
+            "US": "data/similar_index_US.json",
+        }
+    )
     similar_validation: str = "data/similar_validation.json"
     bootstrap_seed: int = 20260903
     ci_level: float = 0.95

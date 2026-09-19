@@ -248,6 +248,17 @@ Deadlines and owner-only moves, kept here because a newest-first log buries them
 
 ## Development log (newest first)
 
+- **2026-09-19 (venue-isolated context RL)** — The model learns through experiences, but an
+  experience is only useful in the context that produced it. Similar-case retrieval now carries
+  its venue in the index metadata and refuses a file whose venue does not match the decision
+  surface. Binance has a rebuilt index of **11,376 cases** over the validated crypto feature
+  schema; leave-the-future-out validation is **n=1,604**, top-vs-bottom excess spread **+5.079%**,
+  95% CI **+0.901..+11.219**. Each candidate receives the nearest-case hit rate, Wilson interval,
+  average and median return, and average and median excess return. The Binance setting is 30 cases.
+  Kiwoom KR and US have independent index paths but remain disabled: their daily features,
+  benchmarks, journals and currencies are not Binance's, and no compatible validated corpus is
+  being fabricated. A Binance index cannot leak into either equity prompt. **453 tests pass.**
+
 - **2026-09-19 (truncation, everywhere it was hiding)** — **Owner, stating the principle rather
   than the bug: *"The basic is that the input and output of the model shouldn't be truncated."***
   Right, and broader than the payload defect fixed an hour earlier. An audit of every `[:N]` in

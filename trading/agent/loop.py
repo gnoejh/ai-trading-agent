@@ -577,21 +577,27 @@ class TradingAgent:
         """The case index, reloaded when the scorer rewrites it."""
         from trading.agent.similar import load_index
 
-        path = Path(self.cfg.score.similar_index)
+        venue = str(self.market).upper()
+        path = Path(
+            self.cfg.score.similar_index_by_venue.get(venue, self.cfg.score.similar_index)
+        )
         try:
             stamp = path.stat().st_mtime
         except OSError:
             return None
         cached = getattr(self, "_similar_cache", None)
         if cached is None or cached[0] != stamp:
-            self._similar_cache = (stamp, load_index(self.cfg))
+            self._similar_cache = (stamp, load_index(self.cfg, venue=venue))
         return self._similar_cache[1]
 
     def _annotate_similar(self, candidates: list[dict]) -> None:
         """`similar_setups` on each candidate: the k nearest resolved cases'
-        outcome distribution. Off when similar_k is 0; a missing index or a
-        candidate without the full vector simply carries nothing."""
-        k = self.cfg.score.similar_k
+        outcome distribution. The current index is Binance/crypto-specific;
+        KR and US use different daily features and benchmarks and must wait for
+        their own validated indexes. A missing index or a candidate without
+        the full vector simply carries nothing."""
+        venue = str(self.market).upper()
+        k = self.cfg.score.similar_k_by_venue.get(venue, self.cfg.score.similar_k)
         if k <= 0 or not candidates:
             return
         from trading.agent.similar import annotate

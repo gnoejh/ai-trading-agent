@@ -9,6 +9,7 @@ standardised features so turnover does not swamp everything; and the live
 from __future__ import annotations
 
 from trading.agent.similar import SimilarIndex, annotate, vector
+import json
 
 KEYS = ["change_pct", "log_turnover", "taker_share"]
 
@@ -43,6 +44,8 @@ def test_neighbours_are_the_closest_cases_and_report_their_outcomes():
     idx = SimilarIndex(KEYS, rows)
     q = idx.query(vector({"change_pct": 1.05, "quote_volume": 1e6, "taker_share": 0.5}, KEYS), 3)
     assert q["hit_rate"] == 1.0 and q["avg_return_pct"] == 3.0
+    assert q["median_excess_pct"] == 2.0
+    assert 0.0 <= q["hit_rate_ci_low"] <= q["hit_rate"] <= q["hit_rate_ci_high"] <= 1.0
 
 
 def test_a_query_never_sees_the_future():
@@ -92,3 +95,15 @@ def test_round_trips_through_json():
     back = SimilarIndex.from_json(idx.to_json())
     v = vector({"change_pct": 2.0, "quote_volume": 1e6, "taker_share": 0.5}, KEYS)
     assert back.query(v, 2) == idx.query(v, 2)
+    assert back.venue == "BINANCE"
+
+
+def test_index_metadata_rejects_a_different_venue(tmp_path, monkeypatch):
+    from trading.agent.similar import load_index
+    from trading.config import load_config
+
+    cfg = load_config()
+    path = tmp_path / "kr.json"
+    path.write_text(json.dumps(SimilarIndex(KEYS, [], venue="BINANCE").to_json()))
+    cfg.score.similar_index_by_venue = {"KR": str(path)}
+    assert load_index(cfg, venue="KR") is None

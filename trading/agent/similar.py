@@ -70,7 +70,8 @@ def vector(row: dict, keys: list[str]) -> list[float] | None:
 
 
 class SimilarIndex:
-    def __init__(self, keys: list[str], rows: list[dict]):
+    def __init__(self, keys: list[str], rows: list[dict], *, venue: str = "BINANCE"):
+        self.venue = str(venue).upper()
         self.keys = keys
         self.ts: list[str] = []
         self.vecs: list[list[float]] = []
@@ -117,16 +118,31 @@ class SimilarIndex:
         scored.sort()
         idx = [i for _, i in scored[:k]]
         ex = [self.excess[i] for i in idx if self.excess[i] is not None]
+        hits = sum(1 for i in idx if self.hit[i])
+        # Wilson bounds keep a small neighbour set from looking more certain
+        # than it is. The prompt needs the lower bound, not just the mean.
+        z = 1.96
+        denominator = 1.0 + z * z / k
+        centre = (hits / k + z * z / (2.0 * k)) / denominator
+        margin = (
+            z
+            * math.sqrt((hits / k * (1.0 - hits / k) + z * z / (4.0 * k)) / k)
+            / denominator
+        )
         return {
             "n": k,
-            "hit_rate": round(sum(1 for i in idx if self.hit[i]) / k, 3),
+            "hit_rate": round(hits / k, 3),
+            "hit_rate_ci_low": round(max(0.0, centre - margin), 3),
+            "hit_rate_ci_high": round(min(1.0, centre + margin), 3),
             "avg_return_pct": round(statistics.fmean(self.ret[i] for i in idx), 3),
             "avg_excess_pct": round(statistics.fmean(ex), 3) if ex else None,
             "median_return_pct": round(statistics.median(self.ret[i] for i in idx), 3),
+            "median_excess_pct": round(statistics.median(ex), 3) if ex else None,
         }
 
     def to_json(self) -> dict:
         return {
+            "venue": self.venue,
             "keys": self.keys,
             "mean": self.mean,
             "std": self.std,
@@ -140,6 +156,7 @@ class SimilarIndex:
     @classmethod
     def from_json(cls, data: dict) -> SimilarIndex:
         idx = cls.__new__(cls)
+        idx.venue = str(data.get("venue") or "").upper()
         idx.keys = data["keys"]
         idx.mean, idx.std = data["mean"], data["std"]
         idx.ts, idx.vecs = data["ts"], data["vecs"]
@@ -257,25 +274,28 @@ def validate(cfg: AppConfig | None = None, *, sample: int = 1500) -> dict:
     }
 
 
-def build(cfg: AppConfig | None = None) -> dict:
+def build(cfg: AppConfig | None = None, *, venue: str = "BINANCE") -> dict:
     """Write the live index: every resolved case with the full feature set."""
     cfg = cfg or config()
+    venue = str(venue).upper()
     keys = list(cfg.score.similar_features)
     rows = corpus(cfg, sources=tuple(cfg.score.similar_sources))
-    index = SimilarIndex(keys, rows)
-    out = Path(cfg.score.similar_index)
+    index = SimilarIndex(keys, rows, venue=venue)
+    out = Path(cfg.score.similar_index_by_venue.get(venue, cfg.score.similar_index))
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(index.to_json()), encoding="utf-8")
-    return {"cases": len(index), "keys": keys, "path": str(out)}
+    return {"cases": len(index), "keys": keys, "venue": venue, "path": str(out)}
 
 
-def load_index(cfg: AppConfig | None = None) -> SimilarIndex | None:
+def load_index(cfg: AppConfig | None = None, *, venue: str = "BINANCE") -> SimilarIndex | None:
     cfg = cfg or config()
-    p = Path(cfg.score.similar_index)
+    venue = str(venue).upper()
+    p = Path(cfg.score.similar_index_by_venue.get(venue, cfg.score.similar_index))
     if not p.exists():
         return None
     try:
-        return SimilarIndex.from_json(json.loads(p.read_text(encoding="utf-8")))
+        index = SimilarIndex.from_json(json.loads(p.read_text(encoding="utf-8")))
+        return index if index.venue == venue else None
     except (OSError, ValueError, KeyError):
         return None
 

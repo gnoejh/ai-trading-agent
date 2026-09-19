@@ -31,6 +31,8 @@ Most of the work is not the model. It is the apparatus that keeps the model hone
 - **Context RL.** The model's weights never change. What improves is the measured record it reads
   at decision time — buckets, calibration and priors that only render once they clear a
   sample-size floor. Below that floor the prompt says nothing rather than guessing.
+  Similar-case retrieval is venue-scoped: Binance uses only its validated crypto experience
+  index, while Kiwoom KR and US require separate daily-feature indexes and validation.
 - **An allocator as an annealing schedule.** The model's share of the book rises with realised
   profit *and* a demonstrated edge, and falls on realised loss alone. It never reaches 100%,
   because the random arm is also the control group that keeps the model measurable.
@@ -52,6 +54,10 @@ for each change. The findings that shaped the design:
   as P(+17% target first), so a calibrated model read as overconfident and declined ~95% of
   cycles. The same class of error was later found in the promotion gate itself, which compared a
   72-hour buy-and-hold while every real position exits on a trailing stop.
+- **Experiences must match the venue.** The Binance similar-case index now carries venue metadata,
+  hit-rate uncertainty, and median excess return. Its leave-the-future-out validation has 11,376
+  cases with a +5.079% top-to-bottom excess spread (95% CI +0.901..+11.219). KR and US are not
+  allowed to consume that crypto index; their RAG stays off until their own corpora validate.
 
 The recurring lesson, and the reason the tests are written the way they are: **the components
 were almost always correct and the wiring was not** — a right function called with the wrong
